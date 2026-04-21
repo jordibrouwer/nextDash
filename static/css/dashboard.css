@@ -1,0 +1,355 @@
+/* Dashboard Styles */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+/* Remove tap highlight on mobile devices */
+button,
+a,
+input,
+select,
+textarea,
+[role="button"],
+.clickable {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+}
+
+body {
+    min-height: 100vh;
+    transition: background-color 0.3s ease, color 0.3s ease;
+    font-size: var(--font-size-text);
+    overflow-x: hidden; /* Prevent horizontal scroll */
+    width: 100%;
+}
+
+/* Dashboard Sections */
+.dashboard-section {
+    padding: 0;
+}
+
+.dashboard-section.section-controls {
+    padding-top: 2rem;
+    padding-bottom: 0;
+}
+
+.dashboard-section.section-title {
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+.dashboard-section.section-content {
+    padding-top: 0;
+    padding-bottom: 3rem; /* Increased to make room for search button */
+}
+
+.container {
+    max-width: 80%;
+    width: 100%;
+    margin: 0 auto;
+    padding: 0 2rem;
+}
+
+/* Optional: Set a reasonable max width for ultra-wide screens */
+@media (min-width: 1920px) {
+    .container {
+        max-width: 70%;
+    }
+}
+
+@media (min-width: 2560px) {
+    .container {
+        max-width: 60%;
+    }
+}
+
+/* Header Top - Contains date, tabs, and config button */
+.header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.date {
+    font-size: var(--font-size-date);
+    font-family: var(--font-family-main);
+    font-weight: var(--font-weight-black);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+}
+
+.title {
+    font-size: var(--font-size-title);
+    font-family: var(--font-family-main);
+    font-weight: var(--font-weight-black);
+    opacity: 0.8;
+    user-select: none;
+    color: var(--text-primary);
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    margin-left: auto;
+}
+
+.page-navigation {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+}
+
+.page-nav-btn {
+    padding: 0.4rem 0.6rem;
+    font-size: var(--font-size-controls);
+    font-family: var(--font-family-main);
+    font-weight: var(--font-weight-semibold);
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-align: center;
+    position: relative;
+}
+
+.page-nav-btn::before {
+    content: '[';
+    margin-right: 0.25rem;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.page-nav-btn::after {
+    content: ']';
+    margin-left: 0.25rem;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.page-nav-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--text-primary);
+}
+
+.page-nav-btn.active {
+    background: transparent;
+    color: var(--text-primary);
+    border-color: var(--text-primary);
+}
+
+.page-nav-btn.active::before,
+.page-nav-btn.active::after {
+    opacity: 1;
+}
+
+.config-link a {
+    text-decoration: none;
+    font-size: var(--font-size-controls);
+    font-family: var(--font-family-main);
+    font-weight: var(--font-weight-semibold);
+    transition: color 0.3s ease;
+    color: var(--text-secondary);
+}
+
+.config-link a:hover {
+    color: var(--text-primary);
+}
+
+/* Dashboard Grid */
+.dashboard-grid {
+    display: grid;
+    gap: 3rem;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    width: 100%;
+    max-width: 100%;
+}
+
+.dashboard-grid.columns-1 {
+    grid-template-columns: 1fr;
+}
+
+.dashboard-grid.columns-2 {
+    grid-template-columns: repeat(2, 1fr);
+}
+
+.dashboard-grid.columns-3 {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+.dashboard-grid.columns-4 {
+    grid-template-columns: repeat(4, 1fr);
+}
+
+.dashboard-grid.columns-5 {
+    grid-template-columns: repeat(5, 1fr);
+}
+
+.dashboard-grid.columns-6 {
+    grid-template-columns: repeat(6, 1fr);
+}
+
+/* Category */
+.category {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    min-width: 0; /* Allow flex items to shrink below content size */
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+}
+
+.category-title {
+    font-size: var(--font-size-category);
+    font-weight: var(--font-weight-bold);
+    letter-spacing: 0.05em;
+    color: var(--text-tertiary);
+}
+
+.category-title::before {
+    content: '// ';
+}
+
+.category[data-collapsed="true"] .bookmarks-list {
+    display: none;
+}
+
+.category-title {
+    cursor: pointer;
+    user-select: none;
+}
+
+/* Bookmarks */
+.bookmarks-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-width: 0; /* Allow flex items to shrink below content size */
+    min-height: 2rem;
+}
+
+.bookmark-link {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    text-decoration: none;
+    font-size: var(--font-size-bookmark);
+    font-weight: var(--font-weight-semibold);
+    transition: all 0.3s ease;
+    position: relative;
+    padding: 0.5rem 0;
+    color: var(--text-primary);
+    max-width: 100%; /* Ensure bookmark doesn't exceed parent width */
+}
+
+.bookmark-drag-handle {
+    cursor: grab;
+    opacity: 0.45;
+    margin-right: 0.5rem;
+    flex-shrink: 0;
+    user-select: none;
+}
+
+.bookmark-link:hover .bookmark-drag-handle {
+    opacity: 0.9;
+}
+
+.bookmark-link.is-draggable .bookmark-drag-handle {
+    cursor: grabbing;
+}
+
+.bookmarks-list.reorder-container .bookmark-link.is-draggable {
+    opacity: 0.8;
+    transform: translateX(2px);
+}
+
+.bookmark-icon {
+    height: var(--font-size-bookmark);
+    width: auto;
+    flex-shrink: 0;
+}
+
+.bookmark-link:hover {
+    color: var(--text-primary);
+    transform: translateX(4px);
+    overflow: visible; /* Allow the selector to be visible */
+}
+
+.bookmark-text {
+    flex: 1;
+    min-width: 0; /* Allow text to shrink */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Keyboard navigation highlight */
+.bookmark-link.keyboard-selected {
+    color: var(--text-primary);
+    transform: translateX(8px);
+    position: relative;
+    overflow: visible; /* Allow the selector to be visible */
+}
+
+.bookmark-link.keyboard-selected::before {
+    content: '>';
+    position: absolute;
+    left: -1.5rem;
+    font-weight: var(--font-weight-bold);
+    color: var(--text-primary);
+}
+
+.bookmark-shortcut {
+    flex-shrink: 0; /* Never shrink the shortcut */
+    font-size: var(--font-size-controls);
+    font-weight: var(--font-weight-semibold);
+    opacity: 0.7;
+    white-space: nowrap; /* Prevent shortcut from wrapping */
+    margin-left: auto; /* Push to the right */
+}
+
+
+
+
+
+/* Loading */
+.loading {
+    text-align: center;
+    font-size: var(--font-size-category);
+    opacity: 0.7;
+    grid-column: 1 / -1;
+}
+
+/* Visibility Controls */
+body[data-show-title="false"] .title-wrapper {
+    display: none;
+}
+
+body[data-show-date="false"] .date {
+    display: none;
+}
+
+/* Hide config button when showConfigButton is false */
+body[data-show-config-button="false"] .config-button {
+    display: none;
+}
+
+/* Hide search button when showSearchButton is false */
+body[data-show-search-button="false"] #search-button {
+    display: none;
+}
+
+/* Hide finders button when showFindersButton is false */
+body[data-show-finders-button="false"] .finders-button {
+    display: none;
+}
+
+/* Hide commands button when showCommandsButton is false */
+body[data-show-commands-button="false"] .commands-button {
+    display: none;
+}
