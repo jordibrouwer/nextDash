@@ -106,7 +106,8 @@
       "shortcut": "KOMGA",
       "category": "selfhost",
       "checkStatus": false,
-      "icon": ""
+      "icon": "",
+      "lastOpened": 1776864051638
     },
     {
       "name": "lazylibrarian",
@@ -151,7 +152,8 @@
       "shortcut": "NGINX",
       "category": "selfhost",
       "checkStatus": false,
-      "icon": ""
+      "icon": "",
+      "lastOpened": 1776864068019
     },
     {
       "name": "p1monitor",
@@ -178,7 +180,8 @@
       "shortcut": "PROWL",
       "category": "selfhost",
       "checkStatus": false,
-      "icon": ""
+      "icon": "",
+      "lastOpened": 1776864071518
     },
     {
       "name": "radarr",
@@ -187,7 +190,8 @@
       "shortcut": "RADAR",
       "category": "selfhost",
       "checkStatus": false,
-      "icon": ""
+      "icon": "",
+      "lastOpened": 1776864072677
     },
     {
       "name": "sabnzbd",
@@ -259,7 +263,8 @@
       "shortcut": "ADGUT",
       "category": "selfhost-2",
       "checkStatus": false,
-      "icon": ""
+      "icon": "",
+      "lastOpened": 1776864182604
     },
     {
       "name": "adguardbuddy",
@@ -331,6 +336,24 @@
       "pageId": 1,
       "shortcut": "JELLS",
       "category": "selfhost-2",
+      "checkStatus": false,
+      "icon": ""
+    },
+    {
+      "name": "test",
+      "url": "https://example.com",
+      "pageId": 1,
+      "shortcut": "TEST",
+      "category": "tools",
+      "checkStatus": false,
+      "icon": ""
+    },
+    {
+      "name": "whoah",
+      "url": "https://ddd.com",
+      "pageId": 1,
+      "shortcut": "DDDD",
+      "category": "utilities",
       "checkStatus": false,
       "icon": ""
     }

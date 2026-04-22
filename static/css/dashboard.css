@@ -353,3 +353,58 @@ body[data-show-finders-button="false"] .finders-button {
 body[data-show-commands-button="false"] .commands-button {
     display: none;
 }
+
+/* Recent bookmarks modal */
+.modal.recent-bookmarks-modal {
+    max-height: 88vh;
+    overflow: hidden;
+}
+
+.modal.recent-bookmarks-modal .modal-body {
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+}
+
+.recent-bookmarks-modal-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-height: 58vh;
+    overflow-y: auto;
+    padding-right: 0.25rem;
+}
+
+.recent-bookmarks-modal-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    border: 1px solid var(--border-primary);
+    background: var(--background-primary);
+    padding: 0.5rem 0.625rem;
+    color: var(--text-primary);
+    text-decoration: none;
+    transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.recent-bookmarks-modal-item:hover {
+    transform: translateX(3px);
+    border-color: var(--text-secondary);
+}
+
+.recent-bookmarks-modal-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.recent-bookmarks-modal-meta {
+    flex-shrink: 0;
+    color: var(--text-tertiary);
+    font-size: var(--font-size-controls);
+}
+
+.recent-bookmarks-empty {
+    color: var(--text-secondary);
+}

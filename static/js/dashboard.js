@@ -567,6 +567,32 @@ class Dashboard {
                 this.showKeyboardCheatSheet();
             });
         }
+
+        const recentButton = document.getElementById('recent-bookmarks-button');
+        if (recentButton) {
+            recentButton.addEventListener('click', () => {
+                this.toggleRecentBookmarksModal();
+            });
+        }
+
+        document.addEventListener('keydown', (e) => {
+            const isTypingContext = Boolean(
+                e.target && (
+                    e.target.tagName === 'INPUT' ||
+                    e.target.tagName === 'TEXTAREA' ||
+                    e.target.isContentEditable
+                )
+            );
+
+            if (isTypingContext) {
+                return;
+            }
+
+            if (e.ctrlKey && e.shiftKey && !e.metaKey && !e.altKey && e.code === 'KeyR') {
+                e.preventDefault();
+                this.toggleRecentBookmarksModal();
+            }
+        });
     }
 
     isModalOpen() {
@@ -630,6 +656,7 @@ class Dashboard {
                     { keys: '>', description: 'Open search' },
                     { keys: ':', description: 'Open command mode' },
                     { keys: '?', description: 'Open finders' },
+                    { keys: 'Ctrl + Shift + R', description: 'Open or close recent bookmarks' },
                     { keys: 'Ctrl + / or F1', description: 'Show this keyboard cheat sheet' },
                     { keys: 'tag:, category:, status:, page:', description: 'Filter search results by metadata' }
                 ]
@@ -720,27 +747,6 @@ class Dashboard {
             `;
             this.updateSearchComponent();
             return;
-        }
-
-        const recentBookmarks = this.getRecentBookmarks(this.bookmarks);
-        if (recentBookmarks.length > 0) {
-            const recentSection = document.createElement('div');
-            recentSection.className = 'category recent-bookmarks-section';
-
-            const recentTitle = document.createElement('h2');
-            recentTitle.className = 'category-title';
-            recentTitle.textContent = 'recent bookmarks';
-            recentSection.appendChild(recentTitle);
-
-            const recentList = document.createElement('div');
-            recentList.className = 'bookmarks-list recent-bookmarks-list';
-
-            recentBookmarks.forEach((bookmark) => {
-                recentList.appendChild(this.createRecentBookmarkElement(bookmark));
-            });
-
-            recentSection.appendChild(recentList);
-            container.appendChild(recentSection);
         }
 
         // Render categories
@@ -1115,11 +1121,90 @@ class Dashboard {
         return link;
     }
 
+    isRecentBookmarksModalOpen() {
+        const overlay = document.getElementById('app-modal');
+        const panel = overlay ? overlay.querySelector('.modal') : null;
+        return Boolean(
+            overlay &&
+            panel &&
+            overlay.classList.contains('show') &&
+            panel.classList.contains('recent-bookmarks-modal')
+        );
+    }
+
+    toggleRecentBookmarksModal() {
+        if (!window.AppModal) {
+            return;
+        }
+
+        if (this.isModalOpen() && !this.isRecentBookmarksModalOpen()) {
+            return;
+        }
+
+        if (this.isRecentBookmarksModalOpen()) {
+            window.AppModal.hide();
+            return;
+        }
+
+        const recentBookmarks = this.getRecentBookmarks(this.bookmarks);
+        const openInNewTab = this.settings.openInNewTab;
+        const noRecentText = this.language.t('dashboard.noRecentBookmarks') || 'No recent bookmarks yet.';
+        const modalHtml = recentBookmarks.length > 0
+            ? `
+                <div class="recent-bookmarks-modal-list">
+                    ${recentBookmarks.map((bookmark, index) => {
+                        const safeName = this.escapeHtml(bookmark.name || 'Bookmark');
+                        const safeUrl = this.escapeHtml(bookmark.url || '#');
+                        const safeCategory = this.escapeHtml(bookmark.category || (this.language.t('dashboard.uncategorized') || 'Other'));
+                        const target = openInNewTab ? ' target="_blank" rel="noopener noreferrer"' : '';
+                        return `
+                            <a class="recent-bookmarks-modal-item" href="${safeUrl}" data-recent-index="${index}"${target}>
+                                <span class="recent-bookmarks-modal-name">${safeName}</span>
+                                <span class="recent-bookmarks-modal-meta">${safeCategory}</span>
+                            </a>
+                        `;
+                    }).join('')}
+                </div>
+            `
+            : `<div class="recent-bookmarks-empty">${this.escapeHtml(noRecentText)}</div>`;
+
+        window.AppModal.show({
+            title: this.language.t('dashboard.recentBookmarksTitle') || 'Recent bookmarks',
+            htmlMessage: modalHtml,
+            confirmText: this.language.t('dashboard.close') || 'Close',
+            showCancel: false,
+            modalClass: 'recent-bookmarks-modal',
+            modalMaxWidth: '760px',
+            modalWidth: '92vw'
+        });
+
+        if (recentBookmarks.length > 0) {
+            const items = document.querySelectorAll('.recent-bookmarks-modal-item[data-recent-index]');
+            items.forEach((item) => {
+                item.addEventListener('click', (e) => {
+                    const index = parseInt(e.currentTarget.getAttribute('data-recent-index'), 10);
+                    if (!Number.isNaN(index) && recentBookmarks[index]) {
+                        this.recordBookmarkOpened(recentBookmarks[index]);
+                    }
+                });
+            });
+        }
+    }
+
+    escapeHtml(value) {
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     getRecentBookmarks(bookmarks) {
         return [...(Array.isArray(bookmarks) ? bookmarks : [])]
             .filter((bookmark) => bookmark && bookmark.lastOpened)
             .sort((a, b) => (b.lastOpened || 0) - (a.lastOpened || 0))
-            .slice(0, 5);
+            .slice(0, 10);
     }
 
     recordBookmarkOpened(bookmark) {
