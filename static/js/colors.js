@@ -269,6 +269,27 @@ async function saveColors() {
     }
 }
 
+// Persist color data after structural custom theme changes (add/remove)
+// without interrupting the current preview flow.
+async function autosaveThemeStructure() {
+    try {
+        const response = await fetch('/api/colors', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(colorsData)
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to autosave theme structure');
+        }
+    } catch (error) {
+        console.error('Error autosaving theme structure:', error);
+        showNotification(window.t('colors.errorSavingColors'), 'error');
+    }
+}
+
 // Reload the theme CSS to apply changes
 function reloadThemeCSS() {
     const link = document.querySelector('link[href="/api/theme.css"]');
@@ -377,18 +398,46 @@ function addCustomTheme() {
                 // ignore
             }
         }
+
+        // Auto-save so add/remove changes persist immediately.
+        autosaveThemeStructure();
     }
 }
 
 // Remove custom theme
 async function removeCustomTheme(themeId) {
     if (!customThemesManager) return;
+
+    const wasSelected = customThemesManager.currentSelectedTheme === themeId;
     
     const removed = await customThemesManager.remove(colorsData.custom, themeId);
     
     if (removed) {
         customThemesManager.render(colorsData.custom);
         customThemesManager.updateThemeSelector(colorsData.custom);
+
+        if (wasSelected) {
+            // Clear preview if the selected custom theme was removed.
+            const previewStyle = document.getElementById('color-preview-style');
+            if (previewStyle) {
+                previewStyle.remove();
+            }
+
+            const selector = document.getElementById('custom-theme-selector');
+            if (selector) {
+                selector.value = '';
+                try {
+                    const instance = selector.__customSelectInstance;
+                    if (instance && typeof instance.refresh === 'function') {
+                        instance.refresh();
+                    }
+                } catch (e) {
+                    // ignore
+                }
+            }
+        }
+
+        await autosaveThemeStructure();
     }
 }
 

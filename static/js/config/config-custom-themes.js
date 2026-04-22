@@ -59,24 +59,30 @@ class ConfigCustomThemes {
         const div = document.createElement('div');
         div.className = 'category-item js-item is-idle';
         div.setAttribute('data-theme-id', theme.id);
-        
-        div.innerHTML = `
-            <input type="text" 
-                id="custom-theme-name-${index}" 
-                name="custom-theme-name-${index}" 
-                value="${theme.name}" 
-                placeholder="${this.t('config.customThemeNamePlaceholder')}" 
-                data-theme-id="${theme.id}" 
-                data-field="name">
-            <button type="button" 
-                    class="btn btn-danger" 
-                    onclick="configManager.removeCustomTheme('${theme.id}')">
-                ${this.t('config.remove')}
-            </button>
-        `;
+
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.id = `custom-theme-name-${index}`;
+        nameInput.name = `custom-theme-name-${index}`;
+        nameInput.value = theme.name;
+        nameInput.placeholder = this.t('config.customThemeNamePlaceholder');
+        nameInput.setAttribute('data-theme-id', theme.id);
+        nameInput.setAttribute('data-field', 'name');
+
+        const removeButton = document.createElement('button');
+        removeButton.type = 'button';
+        removeButton.className = 'btn btn-danger';
+        removeButton.textContent = this.t('config.remove');
+        removeButton.addEventListener('click', () => {
+            if (typeof configManager !== 'undefined' && typeof configManager.removeCustomTheme === 'function') {
+                configManager.removeCustomTheme(theme.id);
+            }
+        });
+
+        div.appendChild(nameInput);
+        div.appendChild(removeButton);
 
         // Add event listener for name changes
-        const nameInput = div.querySelector('input[data-field="name"]');
         nameInput.addEventListener('input', (e) => {
             const themeId = e.target.getAttribute('data-theme-id');
             const newName = e.target.value;
@@ -98,7 +104,10 @@ class ConfigCustomThemes {
         if (!selector) return;
 
         const currentValue = selector.value;
-        selector.innerHTML = '<option value="">' + this.t('config.selectCustomTheme') + '</option>';
+        const selectLabel = this.t('colors.selectCustomTheme') === 'colors.selectCustomTheme'
+            ? this.t('config.selectCustomTheme')
+            : this.t('colors.selectCustomTheme');
+        selector.innerHTML = '<option value="">' + selectLabel + '</option>';
 
         Object.keys(customThemes).forEach(themeId => {
             const option = document.createElement('option');
