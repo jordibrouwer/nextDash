@@ -1,5 +1,5 @@
 services:
-  nexusdashboard:
+  nextDash:
     build: .
     ports:
       - "8080:8080"
@@ -8,4 +8,4 @@ services:
     environment:
       - PORT=8080
     restart: unless-stopped
-    container_name: nexusdashboard
+    container_name: nextDash

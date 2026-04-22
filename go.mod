@@ -1,4 +1,4 @@
-module github.com/yourusername/nexusdashboard
+module github.com/yourusername/nextDash
 
 go 1.21
 

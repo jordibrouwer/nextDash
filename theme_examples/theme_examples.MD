@@ -1,6 +1,6 @@
 # Theme Examples
 
-This document contains various theme configurations for NexusDashboard. Each theme defines colors for text, backgrounds, borders, and accents.
+This document contains various theme configurations for nextDash. Each theme defines colors for text, backgrounds, borders, and accents.
 
 To use them, just copy the corresponding value into the Custom Theme in `/colors` configuration.
 

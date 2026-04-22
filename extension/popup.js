@@ -1,4 +1,4 @@
-// NexusDashboard Bookmark Saver Extension
+// nextDash Bookmark Saver Extension
 
 let confirmationCallback = null;
 
@@ -144,7 +144,7 @@ async function loadPages(providedServerUrl) {
     }
 
     if (!serverUrl) {
-        showMessage('Please set the NexusDashboard URL in settings first.', 'info');
+        showMessage('Please set the nextDash URL in settings first.', 'info');
         return;
     }
 
@@ -281,7 +281,7 @@ async function saveBookmark(event) {
     const serverUrl = settings.serverUrl;
 
     if (!serverUrl) {
-        showMessage('Please set the NexusDashboard URL in settings first.', 'error');
+        showMessage('Please set the nextDash URL in settings first.', 'error');
         return;
     }
 

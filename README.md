@@ -1,4 +1,4 @@
-# NexusDashboard
+# nextDash
 
 A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScript. Features a minimalist, keyboard-driven interface with extensive customization options, making it the perfect personal dashboard for power users.
 
@@ -188,9 +188,9 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 
 ```yaml
 services:
-  nexusdashboard:
-    image: ghcr.io/jordibrouwer/nexusdashboard:latest
-    container_name: nexusdashboard
+  nextDash:
+    image: ghcr.io/jordibrouwer/nextDash:latest
+    container_name: nextDash
     ports:
       - "8080:8080"
     volumes:
@@ -207,7 +207,7 @@ services:
 ### Using Docker
 
 ```bash
-docker run --name nexusdashboard -d -p 8080:8080 -v ./data:/app/data -e PORT=8080 --restart unless-stopped ghcr.io/jordibrouwer/nexusdashboard:latest
+docker run --name nextDash -d -p 8080:8080 -v ./data:/app/data -e PORT=8080 --restart unless-stopped ghcr.io/jordibrouwer/nextDash:latest
 ```
 
 Then open `http://localhost:8080`
@@ -216,8 +216,8 @@ Then open `http://localhost:8080`
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/jordibrouwer/nexusDashboard.git
-cd nexusDashboard
+git clone https://github.com/jordibrouwer/nextDash.git
+cd nextDash
 ```
 
 2. Install dependencies:
@@ -296,13 +296,13 @@ All data is stored in JSON files in the `data/` directory:
 
 ## 📱 Mobile App
 
-NexusDashboard can be installed as a PWA on:
+nextDash can be installed as a PWA on:
 - iOS Safari
 - Android Chrome
 - Desktop (Chrome, Edge)
 
 **Installation**:
-1. Open NexusDashboard in your browser
+1. Open nextDash in your browser
 2. Click the "Install" button (or use browser menu → "Install app")
 3. Grant permissions
 4. Access from your home screen or app drawer
@@ -330,7 +330,7 @@ A Chrome extension is included for quick bookmark saving:
 
 ## ⚙️ API Endpoints
 
-NexusDashboard provides a RESTful API:
+nextDash provides a RESTful API:
 
 ### Bookmarks
 - `GET /api/bookmarks/{page}` - Get bookmarks for a page
