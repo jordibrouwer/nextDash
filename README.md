@@ -1,6 +1,6 @@
 # nextDash
 
-A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScript. Features a minimalist, keyboard-driven interface with extensive customization options, making it the perfect personal dashboard for power users.
+A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScript. Features a minimalist, keyboard-driven interface with extensive customization options, making it the perfect personal dashboard for power users. Based on ThinkDashboard.
 
 ## ✨ Core Features
 
