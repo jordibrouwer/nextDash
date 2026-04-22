@@ -14,7 +14,7 @@
   "showSearchButtonText": true,
   "showFindersButtonText": true,
   "showCommandsButtonText": true,
-  "showStatus": true,
+  "showStatus": false,
   "showPing": false,
   "showStatusLoading": false,
   "skipFastPing": false,

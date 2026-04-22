@@ -32,22 +32,14 @@
   ],
   "bookmarks": [
     {
-      "name": "nu.nl",
-      "url": "https://www.nu.nl",
+      "name": "cnn.com",
+      "url": "https://www.cnn.com",
       "pageId": 1,
-      "shortcut": "NUNL",
+      "shortcut": "CNN",
       "category": "nieuws",
       "checkStatus": false,
-      "icon": ""
-    },
-    {
-      "name": "nrc.nl",
-      "url": "https://www.nrc.nl",
-      "pageId": 1,
-      "shortcut": "NRCNL",
-      "category": "nieuws",
-      "checkStatus": false,
-      "icon": ""
+      "icon": "",
+      "lastOpened": 1776776910255
     },
     {
       "name": "nos.nl",
@@ -60,6 +52,25 @@
       "lastOpened": 1776853564442
     },
     {
+      "name": "nrc.nl",
+      "url": "https://www.nrc.nl",
+      "pageId": 1,
+      "shortcut": "NRCNL",
+      "category": "nieuws",
+      "checkStatus": false,
+      "icon": "",
+      "lastOpened": 1776857629294
+    },
+    {
+      "name": "nu.nl",
+      "url": "https://www.nu.nl",
+      "pageId": 1,
+      "shortcut": "NUNL",
+      "category": "nieuws",
+      "checkStatus": false,
+      "icon": ""
+    },
+    {
       "name": "nytimes.com",
       "url": "https://www.nytimes.com",
       "pageId": 1,
@@ -67,16 +78,6 @@
       "category": "nieuws",
       "checkStatus": false,
       "icon": ""
-    },
-    {
-      "name": "cnn.com",
-      "url": "https://www.cnn.com",
-      "pageId": 1,
-      "shortcut": "CNN",
-      "category": "nieuws",
-      "checkStatus": false,
-      "icon": "",
-      "lastOpened": 1776776910255
     },
     {
       "name": "theverge.com",
@@ -99,6 +100,132 @@
       "lastOpened": 1776777132203
     },
     {
+      "name": "komga",
+      "url": "https://komga.tailae75e.ts.net",
+      "pageId": 1,
+      "shortcut": "KOMGA",
+      "category": "selfhost",
+      "checkStatus": false,
+      "icon": ""
+    },
+    {
+      "name": "lazylibrarian",
+      "url": "https://lazylibrarian.tailae75e.ts.net",
+      "pageId": 1,
+      "shortcut": "LAZYL",
+      "category": "selfhost",
+      "checkStatus": false,
+      "icon": ""
+    },
+    {
+      "name": "mediastarr",
+      "url": "https://mediastarr.tailae75e.ts.net",
+      "pageId": 1,
+      "shortcut": "MEDIA",
+      "category": "selfhost",
+      "checkStatus": false,
+      "icon": ""
+    },
+    {
+      "name": "mylar3",
+      "url": "https://mylar3.tailae75e.ts.net",
+      "pageId": 1,
+      "shortcut": "MYLAR",
+      "category": "selfhost",
+      "checkStatus": false,
+      "icon": ""
+    },
+    {
+      "name": "nextcloud",
+      "url": "https://nextcloud.tailae75e.ts.net",
+      "pageId": 1,
+      "shortcut": "NEXTC",
+      "category": "selfhost",
+      "checkStatus": false,
+      "icon": ""
+    },
+    {
+      "name": "nginx-pm",
+      "url": "https://nginx.tailae75e.ts.net",
+      "pageId": 1,
+      "shortcut": "NGINX",
+      "category": "selfhost",
+      "checkStatus": false,
+      "icon": ""
+    },
+    {
+      "name": "p1monitor",
+      "url": "https://p1monitor.tailae75e.ts.net",
+      "pageId": 1,
+      "shortcut": "PMONI",
+      "category": "selfhost",
+      "checkStatus": false,
+      "icon": ""
+    },
+    {
+      "name": "phpmyadmin",
+      "url": "https://phpmyadmin.tailae75e.ts.net",
+      "pageId": 1,
+      "shortcut": "PHPMY",
+      "category": "selfhost",
+      "checkStatus": false,
+      "icon": ""
+    },
+    {
+      "name": "prowlarr",
+      "url": "https://prowlarr.tailae75e.ts.net",
+      "pageId": 1,
+      "shortcut": "PROWL",
+      "category": "selfhost",
+      "checkStatus": false,
+      "icon": ""
+    },
+    {
+      "name": "radarr",
+      "url": "https://radarr.tailae75e.ts.net",
+      "pageId": 1,
+      "shortcut": "RADAR",
+      "category": "selfhost",
+      "checkStatus": false,
+      "icon": ""
+    },
+    {
+      "name": "sabnzbd",
+      "url": "https://sabnzbd.tailae75e.ts.net",
+      "pageId": 1,
+      "shortcut": "SABNZ",
+      "category": "selfhost",
+      "checkStatus": false,
+      "icon": ""
+    },
+    {
+      "name": "shelfmark",
+      "url": "https://shelfmark.tailae75e.ts.net",
+      "pageId": 1,
+      "shortcut": "SHELF",
+      "category": "selfhost",
+      "checkStatus": false,
+      "icon": ""
+    },
+    {
+      "name": "sonarr",
+      "url": "https://sonarr.tailae75e.ts.net",
+      "pageId": 1,
+      "shortcut": "SONAR",
+      "category": "selfhost",
+      "checkStatus": false,
+      "icon": ""
+    },
+    {
+      "name": "spotweb",
+      "url": "https://spotweb.tailae75e.ts.net",
+      "pageId": 1,
+      "shortcut": "SPOTW",
+      "category": "selfhost",
+      "checkStatus": false,
+      "icon": ""
+    },
+    {
       "name": "tower",
       "url": "https://tower.tailae75e.ts.net",
       "pageId": 1,
@@ -117,136 +244,73 @@
       "icon": ""
     },
     {
-      "name": "spotweb",
-      "url": "https://spotweb.tailae75e.ts.net",
+      "name": "adguard-1",
+      "url": "https://adguard.tailae75e.ts.net",
       "pageId": 1,
-      "shortcut": "SPOTW",
-      "category": "selfhost",
+      "shortcut": "ADGUA",
+      "category": "selfhost-2",
       "checkStatus": false,
       "icon": ""
     },
     {
-      "name": "sonarr",
-      "url": "https://sonarr.tailae75e.ts.net",
+      "name": "adguard-2",
+      "url": "https://adguard2.tailae75e.ts.net",
       "pageId": 1,
-      "shortcut": "SONAR",
-      "category": "selfhost",
+      "shortcut": "ADGUT",
+      "category": "selfhost-2",
       "checkStatus": false,
       "icon": ""
     },
     {
-      "name": "shelfmark",
-      "url": "https://shelfmark.tailae75e.ts.net",
+      "name": "adguardbuddy",
+      "url": "https://adguardbuddy.tailae75e.ts.net",
       "pageId": 1,
-      "shortcut": "SHELF",
-      "category": "selfhost",
+      "shortcut": "ADGBU",
+      "category": "selfhost-2",
       "checkStatus": false,
       "icon": ""
     },
     {
-      "name": "sabnzbd",
-      "url": "https://sabnzbd.tailae75e.ts.net",
+      "name": "bazarr",
+      "url": "https://bazarr.tailae75e.ts.net",
       "pageId": 1,
-      "shortcut": "SABNZ",
-      "category": "selfhost",
+      "shortcut": "BAZAR",
+      "category": "selfhost-2",
       "checkStatus": false,
       "icon": ""
     },
     {
-      "name": "radarr",
-      "url": "https://radarr.tailae75e.ts.net",
+      "name": "calibre-web-au",
+      "url": "https://calibre-web-automated.tailae75e.ts.net",
       "pageId": 1,
-      "shortcut": "RADAR",
-      "category": "selfhost",
+      "shortcut": "CALIB",
+      "category": "selfhost-2",
       "checkStatus": false,
       "icon": ""
     },
     {
-      "name": "prowlarr",
-      "url": "https://prowlarr.tailae75e.ts.net",
+      "name": "duplicati",
+      "url": "https://duplicati.tailae75e.ts.net",
       "pageId": 1,
-      "shortcut": "PROWL",
-      "category": "selfhost",
+      "shortcut": "DUPLI",
+      "category": "selfhost-2",
       "checkStatus": false,
       "icon": ""
     },
     {
-      "name": "phpmyadmin",
-      "url": "https://phpmyadmin.tailae75e.ts.net",
+      "name": "homeassistant",
+      "url": "https://homeassistant.tailae75e.ts.net",
       "pageId": 1,
-      "shortcut": "PHPMY",
-      "category": "selfhost",
+      "shortcut": "HOMEA",
+      "category": "selfhost-2",
       "checkStatus": false,
       "icon": ""
     },
     {
-      "name": "p1monitor",
-      "url": "https://p1monitor.tailae75e.ts.net",
+      "name": "immich",
+      "url": "https://immich.tailae75e.ts.net",
       "pageId": 1,
-      "shortcut": "PMONI",
-      "category": "selfhost",
-      "checkStatus": false,
-      "icon": ""
-    },
-    {
-      "name": "nginx-pm",
-      "url": "https://nginx.tailae75e.ts.net",
-      "pageId": 1,
-      "shortcut": "NGINX",
-      "category": "selfhost",
-      "checkStatus": false,
-      "icon": ""
-    },
-    {
-      "name": "nextcloud",
-      "url": "https://nextcloud.tailae75e.ts.net",
-      "pageId": 1,
-      "shortcut": "NEXTC",
-      "category": "selfhost",
-      "checkStatus": false,
-      "icon": ""
-    },
-    {
-      "name": "mylar3",
-      "url": "https://mylar3.tailae75e.ts.net",
-      "pageId": 1,
-      "shortcut": "MYLAR",
-      "category": "selfhost",
-      "checkStatus": false,
-      "icon": ""
-    },
-    {
-      "name": "mediastarr",
-      "url": "https://mediastarr.tailae75e.ts.net",
-      "pageId": 1,
-      "shortcut": "MEDIA",
-      "category": "selfhost",
-      "checkStatus": false,
-      "icon": ""
-    },
-    {
-      "name": "lazylibrarian",
-      "url": "https://lazylibrarian.tailae75e.ts.net",
-      "pageId": 1,
-      "shortcut": "LAZYL",
-      "category": "selfhost",
-      "checkStatus": false,
-      "icon": ""
-    },
-    {
-      "name": "komga",
-      "url": "https://komga.tailae75e.ts.net",
-      "pageId": 1,
-      "shortcut": "KOMGA",
-      "category": "selfhost",
-      "checkStatus": false,
-      "icon": ""
-    },
-    {
-      "name": "jellystat",
-      "url": "https://jellystat.tailae75e.ts.net",
-      "pageId": 1,
-      "shortcut": "JELLS",
+      "shortcut": "IMMIC",
       "category": "selfhost-2",
       "checkStatus": false,
       "icon": ""
@@ -262,73 +326,10 @@
       "lastOpened": 1776777212630
     },
     {
-      "name": "immich",
-      "url": "https://immich.tailae75e.ts.net",
+      "name": "jellystat",
+      "url": "https://jellystat.tailae75e.ts.net",
       "pageId": 1,
-      "shortcut": "IMMIC",
-      "category": "selfhost-2",
-      "checkStatus": false,
-      "icon": ""
-    },
-    {
-      "name": "homeassistant",
-      "url": "https://homeassistant.tailae75e.ts.net",
-      "pageId": 1,
-      "shortcut": "HOMEA",
-      "category": "selfhost-2",
-      "checkStatus": false,
-      "icon": ""
-    },
-    {
-      "name": "duplicati",
-      "url": "https://duplicati.tailae75e.ts.net",
-      "pageId": 1,
-      "shortcut": "DUPLI",
-      "category": "selfhost-2",
-      "checkStatus": false,
-      "icon": ""
-    },
-    {
-      "name": "calibre-web-au",
-      "url": "https://calibre-web-automated.tailae75e.ts.net",
-      "pageId": 1,
-      "shortcut": "CALIB",
-      "category": "selfhost-2",
-      "checkStatus": false,
-      "icon": ""
-    },
-    {
-      "name": "bazarr",
-      "url": "https://bazarr.tailae75e.ts.net",
-      "pageId": 1,
-      "shortcut": "BAZAR",
-      "category": "selfhost-2",
-      "checkStatus": false,
-      "icon": ""
-    },
-    {
-      "name": "adguardbuddy",
-      "url": "https://adguardbuddy.tailae75e.ts.net",
-      "pageId": 1,
-      "shortcut": "ADGBU",
-      "category": "selfhost-2",
-      "checkStatus": false,
-      "icon": ""
-    },
-    {
-      "name": "adguard-2",
-      "url": "https://adguard2.tailae75e.ts.net",
-      "pageId": 1,
-      "shortcut": "ADGUT",
-      "category": "selfhost-2",
-      "checkStatus": false,
-      "icon": ""
-    },
-    {
-      "name": "adguard-1",
-      "url": "https://adguard.tailae75e.ts.net",
-      "pageId": 1,
-      "shortcut": "ADGUA",
+      "shortcut": "JELLS",
       "category": "selfhost-2",
       "checkStatus": false,
       "icon": ""
