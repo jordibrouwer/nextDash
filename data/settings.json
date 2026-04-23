@@ -3,7 +3,7 @@
   "theme": "nerd",
   "openInNewTab": true,
   "columnsPerRow": 5,
-  "fontSize": "xs",
+  "fontSize": "s",
   "showBackgroundDots": true,
   "showTitle": true,
   "showDate": true,
