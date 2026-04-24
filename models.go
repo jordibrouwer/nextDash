@@ -67,6 +67,7 @@ type Settings struct {
 	ShowSearchButton          bool    `json:"showSearchButton"`
 	ShowFindersButton         bool    `json:"showFindersButton"`
 	ShowCommandsButton        bool    `json:"showCommandsButton"`
+	ShowRecentButton          bool    `json:"showRecentButton"`
 	ShowCheatSheetButton      bool    `json:"showCheatSheetButton"`
 	ShowSearchButtonText      bool    `json:"showSearchButtonText"`
 	ShowFindersButtonText     bool    `json:"showFindersButtonText"`
@@ -102,6 +103,7 @@ type Settings struct {
 	AutoDarkMode              bool    `json:"autoDarkMode"`              // Auto-detect dark mode from system
 	ShowSmartRecentCollection bool    `json:"showSmartRecentCollection"` // Show smart recently opened collection
 	ShowSmartStaleCollection  bool    `json:"showSmartStaleCollection"`  // Show smart stale bookmarks collection
+	SmartRecentLimit          int     `json:"smartRecentLimit"`          // Max items in smart recently opened (0 = unlimited)
 	SmartRecentPageIds        []int   `json:"smartRecentPageIds"`        // Page IDs where smart recent is enabled (empty = all)
 	SmartStalePageIds         []int   `json:"smartStalePageIds"`         // Page IDs where smart stale is enabled (empty = all)
 	SearchIndexed             bool    `json:"searchIndexed"`             // Is search index built
@@ -228,6 +230,7 @@ func (fs *FileStore) initializeDefaultFiles() {
 			ShowSearchButton:          true,
 			ShowFindersButton:         false,
 			ShowCommandsButton:        false,
+			ShowRecentButton:          true,
 			ShowCheatSheetButton:      true,
 			ShowSearchButtonText:      true,
 			ShowFindersButtonText:     true,
@@ -261,8 +264,9 @@ func (fs *FileStore) initializeDefaultFiles() {
 			BackgroundOpacity:         1,
 			FontWeight:                "normal",
 			AutoDarkMode:              false,
-			ShowSmartRecentCollection: true,
-			ShowSmartStaleCollection:  true,
+			ShowSmartRecentCollection: false,
+			ShowSmartStaleCollection:  false,
+			SmartRecentLimit:          50,
 			SmartRecentPageIds:        []int{},
 			SmartStalePageIds:         []int{},
 		}
@@ -784,6 +788,7 @@ func (fs *FileStore) GetSettings() Settings {
 			ShowSearchButton:          true,
 			ShowFindersButton:         false,
 			ShowCommandsButton:        false,
+			ShowRecentButton:          true,
 			ShowCheatSheetButton:      true,
 			ShowSearchButtonText:      true,
 			ShowFindersButtonText:     true,
@@ -815,8 +820,9 @@ func (fs *FileStore) GetSettings() Settings {
 			BackgroundOpacity:         1,
 			FontWeight:                "normal",
 			AutoDarkMode:              false,
-			ShowSmartRecentCollection: true,
-			ShowSmartStaleCollection:  true,
+			ShowSmartRecentCollection: false,
+			ShowSmartStaleCollection:  false,
+			SmartRecentLimit:          50,
 			SmartRecentPageIds:        []int{},
 			SmartStalePageIds:         []int{},
 		}
@@ -830,11 +836,17 @@ func (fs *FileStore) GetSettings() Settings {
 		if _, ok := rawSettings["showCheatSheetButton"]; !ok {
 			settings.ShowCheatSheetButton = true
 		}
+		if _, ok := rawSettings["showRecentButton"]; !ok {
+			settings.ShowRecentButton = true
+		}
 		if _, ok := rawSettings["showSmartRecentCollection"]; !ok {
-			settings.ShowSmartRecentCollection = true
+			settings.ShowSmartRecentCollection = false
 		}
 		if _, ok := rawSettings["showSmartStaleCollection"]; !ok {
-			settings.ShowSmartStaleCollection = true
+			settings.ShowSmartStaleCollection = false
+		}
+		if _, ok := rawSettings["smartRecentLimit"]; !ok || settings.SmartRecentLimit < 0 {
+			settings.SmartRecentLimit = 50
 		}
 		if _, ok := rawSettings["smartRecentPageIds"]; !ok || settings.SmartRecentPageIds == nil {
 			settings.SmartRecentPageIds = []int{}

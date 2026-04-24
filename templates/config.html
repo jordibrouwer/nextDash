@@ -207,8 +207,20 @@
                             </div>
                             <div class="checkbox-tree-item checkbox-tree-child">
                                 <span class="tree-symbol">└──</span>
-                                <label for="smart-recent-pages-input">Pages (comma separated, empty = all):</label>
-                                <input type="text" id="smart-recent-pages-input" placeholder="e.g. 1,2,4">
+                                <label for="smart-recent-pages-select">Pages (multi-select, empty = all):</label>
+                                <select id="smart-recent-pages-select" multiple size="4">
+                                </select>
+                            </div>
+                            <div class="checkbox-tree-item checkbox-tree-child">
+                                <span class="tree-symbol">└──</span>
+                                <label for="smart-recent-limit-select">Visible items:</label>
+                                <select id="smart-recent-limit-select">
+                                    <option value="10">10</option>
+                                    <option value="25">25</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                    <option value="0">Unlimited</option>
+                                </select>
                             </div>
                             <div class="checkbox-tree-item">
                                 <label class="checkbox-label">
@@ -218,8 +230,9 @@
                             </div>
                             <div class="checkbox-tree-item checkbox-tree-child">
                                 <span class="tree-symbol">└──</span>
-                                <label for="smart-stale-pages-input">Pages (comma separated, empty = all):</label>
-                                <input type="text" id="smart-stale-pages-input" placeholder="e.g. 1,3">
+                                <label for="smart-stale-pages-select">Pages (multi-select, empty = all):</label>
+                                <select id="smart-stale-pages-select" multiple size="4">
+                                </select>
                             </div>
                             <div class="checkbox-tree-item">
                                 <label class="checkbox-label">
@@ -282,6 +295,12 @@
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="show-cheatsheet-button-checkbox">
                                     <span class="checkbox-text" data-i18n="config.showCheatSheetButton">Show cheatsheet button</span>
+                                </label>
+                            </div>
+                            <div class="checkbox-tree-item">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="show-recent-button-checkbox">
+                                    <span class="checkbox-text" data-i18n="config.showRecentButton">Show recent button</span>
                                 </label>
                             </div>
                             <div class="checkbox-tree-item">

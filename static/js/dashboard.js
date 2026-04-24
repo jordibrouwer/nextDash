@@ -18,6 +18,7 @@ class Dashboard {
             showTitle: true,
             showDate: true,
             showConfigButton: true,
+            showRecentButton: true,
             showCheatSheetButton: true,
             showStatus: false,
             showPing: false,
@@ -37,8 +38,9 @@ class Dashboard {
             backgroundOpacity: 1,
             fontWeight: 'normal',
             autoDarkMode: false,
-            showSmartRecentCollection: true,
-            showSmartStaleCollection: true,
+            showSmartRecentCollection: false,
+            showSmartStaleCollection: false,
+            smartRecentLimit: 50,
             smartRecentPageIds: [],
             smartStalePageIds: []
         };
@@ -130,10 +132,18 @@ class Dashboard {
                 this.settings.smartStalePageIds = [];
             }
             if (typeof this.settings.showSmartRecentCollection === 'undefined') {
-                this.settings.showSmartRecentCollection = true;
+                this.settings.showSmartRecentCollection = false;
             }
             if (typeof this.settings.showSmartStaleCollection === 'undefined') {
-                this.settings.showSmartStaleCollection = true;
+                this.settings.showSmartStaleCollection = false;
+            }
+            if (typeof this.settings.showRecentButton === 'undefined') {
+                this.settings.showRecentButton = true;
+            }
+            if (!Number.isFinite(Number(this.settings.smartRecentLimit)) || Number(this.settings.smartRecentLimit) < 0) {
+                this.settings.smartRecentLimit = 50;
+            } else {
+                this.settings.smartRecentLimit = Number(this.settings.smartRecentLimit);
             }
 
             // Update document title based on custom title settings
@@ -153,10 +163,8 @@ class Dashboard {
             // Load bookmarks and categories for initial page
             await this.loadPageBookmarks(this.currentPageId);
             
-            // If global shortcuts is enabled, load all bookmarks for search
-            if (this.settings.globalShortcuts) {
-                await this.loadAllBookmarks();
-            }
+            // Always load all bookmarks so smart collections can work across pages.
+            await this.loadAllBookmarks();
         } catch (error) {
             this.showErrorNotification('Failed to load dashboard. Please refresh the page.');
         }
@@ -359,6 +367,7 @@ class Dashboard {
         document.body.setAttribute('data-show-search-button', this.settings.showSearchButton);
         document.body.setAttribute('data-show-finders-button', this.settings.showFindersButton);
         document.body.setAttribute('data-show-commands-button', this.settings.showCommandsButton);
+        document.body.setAttribute('data-show-recent-button', this.settings.showRecentButton !== false);
         document.body.setAttribute('data-show-search-button-text', this.settings.showSearchButtonText);
         document.body.setAttribute('data-show-finders-button-text', this.settings.showFindersButtonText);
         document.body.setAttribute('data-show-commands-button-text', this.settings.showCommandsButtonText);
@@ -607,7 +616,7 @@ class Dashboard {
                 return;
             }
 
-            if (e.ctrlKey && e.shiftKey && !e.metaKey && !e.altKey && e.code === 'KeyR') {
+            if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key === '*') {
                 e.preventDefault();
                 this.toggleRecentBookmarksModal();
             }
@@ -676,7 +685,7 @@ class Dashboard {
                     { keys: ':', description: 'Open command mode' },
                     { keys: '?', description: 'Open finders' },
                     { keys: '!', description: 'Open keyboard cheat sheet' },
-                    { keys: 'Ctrl + Shift + R', description: 'Open or close recent bookmarks' },
+                    { keys: '*', description: 'Open or close recent bookmarks' },
                     { keys: 'Ctrl + / or F1', description: 'Open keyboard cheat sheet' },
                     { keys: 'tag:, category:, status:, page:', description: 'Filter search results by metadata' }
                 ]
@@ -770,17 +779,20 @@ class Dashboard {
         }
 
         // Render smart collections first for quick access to derived sets.
-        const smartCollections = this.getSmartCollections(this.bookmarks);
+        const smartCollections = this.getSmartCollections(this.getSmartCollectionSourceBookmarks());
         smartCollections.forEach((collection) => {
             if (!Array.isArray(collection.bookmarks) || collection.bookmarks.length === 0) {
                 return;
             }
+            const collectionBookmarks = collection.id === '__smart_recent__'
+                ? [...collection.bookmarks].sort((a, b) => (b.lastOpened || 0) - (a.lastOpened || 0))
+                : this.sortBookmarks(collection.bookmarks);
             const collectionElement = this.createCategoryElement({
                 id: collection.id,
                 name: collection.name,
                 icon: collection.icon,
                 isSmartCollection: true
-            }, this.sortBookmarks(collection.bookmarks));
+            }, collectionBookmarks);
             container.appendChild(collectionElement);
         });
 
@@ -1067,11 +1079,23 @@ class Dashboard {
         const normalized = Array.isArray(bookmarks) ? bookmarks : [];
         const currentPageId = Number(this.currentPageId);
 
+        const currentPageIndex = this.pages.findIndex((page) => page.id === this.currentPageId);
+        const currentPageNumber = currentPageIndex >= 0 ? (currentPageIndex + 1) : null;
+
         const pageAllowed = (pageIds) => {
             if (!Array.isArray(pageIds) || pageIds.length === 0) {
                 return true;
             }
-            return pageIds.includes(currentPageId);
+            const normalizedIds = pageIds
+                .map((value) => Number(value))
+                .filter((value) => Number.isFinite(value) && value > 0);
+            if (normalizedIds.includes(currentPageId)) {
+                return true;
+            }
+            if (currentPageNumber !== null && normalizedIds.includes(currentPageNumber)) {
+                return true;
+            }
+            return false;
         };
 
         const recentBookmarks = normalized.filter((bookmark) => {
@@ -1087,11 +1111,15 @@ class Dashboard {
         const collections = [];
 
         if (this.settings.showSmartRecentCollection !== false && pageAllowed(this.settings.smartRecentPageIds)) {
+            const configuredLimit = Number(this.settings.smartRecentLimit ?? 50);
+            const effectiveLimit = Number.isFinite(configuredLimit) && configuredLimit > 0
+                ? configuredLimit
+                : null;
             collections.push({
                 id: '__smart_recent__',
                 name: 'Smart: Recently opened',
                 icon: '⚡',
-                bookmarks: recentBookmarks
+                bookmarks: effectiveLimit ? recentBookmarks.slice(0, effectiveLimit) : recentBookmarks
             });
         }
 
@@ -1105,6 +1133,13 @@ class Dashboard {
         }
 
         return collections;
+    }
+
+    getSmartCollectionSourceBookmarks() {
+        if (Array.isArray(this.allBookmarks) && this.allBookmarks.length > 0) {
+            return this.allBookmarks;
+        }
+        return this.bookmarks;
     }
 
     createBookmarkElement(bookmark, categoryId) {
@@ -1325,6 +1360,8 @@ class Dashboard {
 
         bookmark.openCount = Number(bookmark.openCount || 0) + 1;
         bookmark.lastOpened = Date.now();
+        this.syncAllBookmarksMetadata(bookmark);
+        this.refreshSmartRecentAfterOpen(bookmark.url);
 
         if (this.pendingMetadataSave) {
             clearTimeout(this.pendingMetadataSave);
@@ -1342,6 +1379,64 @@ class Dashboard {
                 console.error('Failed to save bookmark metadata:', error);
             });
         }, 1000);
+    }
+
+    syncAllBookmarksMetadata(updatedBookmark) {
+        if (!updatedBookmark || !Array.isArray(this.allBookmarks)) {
+            return;
+        }
+
+        const updatedUrl = (updatedBookmark.url || '').trim();
+        if (!updatedUrl) {
+            return;
+        }
+
+        this.allBookmarks.forEach((bookmark) => {
+            const bookmarkUrl = (bookmark.url || '').trim();
+            if (!bookmarkUrl || bookmarkUrl !== updatedUrl) {
+                return;
+            }
+
+            if (Number(bookmark.pageId) === Number(this.currentPageId)) {
+                bookmark.lastOpened = updatedBookmark.lastOpened;
+                bookmark.openCount = updatedBookmark.openCount;
+            }
+        });
+    }
+
+    refreshSmartRecentAfterOpen(url) {
+        if (!url) {
+            return;
+        }
+
+        const recentCategory = document.querySelector('.category[data-category-id="__smart_recent__"]');
+        if (!recentCategory) {
+            this.renderDashboard();
+            return;
+        }
+
+        const smartCollections = this.getSmartCollections(this.getSmartCollectionSourceBookmarks());
+        const recentCollection = smartCollections.find((collection) => collection.id === '__smart_recent__');
+        if (!recentCollection || !Array.isArray(recentCollection.bookmarks) || recentCollection.bookmarks.length === 0) {
+            recentCategory.remove();
+            return;
+        }
+
+        const bookmarksList = recentCategory.querySelector('.bookmarks-list[data-smart-collection="true"]');
+        if (!bookmarksList) {
+            this.renderDashboard();
+            return;
+        }
+
+        bookmarksList.innerHTML = '';
+        const sortedRecent = [...recentCollection.bookmarks].sort((a, b) => (b.lastOpened || 0) - (a.lastOpened || 0));
+        sortedRecent.forEach((recentBookmark, index) => {
+            const recentElement = this.createBookmarkElement(recentBookmark, recentCollection.id);
+            if (index === 0 && recentBookmark.url === url) {
+                recentElement.classList.add('smart-recent-promote');
+            }
+            bookmarksList.appendChild(recentElement);
+        });
     }
 
     updateTitleVisibility() {

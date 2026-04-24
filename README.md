@@ -32,6 +32,7 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Bookmark Shortcuts** - Type any assigned shortcut (e.g., "yt") to open bookmarks
 - **Fuzzy Search** - Press `/` to search bookmarks by name with fuzzy matching
 - **Finder Search** - Press `?` followed by a finder shortcut to search external sites (e.g., `?g javascript` for Google)
+- **Recent Modal Shortcut** - Press `*` to open or close the recent bookmarks modal
 - **Search Mode Toggle** - Switch between fuzzy-first and shortcut-first search modes
 - **Fuzzy Suggestions** - Show additional bookmark suggestions during search
 - **Search Index** - Optimized bookmark searching with built search index
@@ -183,7 +184,9 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Smart: Recently Opened** - Dynamic collection for bookmarks opened recently
 - **Smart: Stale Bookmarks** - Dynamic collection for stale bookmarks
 - **Per-Collection Toggle** - Enable/disable each smart collection independently
-- **Per-Page Activation** - Control on which page(s) each smart collection appears
+- **Per-Page Activation** - Control on which page(s) each smart collection appears via multi-select
+- **Recent Collection Limit** - Choose 10/25/50/100/unlimited items
+- **Default State** - Smart collections are disabled by default
 
 ### Sorting & Organization
 - **Manual Ordering** - Drag-and-drop to arrange bookmarks
@@ -273,6 +276,7 @@ In the config theme dropdown, `dark` and `light` are always first, followed by c
 | Search Bookmarks | Type shortcut |
 | Fuzzy Search | `/` |
 | Finder Search | `?` + shortcut |
+| Recent Modal | `*` |
 | Help | `h` |
 | Page 1-9 | `1-9` |
 | Next Page | `Shift + Right Arrow` |
@@ -393,7 +397,8 @@ Switch languages in **Config → General Settings → Language**
 - Show/hide date
 - Show/hide page tabs
 - Toggle smart collections (recent/stale)
-- Configure smart collection page scope (comma-separated page IDs)
+- Configure smart collection page scope (multi-select pages)
+- Configure smart recent item limit (10/25/50/100/unlimited)
 - Show/hide bookmark icons
 - Show/hide status indicators
 - Show/hide ping times
@@ -412,6 +417,7 @@ Switch languages in **Config → General Settings → Language**
 - Show/hide Search button
 - Show/hide Finders button
 - Show/hide Commands button
+- Show/hide Recent button
 - Show/hide button text labels
 
 ## 🔒 Data Privacy

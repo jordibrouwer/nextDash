@@ -38,6 +38,7 @@ class ConfigManager {
             showTitle: true,
             showDate: true,
             showCheatSheetButton: true,
+            showRecentButton: true,
             showStatus: false,
             showPing: false,
             skipFastPing: false,
@@ -60,8 +61,9 @@ class ConfigManager {
             backgroundOpacity: 1,
             fontWeight: 'normal',
             autoDarkMode: false,
-            showSmartRecentCollection: true,
-            showSmartStaleCollection: true,
+            showSmartRecentCollection: false,
+            showSmartStaleCollection: false,
+            smartRecentLimit: 50,
             smartRecentPageIds: [],
             smartStalePageIds: []
         };
@@ -117,10 +119,18 @@ class ConfigManager {
                 this.settingsData.showPageTabs = true;
             }
             if (typeof this.settingsData.showSmartRecentCollection === 'undefined') {
-                this.settingsData.showSmartRecentCollection = true;
+                this.settingsData.showSmartRecentCollection = false;
             }
             if (typeof this.settingsData.showSmartStaleCollection === 'undefined') {
-                this.settingsData.showSmartStaleCollection = true;
+                this.settingsData.showSmartStaleCollection = false;
+            }
+            if (typeof this.settingsData.showRecentButton === 'undefined') {
+                this.settingsData.showRecentButton = true;
+            }
+            if (!Number.isFinite(Number(this.settingsData.smartRecentLimit)) || Number(this.settingsData.smartRecentLimit) < 0) {
+                this.settingsData.smartRecentLimit = 50;
+            } else {
+                this.settingsData.smartRecentLimit = Number(this.settingsData.smartRecentLimit);
             }
             if (!Array.isArray(this.settingsData.smartRecentPageIds)) {
                 this.settingsData.smartRecentPageIds = [];
@@ -452,6 +462,9 @@ class ConfigManager {
 
     renderConfig() {
         this.pages.render(this.pagesData, this.generateId.bind(this));
+        if (this.settings && typeof this.settings.populateSmartPageSelectors === 'function') {
+            this.settings.populateSmartPageSelectors(this.pagesData, this.settingsData);
+        }
         
         const pageSelector = document.getElementById('page-selector');
         if (pageSelector && pageSelector.value) {

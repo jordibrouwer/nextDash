@@ -280,6 +280,23 @@ body {
     overflow: visible; /* Allow the selector to be visible */
 }
 
+.bookmark-link.smart-recent-promote {
+    animation: smartRecentPromote 320ms ease-out;
+}
+
+@keyframes smartRecentPromote {
+    0% {
+        transform: translateY(10px);
+        opacity: 0.65;
+        box-shadow: 0 0 0 1px var(--accent-success);
+    }
+    100% {
+        transform: translateY(0);
+        opacity: 1;
+        box-shadow: 0 0 0 0 transparent;
+    }
+}
+
 .bookmark-text {
     flex: 1;
     min-width: 0; /* Allow text to shrink */
@@ -356,6 +373,11 @@ body[data-show-finders-button="false"] .finders-button {
 
 /* Hide commands button when showCommandsButton is false */
 body[data-show-commands-button="false"] .commands-button {
+    display: none;
+}
+
+/* Hide recent button when showRecentButton is false */
+body[data-show-recent-button="false"] .recent-button {
     display: none;
 }
 
