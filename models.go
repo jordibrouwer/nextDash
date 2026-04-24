@@ -161,6 +161,7 @@ type FileStore struct {
 	colorsFile    string
 	pageOrderFile string
 	dataDir       string
+	customThemesMigrationMarker string
 	mutex         sync.RWMutex
 }
 
@@ -170,6 +171,7 @@ func NewStore() Store {
 		colorsFile:    "data/colors.json",
 		pageOrderFile: "data/pages.json",
 		dataDir:       "data",
+		customThemesMigrationMarker: "data/.custom-themes-reset-v1",
 	}
 
 	// Initialize default files if they don't exist
@@ -275,6 +277,27 @@ func (fs *FileStore) initializeDefaultFiles() {
 		os.WriteFile(fs.colorsFile, data, 0644)
 	}
 
+	// One-time migration: remove existing custom themes and reset active custom theme to dark.
+	fs.migrateCustomThemesToUserManaged()
+
+}
+
+func (fs *FileStore) migrateCustomThemesToUserManaged() {
+	if _, err := os.Stat(fs.customThemesMigrationMarker); err == nil {
+		return
+	}
+
+	colors := fs.GetColors()
+	colors.Custom = map[string]ThemeColors{}
+	fs.SaveColors(colors)
+
+	settings := fs.GetSettings()
+	if settings.Theme != "dark" && settings.Theme != "light" {
+		settings.Theme = "dark"
+		fs.SaveSettings(settings)
+	}
+
+	_ = os.WriteFile(fs.customThemesMigrationMarker, []byte("migrated"), 0644)
 }
 
 func (fs *FileStore) ensureDataDir() {
@@ -869,87 +892,7 @@ func getDefaultColors() ColorTheme {
 			AccentWarning:       "#F59E0B",
 			AccentError:         "#EF4444",
 		},
-		Custom: builtinCustomThemes(),
-	}
-}
-
-func builtinCustomThemes() map[string]ThemeColors {
-	return map[string]ThemeColors{
-		"nerd": {
-			Name:                "nerd",
-			TextPrimary:         "#BFFFE5",
-			TextSecondary:       "#7EE6C3",
-			TextTertiary:        "#4DBF9F",
-			BackgroundPrimary:   "#04080F",
-			BackgroundSecondary: "#08111E",
-			BackgroundDots:      "#102137",
-			BackgroundModal:     "rgba(4, 8, 15, 0.98)",
-			BorderPrimary:       "#21C7A8",
-			BorderSecondary:     "#4A90E2",
-			AccentSuccess:       "#22C55E",
-			AccentWarning:       "#F59E0B",
-			AccentError:         "#FB7185",
-		},
-		"midnight": {
-			Name:                "midnight",
-			TextPrimary:         "#F8FAFC",
-			TextSecondary:       "#CBD5E1",
-			TextTertiary:        "#94A3B8",
-			BackgroundPrimary:   "#081120",
-			BackgroundSecondary: "#111B2E",
-			BackgroundDots:      "#1A2740",
-			BackgroundModal:     "rgba(8, 17, 32, 0.97)",
-			BorderPrimary:       "#6D7CFF",
-			BorderSecondary:     "#8B5CF6",
-			AccentSuccess:       "#38BDF8",
-			AccentWarning:       "#FBBF24",
-			AccentError:         "#F87171",
-		},
-		"forest": {
-			Name:                "forest",
-			TextPrimary:         "#F0FFF4",
-			TextSecondary:       "#B7F7D2",
-			TextTertiary:        "#7CDFA5",
-			BackgroundPrimary:   "#071A12",
-			BackgroundSecondary: "#123224",
-			BackgroundDots:      "#1D4F33",
-			BackgroundModal:     "rgba(7, 26, 18, 0.97)",
-			BorderPrimary:       "#16A34A",
-			BorderSecondary:     "#34D399",
-			AccentSuccess:       "#22C55E",
-			AccentWarning:       "#EAB308",
-			AccentError:         "#EF4444",
-		},
-		"sunset": {
-			Name:                "sunset",
-			TextPrimary:         "#FFF8F0",
-			TextSecondary:       "#FFD0A8",
-			TextTertiary:        "#FF9A76",
-			BackgroundPrimary:   "#2A0E2A",
-			BackgroundSecondary: "#4B1546",
-			BackgroundDots:      "#7A1E3A",
-			BackgroundModal:     "rgba(42, 14, 42, 0.97)",
-			BorderPrimary:       "#F97316",
-			BorderSecondary:     "#FB7185",
-			AccentSuccess:       "#F59E0B",
-			AccentWarning:       "#FDBA74",
-			AccentError:         "#F43F5E",
-		},
-		"paper": {
-			Name:                "paper",
-			TextPrimary:         "#1E293B",
-			TextSecondary:       "#475569",
-			TextTertiary:        "#64748B",
-			BackgroundPrimary:   "#FFFDF7",
-			BackgroundSecondary: "#F4EFE6",
-			BackgroundDots:      "#D9D1C7",
-			BackgroundModal:     "rgba(255, 253, 247, 0.98)",
-			BorderPrimary:       "#C8B8A8",
-			BorderSecondary:     "#E5DDD2",
-			AccentSuccess:       "#0F766E",
-			AccentWarning:       "#C2410C",
-			AccentError:         "#B91C1C",
-		},
+		Custom: map[string]ThemeColors{},
 	}
 }
 
@@ -973,12 +916,6 @@ func (fs *FileStore) GetColors() ColorTheme {
 	// Ensure custom themes map is initialized
 	if colors.Custom == nil {
 		colors.Custom = make(map[string]ThemeColors)
-	}
-
-	for themeID, theme := range builtinCustomThemes() {
-		if _, exists := colors.Custom[themeID]; !exists {
-			colors.Custom[themeID] = theme
-		}
 	}
 
 	return colors

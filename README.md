@@ -80,8 +80,7 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 
 ### Theme & Color Customization
 - **Default Themes** - Pre-configured light and dark themes
-- **Curated Custom Themes** - Unique custom themes with stronger visual variety
-- **Theme Preview Labels** - Theme dropdown shows quick style hints (e.g., Light/Dark/Neon)
+- **User-Managed Custom Themes** - Create, apply, save, and delete custom themes from `/colors`
 - **Alphabetical Theme Ordering** - Dark/Light pinned first, custom themes sorted alphabetically
 - **Color Picker** - Customize individual colors:
   - Text colors (primary, secondary, tertiary)
@@ -138,7 +137,7 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Advanced Settings** - Animations, custom favicon, custom font
 - **Device-Specific Settings** - Save settings locally to device/browser
 - **Global Settings** - Save settings to server
-- **Auto-Save** - Settings automatically saved on change
+- **Manual Save Flow** - Use **Save Changes** to persist most configuration updates
 - **Settings Reset** - Reset all settings with confirmation
 
 ### UI Customization
@@ -265,6 +264,9 @@ Access the color customization page by:
 - Navigating to `/colors`
 - Typing `:colors` in the command bar
 
+Custom themes are fully managed here (create/apply/delete).  
+In the config theme dropdown, `dark` and `light` are always first, followed by custom themes in alphabetical order.
+
 ### Keyboard Shortcuts Reference
 | Action | Shortcut |
 |--------|----------|
@@ -287,7 +289,6 @@ All data is stored in JSON files in the `data/` directory:
 |------|---------|
 | `bookmarks-1.json`, `bookmarks-2.json`, etc. | Bookmarks for each page |
 | `pages.json` | Page names and order |
-| `categories.json` | Category configuration |
 | `finders.json` | Finder search engine definitions |
 | `settings.json` | Application settings |
 | `colors.json` | Theme colors and custom themes |
@@ -343,37 +344,41 @@ A Chrome extension is included for quick bookmark saving:
 
 nextDash provides a RESTful API:
 
-### Bookmarks
-- `GET /api/bookmarks/{page}` - Get bookmarks for a page
-- `POST /api/bookmarks/{page}` - Create bookmark
-- `PUT /api/bookmarks/{page}/{id}` - Update bookmark
-- `DELETE /api/bookmarks/{page}/{id}` - Delete bookmark
-
-### Pages
-- `GET /api/pages` - Get all pages
-- `POST /api/pages` - Create page
-- `PUT /api/pages/{id}` - Update page
-- `DELETE /api/pages/{id}` - Delete page
-
-### Other Endpoints
-- `GET /api/settings` - Get application settings
-- `PUT /api/settings` - Update settings
-- `GET /api/colors` - Get theme colors
-- `PUT /api/colors` - Update colors
+### Core API
+- `GET /api/bookmarks?page={id}` - Get bookmarks for a page
+- `POST /api/bookmarks?page={id}` - Save bookmarks for a page
+- `DELETE /api/bookmarks` - Delete a bookmark (request body with page + bookmark)
+- `POST /api/bookmarks/add` - Add a single bookmark
+- `GET /api/pages` / `POST /api/pages` / `DELETE /api/pages/{id}` - Page management
+- `GET /api/categories?page={id}` / `POST /api/categories?page={id}` - Per-page category management
+- `GET /api/finders` / `POST /api/finders` - Finder management
+- `GET /api/settings` / `POST /api/settings` - Settings management
+- `GET /api/colors` / `POST /api/colors` / `POST /api/colors/reset` - Theme color management
+- `GET /api/colors/custom-themes` - Custom theme list for selectors
+- `GET /api/theme.css` - Generated CSS variables for light/dark/custom themes
+- `GET /api/backup` / `POST /api/import` - Backup and restore
+- `POST /api/favicon` / `POST /api/font` / `POST /api/icon` - Asset uploads
 - `GET /api/ping?url=...` - Check if URL is online
 - `GET /health` - Health check endpoint
+
+### Analytics & Search API
+- `GET /api/analytics` - Usage and stale bookmark analytics
+- `GET /api/duplicates` - Duplicate URL detection
+- `POST /api/search-index` - Build search index
+- `GET /api/bookmark-preview?url=...` - Bookmark preview metadata
+- `POST /api/track-open` - Track bookmark open events
 
 ## 🌍 Languages Supported
 
 - 🇬🇧 English
-- �🇱 Dutch
+- 🇳🇱 Dutch
 
 Switch languages in **Config → General Settings → Language**
 
 ## 🛠️ Configuration Options
 
 ### General Settings
-- Theme (Light, Dark, Auto)
+- Theme (Light, Dark, and any custom themes created in `/colors`)
 - Language
 - Columns (1-6)
 - Font Size (XS, S, SM, M, LG, L, XL)
@@ -400,7 +405,6 @@ Switch languages in **Config → General Settings → Language**
 - Enable animations
 - Device-specific settings
 - Global settings
-- Status checking interval
 - Skip fast ping
 
 ### Button Visibility

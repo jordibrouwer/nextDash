@@ -23,9 +23,12 @@ class SearchCommandTheme {
             const response = await fetch('/api/colors/custom-themes');
             if (response.ok) {
                 this.customThemes = await response.json();
+            } else {
+                this.customThemes = {};
             }
         } catch (error) {
             console.error('Error loading custom themes:', error);
+            this.customThemes = {};
         }
 
         // Build complete theme list
@@ -85,13 +88,15 @@ class SearchCommandTheme {
         if (themeId === 'light') return this.language ? this.language.t('dashboard.lightTheme') : 'Light';
         if (themeId === 'dark') return this.language ? this.language.t('dashboard.darkTheme') : 'Dark';
 
-        // Check custom themes
         if (this.customThemes && typeof this.customThemes === 'object') {
             if (Array.isArray(this.customThemes)) {
-                return themeId; // If it's an array, the ID is the name
-            } else {
-                return this.customThemes[themeId] || themeId;
+                return themeId;
             }
+            const themeValue = this.customThemes[themeId];
+            if (themeValue && typeof themeValue === 'object' && themeValue.name) {
+                return themeValue.name;
+            }
+            return themeValue || themeId;
         }
 
         return themeId;
@@ -102,23 +107,22 @@ class SearchCommandTheme {
      * @param {string} theme - The theme name to apply
      */
     async applyTheme(theme) {
+        const safeTheme = theme || 'dark';
+
         // Remove all theme classes
         document.body.classList.remove('dark', 'light');
 
         // Remove any custom theme classes
         const themeIds = Array.isArray(this.customThemes)
             ? this.customThemes
-            : (this.customThemes && typeof this.customThemes === 'object')
-                ? Object.keys(this.customThemes)
-                : [];
-
+            : Object.keys(this.customThemes || {});
         themeIds.forEach(themeId => {
             document.body.classList.remove(themeId);
         });
 
         // Add the new theme class
-        document.body.classList.add(theme);
-        document.body.setAttribute('data-theme', theme);
+        document.body.classList.add(safeTheme);
+        document.body.setAttribute('data-theme', safeTheme);
 
         // Get showBackgroundDots setting
         const deviceSpecific = localStorage.getItem('deviceSpecificSettings') === 'true';
@@ -131,7 +135,7 @@ class SearchCommandTheme {
                     const parsed = JSON.parse(settings);
                     showBackgroundDots = parsed.showBackgroundDots !== false;
                     // Update theme in localStorage
-                    parsed.theme = theme;
+                    parsed.theme = safeTheme;
                     localStorage.setItem('dashboardSettings', JSON.stringify(parsed));
                 } catch (e) {
                     console.error('Error parsing dashboard settings:', e);
@@ -143,7 +147,7 @@ class SearchCommandTheme {
                 const response = await fetch('/api/settings');
                 if (response.ok) {
                     const currentSettings = await response.json();
-                    currentSettings.theme = theme;
+                    currentSettings.theme = safeTheme;
                     showBackgroundDots = currentSettings.showBackgroundDots !== false;
 
                     // Save updated settings to server
@@ -161,7 +165,7 @@ class SearchCommandTheme {
         // Apply theme using ThemeLoader
         if (window.ThemeLoader && typeof window.ThemeLoader.applyTheme === 'function') {
             const currentFontSize = window.ThemeLoader.getFontSize ? window.ThemeLoader.getFontSize() : 'm';
-            window.ThemeLoader.applyTheme(theme, showBackgroundDots, currentFontSize);
+            window.ThemeLoader.applyTheme(safeTheme, showBackgroundDots, currentFontSize);
         } else {
             console.warn('ThemeLoader not available');
         }

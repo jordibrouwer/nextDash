@@ -25,28 +25,24 @@ class ConfigSettings {
             synthwave: 'neon-grid',
             void: 'void-mono'
         };
-        this.themePreviewLabels = {
-            dark: 'Dark',
-            light: 'Light',
-            'aurora-borealis': 'Dark',
-            'blush-daylight': 'Light',
-            'citrus-sky': 'Light',
-            'desert-ember': 'Dark',
-            'forest-moss': 'Dark',
-            iceberg: 'Light',
-            'lavender-mist': 'Light',
-            'midnight-terminal': 'Dark',
-            'neon-grid': 'Neon',
-            'paper-ink': 'Light',
-            'porcelain-blue': 'Light',
-            'sunset-pulse': 'Dark',
-            'void-mono': 'Dark'
-        };
     }
 
     normalizeThemeId(themeId) {
-        if (!themeId) return themeId;
-        return this.legacyThemeMap[themeId] || themeId;
+        if (!themeId) return 'dark';
+
+        const normalized = this.legacyThemeMap[themeId] || themeId;
+        if (normalized === 'light' || normalized === 'dark') {
+            return normalized;
+        }
+
+        const customThemeIds = Array.isArray(this.customThemes)
+            ? this.customThemes
+            : Object.keys(this.customThemes || {});
+        if (customThemeIds.includes(normalized)) {
+            return normalized;
+        }
+
+        return 'dark';
     }
 
     formatPageIds(ids) {
@@ -70,31 +66,22 @@ class ConfigSettings {
         return Array.from(unique).sort((a, b) => a - b);
     }
 
-    formatThemeLabel(themeId, fallbackName) {
-        const baseName = (fallbackName || this.t('config.unnamedTheme')).toString();
-        const preview = this.themePreviewLabels[themeId];
-        if (!preview) {
-            return baseName;
-        }
-        return `${baseName} [${preview}]`;
-    }
-
-    /**
-     * Load available custom themes from API
-     */
     async loadCustomThemes() {
         try {
             const response = await fetch('/api/colors/custom-themes');
             if (response.ok) {
                 this.customThemes = await response.json();
-                // Expose a normalized list of custom theme ids for other modules
                 window.CustomThemeIds = Array.isArray(this.customThemes)
                     ? this.customThemes
                     : Object.keys(this.customThemes || {});
-                this.populateThemeSelect();
+            } else {
+                this.customThemes = {};
+                window.CustomThemeIds = [];
             }
         } catch (error) {
             console.error('Error loading custom themes:', error);
+            this.customThemes = {};
+            window.CustomThemeIds = [];
         }
     }
 
@@ -108,28 +95,33 @@ class ConfigSettings {
 
         const darkOption = document.createElement('option');
         darkOption.value = 'dark';
-        darkOption.textContent = this.formatThemeLabel('dark', this.t('dashboard.darkTheme'));
+        darkOption.textContent = this.t('dashboard.darkTheme');
         themeSelect.appendChild(darkOption);
 
         const lightOption = document.createElement('option');
         lightOption.value = 'light';
-        lightOption.textContent = this.formatThemeLabel('light', this.t('dashboard.lightTheme'));
+        lightOption.textContent = this.t('dashboard.lightTheme');
         themeSelect.appendChild(lightOption);
 
-        if (this.customThemes && typeof this.customThemes === 'object') {
-            const sortedCustomThemes = Object.entries(this.customThemes).sort(([, nameA], [, nameB]) => {
-                const safeNameA = (nameA || this.t('config.unnamedTheme')).toString();
-                const safeNameB = (nameB || this.t('config.unnamedTheme')).toString();
-                return safeNameA.localeCompare(safeNameB, undefined, { sensitivity: 'base' });
-            });
+        const getThemeName = (value) => {
+            if (value && typeof value === 'object' && value.name) {
+                return value.name;
+            }
+            return value;
+        };
 
-            sortedCustomThemes.forEach(([themeId, themeName]) => {
-                const option = document.createElement('option');
-                option.value = themeId;
-                option.textContent = this.formatThemeLabel(themeId, themeName || this.t('config.unnamedTheme'));
-                themeSelect.appendChild(option);
-            });
-        }
+        const sortedCustomThemes = Object.entries(this.customThemes || {}).sort(([, nameA], [, nameB]) => {
+            const safeNameA = (getThemeName(nameA) || this.t('config.unnamedTheme')).toString();
+            const safeNameB = (getThemeName(nameB) || this.t('config.unnamedTheme')).toString();
+            return safeNameA.localeCompare(safeNameB, undefined, { sensitivity: 'base' });
+        });
+
+        sortedCustomThemes.forEach(([themeId, themeName]) => {
+            const option = document.createElement('option');
+            option.value = themeId;
+            option.textContent = (getThemeName(themeName) || this.t('config.unnamedTheme')).toString();
+            themeSelect.appendChild(option);
+        });
 
         if (currentValue) {
             themeSelect.value = currentValue;
@@ -142,8 +134,8 @@ class ConfigSettings {
      * @param {Function} callbacks - Object with callback functions
      */
     async setupListeners(settings, callbacks) {
-        // Load custom themes first
         await this.loadCustomThemes();
+        this.populateThemeSelect();
         
         // Language select
         const languageSelect = document.getElementById('language-select');
@@ -853,17 +845,12 @@ class ConfigSettings {
 
         // Remove all theme classes
         document.body.classList.remove('dark', 'light');
-        
+
         // Remove any custom theme classes
         const themeIds = Array.isArray(this.customThemes)
             ? this.customThemes
-            : (this.customThemes && typeof this.customThemes === 'object')
-                ? Object.keys(this.customThemes)
-                : [];
-
-        themeIds.forEach(themeId => {
-            document.body.classList.remove(themeId);
-        });
+            : Object.keys(this.customThemes || {});
+        themeIds.forEach(themeId => document.body.classList.remove(themeId));
         
         // Add the new theme class
         document.body.classList.add(normalizedTheme);
