@@ -333,6 +333,15 @@ a.bookmark-open:hover {
     padding: 0.2rem 0.45rem;
     border-radius: 4px;
     cursor: pointer;
+    opacity: 0.2;
+    transition: opacity 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.bookmark-link:hover .bookmark-inline-edit-btn,
+.bookmark-link:focus-within .bookmark-inline-edit-btn,
+.bookmark-inline-edit-btn:hover,
+.bookmark-inline-edit-btn:focus-visible {
+    opacity: 1;
 }
 
 .bookmark-inline-edit-btn:hover {
@@ -424,18 +433,32 @@ a.bookmark-open:hover {
 
 .bookmark-drag-handle {
     cursor: grab;
-    opacity: 0.45;
+    opacity: 0.12;
     margin-right: 0.5rem;
     flex-shrink: 0;
     user-select: none;
+    transition: opacity 0.15s ease;
 }
 
-.bookmark-link:hover .bookmark-drag-handle {
-    opacity: 0.9;
+.bookmark-link:hover .bookmark-drag-handle,
+.bookmark-link:focus-within .bookmark-drag-handle {
+    opacity: 0.85;
 }
 
 .bookmark-link.is-draggable .bookmark-drag-handle {
     cursor: grabbing;
+    opacity: 1;
+}
+
+/* Touch: no hover — keep controls slightly visible */
+@media (hover: none) {
+    .bookmark-drag-handle {
+        opacity: 0.32;
+    }
+
+    .bookmark-inline-edit-btn {
+        opacity: 0.42;
+    }
 }
 
 .bookmarks-list.reorder-container .bookmark-link.is-draggable {
