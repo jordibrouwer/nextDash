@@ -80,7 +80,9 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 
 ### Theme & Color Customization
 - **Default Themes** - Pre-configured light and dark themes
-- **Unlimited Custom Themes** - Create and save unlimited theme variants
+- **Curated Custom Themes** - Unique custom themes with stronger visual variety
+- **Theme Preview Labels** - Theme dropdown shows quick style hints (e.g., Light/Dark/Neon)
+- **Alphabetical Theme Ordering** - Dark/Light pinned first, custom themes sorted alphabetically
 - **Color Picker** - Customize individual colors:
   - Text colors (primary, secondary, tertiary)
   - Background colors
@@ -174,6 +176,15 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Last Opened Time** - See when bookmarks were last accessed
 - **Duplicate Detection** - Find duplicate bookmarks
 - **Bookmark Preview** - Extract and display metadata from bookmarks
+- **Stale Bookmark Detector** - Detect bookmarks never opened or not opened for 30+ days
+- **Quick Archive Action** - Move stale bookmarks to an Archive category in one click
+- **Collapsible Insights Panel** - Insights starts compact and expands on demand
+
+### Smart Collections
+- **Smart: Recently Opened** - Dynamic collection for bookmarks opened recently
+- **Smart: Stale Bookmarks** - Dynamic collection for stale bookmarks
+- **Per-Collection Toggle** - Enable/disable each smart collection independently
+- **Per-Page Activation** - Control on which page(s) each smart collection appears
 
 ### Sorting & Organization
 - **Manual Ordering** - Drag-and-drop to arrange bookmarks
@@ -376,6 +387,8 @@ Switch languages in **Config → General Settings → Language**
 - Show/hide page title
 - Show/hide date
 - Show/hide page tabs
+- Toggle smart collections (recent/stale)
+- Configure smart collection page scope (comma-separated page IDs)
 - Show/hide bookmark icons
 - Show/hide status indicators
 - Show/hide ping times
