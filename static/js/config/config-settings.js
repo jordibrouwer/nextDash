@@ -113,6 +113,11 @@ class ConfigSettings {
             pages,
             settings?.smartStalePageIds || []
         );
+        this.populateSmartPageSelector(
+            document.getElementById('smart-most-used-pages-select'),
+            pages,
+            settings?.smartMostUsedPageIds || []
+        );
     }
 
     async loadCustomThemes() {
@@ -805,6 +810,14 @@ class ConfigSettings {
             });
         }
 
+        const showSmartMostUsedCollectionCheckbox = document.getElementById('show-smart-most-used-collection-checkbox');
+        if (showSmartMostUsedCollectionCheckbox) {
+            showSmartMostUsedCollectionCheckbox.checked = settings.showSmartMostUsedCollection === true;
+            showSmartMostUsedCollectionCheckbox.addEventListener('change', (e) => {
+                settings.showSmartMostUsedCollection = e.target.checked;
+            });
+        }
+
         const smartRecentPagesSelect = document.getElementById('smart-recent-pages-select');
         if (smartRecentPagesSelect) {
             smartRecentPagesSelect.addEventListener('change', () => {
@@ -827,6 +840,24 @@ class ConfigSettings {
         if (smartStalePagesSelect) {
             smartStalePagesSelect.addEventListener('change', () => {
                 settings.smartStalePageIds = this.getSelectedPageIds(smartStalePagesSelect);
+            });
+        }
+
+        const smartMostUsedPagesSelect = document.getElementById('smart-most-used-pages-select');
+        if (smartMostUsedPagesSelect) {
+            smartMostUsedPagesSelect.addEventListener('change', () => {
+                settings.smartMostUsedPageIds = this.getSelectedPageIds(smartMostUsedPagesSelect);
+            });
+        }
+
+        const smartMostUsedLimitSelect = document.getElementById('smart-most-used-limit-select');
+        if (smartMostUsedLimitSelect) {
+            const currentLimit = Number(settings.smartMostUsedLimit ?? 25);
+            const normalizedLimit = Number.isFinite(currentLimit) && currentLimit >= 0 ? currentLimit : 25;
+            smartMostUsedLimitSelect.value = normalizedLimit === 0 ? '0' : String(normalizedLimit);
+            smartMostUsedLimitSelect.addEventListener('change', (e) => {
+                const value = Number(e.target.value);
+                settings.smartMostUsedLimit = Number.isFinite(value) && value >= 0 ? value : 25;
             });
         }
     }
@@ -870,9 +901,12 @@ class ConfigSettings {
         const keepSearchOpenWhenEmptyCheckbox = document.getElementById('keep-search-open-when-empty-checkbox');
         const showSmartRecentCollectionCheckbox = document.getElementById('show-smart-recent-collection-checkbox');
         const showSmartStaleCollectionCheckbox = document.getElementById('show-smart-stale-collection-checkbox');
+        const showSmartMostUsedCollectionCheckbox = document.getElementById('show-smart-most-used-collection-checkbox');
         const smartRecentPagesSelect = document.getElementById('smart-recent-pages-select');
         const smartStalePagesSelect = document.getElementById('smart-stale-pages-select');
+        const smartMostUsedPagesSelect = document.getElementById('smart-most-used-pages-select');
         const smartRecentLimitSelect = document.getElementById('smart-recent-limit-select');
+        const smartMostUsedLimitSelect = document.getElementById('smart-most-used-limit-select');
 
         if (themeSelect) settings.theme = themeSelect.value;
         if (columnsInput) settings.columnsPerRow = parseInt(columnsInput.value);
@@ -912,11 +946,17 @@ class ConfigSettings {
         if (keepSearchOpenWhenEmptyCheckbox) settings.keepSearchOpenWhenEmpty = keepSearchOpenWhenEmptyCheckbox.checked;
         if (showSmartRecentCollectionCheckbox) settings.showSmartRecentCollection = showSmartRecentCollectionCheckbox.checked;
         if (showSmartStaleCollectionCheckbox) settings.showSmartStaleCollection = showSmartStaleCollectionCheckbox.checked;
+        if (showSmartMostUsedCollectionCheckbox) settings.showSmartMostUsedCollection = showSmartMostUsedCollectionCheckbox.checked;
         if (smartRecentPagesSelect) settings.smartRecentPageIds = this.getSelectedPageIds(smartRecentPagesSelect);
         if (smartStalePagesSelect) settings.smartStalePageIds = this.getSelectedPageIds(smartStalePagesSelect);
+        if (smartMostUsedPagesSelect) settings.smartMostUsedPageIds = this.getSelectedPageIds(smartMostUsedPagesSelect);
         if (smartRecentLimitSelect) {
             const parsedLimit = Number(smartRecentLimitSelect.value);
             settings.smartRecentLimit = Number.isFinite(parsedLimit) && parsedLimit >= 0 ? parsedLimit : 50;
+        }
+        if (smartMostUsedLimitSelect) {
+            const parsedLimit = Number(smartMostUsedLimitSelect.value);
+            settings.smartMostUsedLimit = Number.isFinite(parsedLimit) && parsedLimit >= 0 ? parsedLimit : 25;
         }
         const showIconsCheckbox = document.getElementById('show-icons-checkbox');
         if (showIconsCheckbox) settings.showIcons = showIconsCheckbox.checked;
@@ -1170,9 +1210,12 @@ class ConfigSettings {
             autoDarkMode: false,
             showSmartRecentCollection: false,
             showSmartStaleCollection: false,
+            showSmartMostUsedCollection: false,
             smartRecentLimit: 50,
+            smartMostUsedLimit: 25,
             smartRecentPageIds: [],
-            smartStalePageIds: []
+            smartStalePageIds: [],
+            smartMostUsedPageIds: []
         };
     }
 

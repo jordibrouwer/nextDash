@@ -40,9 +40,12 @@ class Dashboard {
             autoDarkMode: false,
             showSmartRecentCollection: false,
             showSmartStaleCollection: false,
+            showSmartMostUsedCollection: false,
             smartRecentLimit: 50,
+            smartMostUsedLimit: 25,
             smartRecentPageIds: [],
-            smartStalePageIds: []
+            smartStalePageIds: [],
+            smartMostUsedPageIds: []
         };
         this.searchComponent = null;
         this.statusMonitor = null;
@@ -132,11 +135,17 @@ class Dashboard {
             if (!Array.isArray(this.settings.smartStalePageIds)) {
                 this.settings.smartStalePageIds = [];
             }
+            if (!Array.isArray(this.settings.smartMostUsedPageIds)) {
+                this.settings.smartMostUsedPageIds = [];
+            }
             if (typeof this.settings.showSmartRecentCollection === 'undefined') {
                 this.settings.showSmartRecentCollection = false;
             }
             if (typeof this.settings.showSmartStaleCollection === 'undefined') {
                 this.settings.showSmartStaleCollection = false;
+            }
+            if (typeof this.settings.showSmartMostUsedCollection === 'undefined') {
+                this.settings.showSmartMostUsedCollection = false;
             }
             if (typeof this.settings.showRecentButton === 'undefined') {
                 this.settings.showRecentButton = true;
@@ -145,6 +154,11 @@ class Dashboard {
                 this.settings.smartRecentLimit = 50;
             } else {
                 this.settings.smartRecentLimit = Number(this.settings.smartRecentLimit);
+            }
+            if (!Number.isFinite(Number(this.settings.smartMostUsedLimit)) || Number(this.settings.smartMostUsedLimit) < 0) {
+                this.settings.smartMostUsedLimit = 25;
+            } else {
+                this.settings.smartMostUsedLimit = Number(this.settings.smartMostUsedLimit);
             }
 
             // Update document title based on custom title settings
@@ -1128,6 +1142,9 @@ class Dashboard {
             const lastOpened = Number(bookmark.lastOpened || 0);
             return lastOpened === 0 || (now - lastOpened) > staleWindowMs;
         });
+        const mostUsedBookmarks = normalized
+            .filter((bookmark) => Number(bookmark.openCount || 0) > 0)
+            .sort((a, b) => Number(b.openCount || 0) - Number(a.openCount || 0));
 
         const collections = [];
 
@@ -1150,6 +1167,19 @@ class Dashboard {
                 name: 'Smart: Stale bookmarks',
                 icon: '⌛',
                 bookmarks: staleBookmarks
+            });
+        }
+
+        if (this.settings.showSmartMostUsedCollection === true && pageAllowed(this.settings.smartMostUsedPageIds)) {
+            const configuredLimit = Number(this.settings.smartMostUsedLimit ?? 25);
+            const effectiveLimit = Number.isFinite(configuredLimit) && configuredLimit > 0
+                ? configuredLimit
+                : null;
+            collections.push({
+                id: '__smart_most_used__',
+                name: 'Smart: Most used',
+                icon: '📈',
+                bookmarks: effectiveLimit ? mostUsedBookmarks.slice(0, effectiveLimit) : mostUsedBookmarks
             });
         }
 
@@ -1661,7 +1691,7 @@ class Dashboard {
         bookmark.openCount = Number(bookmark.openCount || 0) + 1;
         bookmark.lastOpened = Date.now();
         this.syncAllBookmarksMetadata(bookmark);
-        this.refreshSmartRecentAfterOpen(bookmark.url);
+        this.refreshSmartCollectionsAfterOpen(bookmark.url);
 
         if (this.pendingMetadataSave) {
             clearTimeout(this.pendingMetadataSave);
@@ -1704,39 +1734,13 @@ class Dashboard {
         });
     }
 
-    refreshSmartRecentAfterOpen(url) {
+    refreshSmartCollectionsAfterOpen(url) {
         if (!url) {
             return;
         }
 
-        const recentCategory = document.querySelector('.category[data-category-id="__smart_recent__"]');
-        if (!recentCategory) {
-            this.renderDashboard();
-            return;
-        }
-
-        const smartCollections = this.getSmartCollections(this.getSmartCollectionSourceBookmarks());
-        const recentCollection = smartCollections.find((collection) => collection.id === '__smart_recent__');
-        if (!recentCollection || !Array.isArray(recentCollection.bookmarks) || recentCollection.bookmarks.length === 0) {
-            recentCategory.remove();
-            return;
-        }
-
-        const bookmarksList = recentCategory.querySelector('.bookmarks-list[data-smart-collection="true"]');
-        if (!bookmarksList) {
-            this.renderDashboard();
-            return;
-        }
-
-        bookmarksList.innerHTML = '';
-        const sortedRecent = [...recentCollection.bookmarks].sort((a, b) => (b.lastOpened || 0) - (a.lastOpened || 0));
-        sortedRecent.forEach((recentBookmark, index) => {
-            const recentElement = this.createBookmarkElement(recentBookmark, recentCollection.id, false);
-            if (index === 0 && recentBookmark.url === url) {
-                recentElement.classList.add('smart-recent-promote');
-            }
-            bookmarksList.appendChild(recentElement);
-        });
+        // Multiple smart collections can change when openCount/lastOpened updates.
+        this.renderDashboard();
     }
 
     updateTitleVisibility() {

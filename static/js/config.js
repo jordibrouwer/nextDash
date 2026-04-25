@@ -63,11 +63,17 @@ class ConfigManager {
             autoDarkMode: false,
             showSmartRecentCollection: false,
             showSmartStaleCollection: false,
+            showSmartMostUsedCollection: false,
             smartRecentLimit: 50,
+            smartMostUsedLimit: 25,
             smartRecentPageIds: [],
-            smartStalePageIds: []
+            smartStalePageIds: [],
+            smartMostUsedPageIds: []
         };
         this.deviceSpecific = false;
+        this.isDirty = false;
+        this.undoSnapshot = null;
+        this.suppressDirtyTracking = false;
 
         this.init();
     }
@@ -137,6 +143,17 @@ class ConfigManager {
             }
             if (!Array.isArray(this.settingsData.smartStalePageIds)) {
                 this.settingsData.smartStalePageIds = [];
+            }
+            if (!Array.isArray(this.settingsData.smartMostUsedPageIds)) {
+                this.settingsData.smartMostUsedPageIds = [];
+            }
+            if (typeof this.settingsData.showSmartMostUsedCollection === 'undefined') {
+                this.settingsData.showSmartMostUsedCollection = false;
+            }
+            if (!Number.isFinite(Number(this.settingsData.smartMostUsedLimit)) || Number(this.settingsData.smartMostUsedLimit) < 0) {
+                this.settingsData.smartMostUsedLimit = 25;
+            } else {
+                this.settingsData.smartMostUsedLimit = Number(this.settingsData.smartMostUsedLimit);
             }
             this.currentPageId = settings.currentPage || 1;
             
@@ -276,9 +293,12 @@ class ConfigManager {
         const bulkDeleteBookmarksBtn = document.getElementById('bulk-delete-bookmarks-btn');
         if (bulkDeleteBookmarksBtn) {
             bulkDeleteBookmarksBtn.addEventListener('click', async () => {
+                const undoSnapshot = this.captureUndoSnapshot();
                 const removed = await this.bookmarks.bulkDelete(this.bookmarksData);
                 if (removed) {
                     this.refreshBookmarksList();
+                    this.showUndoNotification('Bookmarks removed.', undoSnapshot);
+                    this.markDirty();
                 }
             });
         }
@@ -289,6 +309,7 @@ class ConfigManager {
             bulkApplyCategoryBtn.addEventListener('click', () => {
                 this.bookmarks.bulkUpdateCategory(this.bookmarksData, bulkCategorySelect.value);
                 this.refreshBookmarksList();
+                this.markDirty();
             });
         }
 
@@ -297,6 +318,7 @@ class ConfigManager {
             bulkTogglePinBtn.addEventListener('click', () => {
                 this.bookmarks.bulkTogglePin(this.bookmarksData);
                 this.refreshBookmarksList();
+                this.markDirty();
             });
         }
 
@@ -329,6 +351,107 @@ class ConfigManager {
 
         const resetBtn = document.getElementById('reset-btn');
         if (resetBtn) resetBtn.addEventListener('click', () => this.resetToDefaults());
+        this.setupDirtyTracking();
+    }
+
+    setupDirtyTracking() {
+        const root = document.querySelector('.config-main');
+        if (!root) {
+            return;
+        }
+        const mark = () => {
+            this.markDirty();
+            this.validateBookmarkConflicts({ showToast: false });
+        };
+        const shouldIgnoreTarget = (target) => {
+            if (!target || !target.id) return false;
+            return target.id === 'page-selector' || target.id === 'categories-page-selector' || target.id === 'bookmarks-category-filter';
+        };
+        root.addEventListener('input', (event) => {
+            if (this.suppressDirtyTracking) return;
+            if (event.target && event.target.closest('#notification')) return;
+            if (shouldIgnoreTarget(event.target)) return;
+            mark();
+        });
+        root.addEventListener('change', (event) => {
+            if (this.suppressDirtyTracking) return;
+            if (event.target && event.target.closest('#notification')) return;
+            if (shouldIgnoreTarget(event.target)) return;
+            mark();
+        });
+        window.addEventListener('beforeunload', (event) => {
+            if (!this.isDirty) return;
+            event.preventDefault();
+            event.returnValue = '';
+        });
+        this.setDirtyState(false);
+    }
+
+    setDirtyState(isDirty) {
+        this.isDirty = isDirty === true;
+        const saveBtn = document.getElementById('save-btn');
+        const badge = document.getElementById('unsaved-indicator');
+        if (saveBtn) {
+            saveBtn.classList.toggle('has-unsaved', this.isDirty);
+        }
+        if (badge) {
+            badge.classList.toggle('is-visible', this.isDirty);
+        }
+    }
+
+    markDirty() {
+        this.setDirtyState(true);
+    }
+
+    clearDirty() {
+        this.setDirtyState(false);
+    }
+
+    captureUndoSnapshot() {
+        return {
+            bookmarksData: JSON.parse(JSON.stringify(this.bookmarksData || [])),
+            categoriesData: JSON.parse(JSON.stringify(this.categoriesData || [])),
+            findersData: JSON.parse(JSON.stringify(this.findersData || [])),
+            settingsData: JSON.parse(JSON.stringify(this.settingsData || {})),
+            pagesData: JSON.parse(JSON.stringify(this.pagesData || [])),
+            currentPageId: this.currentPageId,
+            currentCategoriesPageId: this.currentCategoriesPageId,
+            currentBookmarksCategoryFilter: this.currentBookmarksCategoryFilter
+        };
+    }
+
+    restoreUndoSnapshot(snapshot) {
+        if (!snapshot) return;
+        this.suppressDirtyTracking = true;
+        this.bookmarksData = snapshot.bookmarksData;
+        this.categoriesData = snapshot.categoriesData;
+        this.findersData = snapshot.findersData;
+        this.settingsData = snapshot.settingsData;
+        this.pagesData = snapshot.pagesData;
+        this.currentPageId = snapshot.currentPageId;
+        this.currentCategoriesPageId = snapshot.currentCategoriesPageId;
+        this.currentBookmarksCategoryFilter = snapshot.currentBookmarksCategoryFilter || '__all__';
+        this.renderConfig();
+        this.initReordering();
+        this.refreshBookmarksFilterOptions();
+        this.refreshBookmarksList();
+        this.suppressDirtyTracking = false;
+        this.markDirty();
+    }
+
+    showUndoNotification(message, snapshot = null) {
+        const activeSnapshot = snapshot || this.captureUndoSnapshot();
+        if (!activeSnapshot) return;
+        this.undoSnapshot = activeSnapshot;
+        this.ui.showNotification(message, 'warning', {
+            actionLabel: 'Undo',
+            durationMs: 8000,
+            onAction: () => {
+                this.restoreUndoSnapshot(this.undoSnapshot);
+                this.undoSnapshot = null;
+                this.ui.showNotification('Undone.', 'success');
+            }
+        });
     }
 
     setupCascadingCheckboxes() {
@@ -616,12 +739,14 @@ class ConfigManager {
         this.categories.initReorder(this.categoriesData, (newCategories) => {
             this.categoriesData = newCategories;
         });
+        this.markDirty();
     }
 
     addBookmark() {
         const newBookmark = this.bookmarks.add(this.bookmarksData);
         this.warnDuplicateUrl(newBookmark.url);
         this.refreshBookmarksList();
+        this.markDirty();
     }
 
     addFinder() {
@@ -630,6 +755,7 @@ class ConfigManager {
         this.finders.initReorder(this.findersData, (newFinders) => {
             this.findersData = newFinders;
         });
+        this.markDirty();
     }
 
     async removePage(index) {
@@ -698,6 +824,7 @@ class ConfigManager {
         const category = this.categoriesData[index];
         if (!category) return;
         
+        const undoSnapshot = this.captureUndoSnapshot();
         const removed = await this.categories.remove(this.categoriesData, index);
         if (removed) {
             if (this.currentPageId === this.currentCategoriesPageId) {
@@ -712,24 +839,31 @@ class ConfigManager {
             this.categories.initReorder(this.categoriesData, (newCategories) => {
                 this.categoriesData = newCategories;
             });
-            this.ui.showNotification(this.language.t('config.categoryRemoved'), 'success');
+            this.showUndoNotification('Category removed.', undoSnapshot);
+            this.markDirty();
         }
     }
 
     async removeBookmark(index) {
+        const undoSnapshot = this.captureUndoSnapshot();
         const removed = await this.bookmarks.remove(this.bookmarksData, index);
         if (removed) {
             this.refreshBookmarksList();
+            this.showUndoNotification('Bookmark removed.', undoSnapshot);
+            this.markDirty();
         }
     }
 
     async removeFinder(index) {
+        const undoSnapshot = this.captureUndoSnapshot();
         const removed = await this.finders.remove(this.findersData, index);
         if (removed) {
             this.finders.render(this.findersData);
             this.finders.initReorder(this.findersData, (newFinders) => {
                 this.findersData = newFinders;
             });
+            this.showUndoNotification('Finder removed.', undoSnapshot);
+            this.markDirty();
         }
     }
 
@@ -852,10 +986,12 @@ class ConfigManager {
         this.bookmarks.render(this.bookmarksData, this.bookmarksPageCategories, {
             filterCategory: this.currentBookmarksCategoryFilter
         });
+        this.validateBookmarkConflicts({ showToast: false });
 
         this.bookmarks.initReorder(this.bookmarksData, (newBookmarks, meta = {}) => {
             this.bookmarksData = newBookmarks;
             this.refreshBookmarksList(meta);
+            this.markDirty();
         }, {
             filterCategory: this.currentBookmarksCategoryFilter
         });
@@ -894,6 +1030,10 @@ class ConfigManager {
     }
 
     async saveChanges() {
+        const conflicts = this.validateBookmarkConflicts({ showToast: true });
+        if (conflicts.hasConflicts) {
+            return;
+        }
         this.ui.showNotification(this.language.t('config.savingChanges'), 'info');
 
         try {
@@ -932,6 +1072,8 @@ class ConfigManager {
             } else {
                 this.ui.showNotification(this.language.t('config.configSaved'), 'success');
             }
+            this.clearDirty();
+            this.undoSnapshot = null;
         } catch (error) {
             console.error('Error saving configuration:', error);
             this.ui.showNotification(this.language.t('config.errorSavingConfig'), 'error');
@@ -972,6 +1114,69 @@ class ConfigManager {
         return Array.from(duplicates);
     }
 
+    validateBookmarkConflicts(options = {}) {
+        const urlMap = new Map();
+        const shortcutMap = new Map();
+        const normalizedUrlByIndex = new Map();
+        const normalizedShortcutByIndex = new Map();
+
+        this.bookmarksData.forEach((bookmark, index) => {
+            const normalizedUrl = (bookmark?.url || '').trim().toLowerCase();
+            const normalizedShortcut = (bookmark?.shortcut || '').trim().toUpperCase();
+            normalizedUrlByIndex.set(index, normalizedUrl);
+            normalizedShortcutByIndex.set(index, normalizedShortcut);
+
+            if (normalizedUrl) {
+                const list = urlMap.get(normalizedUrl) || [];
+                list.push(index);
+                urlMap.set(normalizedUrl, list);
+            }
+            if (normalizedShortcut) {
+                const list = shortcutMap.get(normalizedShortcut) || [];
+                list.push(index);
+                shortcutMap.set(normalizedShortcut, list);
+            }
+        });
+
+        const duplicateUrlIndexes = new Set();
+        const duplicateShortcutIndexes = new Set();
+        urlMap.forEach((indexes) => {
+            if (indexes.length > 1) {
+                indexes.forEach((idx) => duplicateUrlIndexes.add(idx));
+            }
+        });
+        shortcutMap.forEach((indexes) => {
+            if (indexes.length > 1) {
+                indexes.forEach((idx) => duplicateShortcutIndexes.add(idx));
+            }
+        });
+
+        this.bookmarksData.forEach((_, index) => {
+            const urlInput = document.getElementById(`bookmark-url-${index}`);
+            const shortcutInput = document.getElementById(`bookmark-shortcut-${index}`);
+            if (urlInput) {
+                urlInput.classList.toggle('field-conflict', duplicateUrlIndexes.has(index));
+            }
+            if (shortcutInput) {
+                shortcutInput.classList.toggle('field-conflict', duplicateShortcutIndexes.has(index));
+            }
+        });
+
+        const hasConflicts = duplicateUrlIndexes.size > 0 || duplicateShortcutIndexes.size > 0;
+        if (hasConflicts && options.showToast) {
+            this.ui.showNotification(
+                `Fix conflicts first: ${duplicateUrlIndexes.size} duplicate URL(s), ${duplicateShortcutIndexes.size} duplicate shortcut(s).`,
+                'warning'
+            );
+        }
+
+        return {
+            hasConflicts,
+            duplicateUrlCount: duplicateUrlIndexes.size,
+            duplicateShortcutCount: duplicateShortcutIndexes.size
+        };
+    }
+
     async resetToDefaults() {
         const confirmed = await window.AppModal.danger({
             title: this.language.t('config.resetSettingsTitle'),
@@ -981,6 +1186,7 @@ class ConfigManager {
         });
         
         if (!confirmed) return;
+        const undoSnapshot = this.captureUndoSnapshot();
         this.bookmarksData = [
             { name: 'GitHub', url: 'https://github.com', shortcut: 'G', category: 'development' },
             { name: 'GitHub Issues', url: 'https://github.com/issues', shortcut: 'GI', category: 'development' },
@@ -1023,6 +1229,8 @@ class ConfigManager {
         if (smartRecentCheckbox) smartRecentCheckbox.checked = this.settingsData.showSmartRecentCollection;
         const smartStaleCheckbox = document.getElementById('show-smart-stale-collection-checkbox');
         if (smartStaleCheckbox) smartStaleCheckbox.checked = this.settingsData.showSmartStaleCollection;
+        const smartMostUsedCheckbox = document.getElementById('show-smart-most-used-collection-checkbox');
+        if (smartMostUsedCheckbox) smartMostUsedCheckbox.checked = this.settingsData.showSmartMostUsedCollection === true;
         const smartRecentInput = document.getElementById('smart-recent-pages-input');
         if (smartRecentInput) smartRecentInput.value = '';
         const smartStaleInput = document.getElementById('smart-stale-pages-input');
@@ -1032,7 +1240,8 @@ class ConfigManager {
         this.setupDOM();
         this.renderConfig();
         this.initReordering();
-        this.ui.showNotification(this.language.t('config.settingsReset'), 'success');
+        this.showUndoNotification('Settings reset to defaults.', undoSnapshot);
+        this.markDirty();
     }
 
     generateId(text) {

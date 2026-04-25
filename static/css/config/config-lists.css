@@ -108,6 +108,11 @@
     border-color: var(--text-secondary);
 }
 
+.bookmark-item input.field-conflict {
+    border-color: var(--accent-warning);
+    box-shadow: inset 0 0 0 1px var(--accent-warning);
+}
+
 .bookmark-item input[name="shortcut"],
 .finder-item input[name="shortcut"] {
     flex: 0 0 100px;

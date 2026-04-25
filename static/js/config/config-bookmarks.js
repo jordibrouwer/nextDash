@@ -329,9 +329,9 @@ class ConfigBookmarks {
 
                 if (field === 'url') {
                     const duplicate = bookmarks.some((otherBookmark, otherIndex) => otherIndex !== fullIndex && (otherBookmark.url || '').trim().toLowerCase() === e.target.value.trim().toLowerCase());
-                    e.target.classList.toggle('duplicate-url', duplicate);
-                    if (duplicate && window.configManager && window.configManager.ui) {
-                        window.configManager.ui.showNotification('Duplicate URL detected.', 'warning');
+                    e.target.classList.toggle('field-conflict', duplicate);
+                    if (window.configManager && typeof window.configManager.validateBookmarkConflicts === 'function') {
+                        window.configManager.validateBookmarkConflicts({ showToast: false });
                     }
                 }
             });

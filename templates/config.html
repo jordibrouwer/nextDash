@@ -45,6 +45,7 @@
                 <div class="config-actions-top">
                     <div class="config-actions-buttons">
                         <button id="save-btn" class="btn btn-success" data-i18n="config.saveChanges">Save Changes</button>
+                        <span id="unsaved-indicator" class="unsaved-indicator" aria-live="polite">Unsaved changes</span>
                         <button id="reset-btn" class="btn btn-danger" data-i18n="config.resetToDefaults">Reset to Defaults</button>
                     </div>
                     <div class="nav-links">
@@ -234,6 +235,29 @@
                                 <span class="tree-symbol">└──</span>
                                 <label for="smart-stale-pages-select">Pages (multi-select, empty = all):</label>
                                 <select id="smart-stale-pages-select" multiple size="4">
+                                </select>
+                            </div>
+                            <div class="checkbox-tree-item">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="show-smart-most-used-collection-checkbox">
+                                    <span class="checkbox-text">Show Smart: Most used</span>
+                                </label>
+                            </div>
+                            <div class="checkbox-tree-item checkbox-tree-child">
+                                <span class="tree-symbol">└──</span>
+                                <label for="smart-most-used-pages-select">Pages (multi-select, empty = all):</label>
+                                <select id="smart-most-used-pages-select" multiple size="4">
+                                </select>
+                            </div>
+                            <div class="checkbox-tree-item checkbox-tree-child">
+                                <span class="tree-symbol">└──</span>
+                                <label for="smart-most-used-limit-select">Visible items:</label>
+                                <select id="smart-most-used-limit-select">
+                                    <option value="10">10</option>
+                                    <option value="25">25</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                    <option value="0">Unlimited</option>
                                 </select>
                             </div>
                             <div class="checkbox-tree-item">
@@ -606,6 +630,7 @@
 
     <div id="notification" class="notification">
         <span id="notification-message"></span>
+        <button id="notification-action" type="button" class="notification-action" hidden></button>
     </div>
 
     <script src="/static/js/modal.js"></script>

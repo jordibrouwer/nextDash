@@ -5,6 +5,7 @@
 
 class ConfigUI {
     constructor() {
+        this.notificationTimeout = null;
         this.initTabs();
         this.initNumberInputControls();
     }
@@ -128,19 +129,54 @@ class ConfigUI {
      * @param {string} message - The message to display
      * @param {string} type - Type of notification ('success' or 'error')
      */
-    showNotification(message, type = 'success') {
+    showNotification(message, type = 'success', options = {}) {
         const notification = document.getElementById('notification');
         const notificationMessage = document.getElementById('notification-message');
+        const notificationAction = document.getElementById('notification-action');
         
         if (!notification || !notificationMessage) return;
 
         notificationMessage.textContent = message;
         notification.className = `notification ${type}`;
         notification.classList.add('show');
+        if (notificationAction) {
+            notificationAction.hidden = true;
+            notificationAction.textContent = '';
+            notificationAction.onclick = null;
+        }
 
-        setTimeout(() => {
-            notification.classList.remove('show');
-        }, 3000);
+        if (options && typeof options.onAction === 'function' && notificationAction) {
+            notificationAction.hidden = false;
+            notificationAction.textContent = options.actionLabel || 'Undo';
+            notificationAction.onclick = () => {
+                options.onAction();
+                this.hideNotification();
+            };
+        }
+
+        if (this.notificationTimeout) {
+            clearTimeout(this.notificationTimeout);
+            this.notificationTimeout = null;
+        }
+
+        if (!options.persist) {
+            const duration = Number.isFinite(Number(options.durationMs)) ? Number(options.durationMs) : 3000;
+            this.notificationTimeout = setTimeout(() => {
+                this.hideNotification();
+            }, duration);
+        }
+    }
+
+    hideNotification() {
+        const notification = document.getElementById('notification');
+        const notificationAction = document.getElementById('notification-action');
+        if (!notification) return;
+        notification.classList.remove('show');
+        if (notificationAction) {
+            notificationAction.hidden = true;
+            notificationAction.textContent = '';
+            notificationAction.onclick = null;
+        }
     }
 
     /**

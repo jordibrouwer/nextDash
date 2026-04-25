@@ -103,9 +103,12 @@ type Settings struct {
 	AutoDarkMode              bool    `json:"autoDarkMode"`              // Auto-detect dark mode from system
 	ShowSmartRecentCollection bool    `json:"showSmartRecentCollection"` // Show smart recently opened collection
 	ShowSmartStaleCollection  bool    `json:"showSmartStaleCollection"`  // Show smart stale bookmarks collection
+	ShowSmartMostUsedCollection bool  `json:"showSmartMostUsedCollection"` // Show smart most used bookmarks collection
 	SmartRecentLimit          int     `json:"smartRecentLimit"`          // Max items in smart recently opened (0 = unlimited)
+	SmartMostUsedLimit        int     `json:"smartMostUsedLimit"`        // Max items in smart most used (0 = unlimited)
 	SmartRecentPageIds        []int   `json:"smartRecentPageIds"`        // Page IDs where smart recent is enabled (empty = all)
 	SmartStalePageIds         []int   `json:"smartStalePageIds"`         // Page IDs where smart stale is enabled (empty = all)
+	SmartMostUsedPageIds      []int   `json:"smartMostUsedPageIds"`      // Page IDs where smart most used is enabled (empty = all)
 	SearchIndexed             bool    `json:"searchIndexed"`             // Is search index built
 }
 
@@ -266,9 +269,12 @@ func (fs *FileStore) initializeDefaultFiles() {
 			AutoDarkMode:              false,
 			ShowSmartRecentCollection: false,
 			ShowSmartStaleCollection:  false,
+			ShowSmartMostUsedCollection: false,
 			SmartRecentLimit:          50,
+			SmartMostUsedLimit:        25,
 			SmartRecentPageIds:        []int{},
 			SmartStalePageIds:         []int{},
+			SmartMostUsedPageIds:      []int{},
 		}
 		data, _ := json.MarshalIndent(defaultSettings, "", "  ")
 		os.WriteFile(fs.settingsFile, data, 0644)
