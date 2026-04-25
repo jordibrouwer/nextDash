@@ -53,6 +53,7 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Open in New Tab** - Option to open links in new or current tab
 - **Bookmark Metadata** - Extract title, description, and preview image from URLs
 - **Drag & Drop** - Easily reorder bookmarks within categories
+- **Conflict Validation** - Duplicate URL/shortcut detection with inline conflict highlights before save
 
 ### Categories
 - **Create/Edit/Delete Categories** - Organize bookmarks into categories
@@ -139,6 +140,8 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Device-Specific Settings** - Save settings locally to device/browser
 - **Global Settings** - Save settings to server
 - **Manual Save Flow** - Use **Save Changes** to persist most configuration updates
+- **Unsaved Changes Indicator** - Sticky unsaved badge and subtle save button pulse when config is dirty
+- **Undo Toasts** - Undo destructive actions (delete/reset) directly from notification toasts
 - **Settings Reset** - Reset all settings with confirmation
 
 ### UI Customization
@@ -183,9 +186,11 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 ### Smart Collections
 - **Smart: Recently Opened** - Dynamic collection for bookmarks opened recently
 - **Smart: Stale Bookmarks** - Dynamic collection for stale bookmarks
+- **Smart: Most Used** - Dynamic collection sorted by bookmark open count
 - **Per-Collection Toggle** - Enable/disable each smart collection independently
 - **Per-Page Activation** - Control on which page(s) each smart collection appears via multi-select
 - **Recent Collection Limit** - Choose 10/25/50/100/unlimited items
+- **Most Used Collection Limit** - Choose 10/25/50/100/unlimited items
 - **Default State** - Smart collections are disabled by default
 
 ### Sorting & Organization
@@ -396,9 +401,9 @@ Switch languages in **Config → General Settings → Language**
 - Show/hide page title
 - Show/hide date
 - Show/hide page tabs
-- Toggle smart collections (recent/stale)
+- Toggle smart collections (recent/stale/most used)
 - Configure smart collection page scope (multi-select pages)
-- Configure smart recent item limit (10/25/50/100/unlimited)
+- Configure smart recent and most-used item limits (10/25/50/100/unlimited)
 - Show/hide bookmark icons
 - Show/hide status indicators
 - Show/hide ping times
