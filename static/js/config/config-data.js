@@ -63,7 +63,23 @@ class ConfigData {
         });
         
         if (!response.ok) {
-            const errorText = await response.text();
+            let errorText = '';
+            try {
+                const errorBody = await response.json();
+                if (errorBody?.error === 'duplicate_shortcut') {
+                    const shortcut = errorBody.shortcut || '';
+                    const conflict = errorBody.conflict;
+                    if (conflict?.name) {
+                        errorText = `Duplicate shortcut "${shortcut}" (already used by "${conflict.name}" on page ${conflict.pageId}).`;
+                    } else {
+                        errorText = `Duplicate shortcut "${shortcut}".`;
+                    }
+                } else {
+                    errorText = errorBody?.message || JSON.stringify(errorBody);
+                }
+            } catch (error) {
+                errorText = await response.text();
+            }
             throw new Error(`Failed to save bookmarks: ${errorText}`);
         }
         

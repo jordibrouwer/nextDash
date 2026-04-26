@@ -395,10 +395,16 @@ class SearchCommandNew {
                 }
             } else {
                 if (response.status === 409 && window.showNotification) {
-                    window.showNotification(
-                        this.language ? this.language.t('config.duplicateBookmarkUrl') || 'Duplicate bookmark URL' : 'Duplicate bookmark URL',
-                        'warning'
-                    );
+                    let conflictMessage = this.language ? this.language.t('config.duplicateBookmarkUrl') || 'Duplicate bookmark URL' : 'Duplicate bookmark URL';
+                    try {
+                        const errorBody = await response.json();
+                        if (errorBody?.error === 'duplicate_shortcut') {
+                            conflictMessage = `Duplicate shortcut "${errorBody.shortcut}".`;
+                        }
+                    } catch (error) {
+                        // Keep fallback conflict message.
+                    }
+                    window.showNotification(conflictMessage, 'warning');
                 }
 
                 console.error('Failed to create bookmark');

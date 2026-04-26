@@ -24,6 +24,7 @@ class ConfigManager {
         this.currentPageId = 1; // Default to page 1
         this.currentCategoriesPageId = 1; // Default to page 1 for categories
         this.bookmarksData = [];
+        this.allBookmarksData = [];
         this.findersData = [];
         this.categoriesData = []; // Categories for the categories tab
         this.bookmarksPageCategories = []; // Categories for the bookmarks tab (read-only)
@@ -109,6 +110,7 @@ class ConfigManager {
         }
         this.savedSnapshot = this.captureUndoSnapshot();
         this.refreshSmartCollectionCounters();
+        this.validateBookmarkConflicts({ showToast: false });
     }
 
     async loadData() {
@@ -120,6 +122,12 @@ class ConfigManager {
             this.pagesData = pages;
             this.originalPagesData = JSON.parse(JSON.stringify(pages));
             this.findersData = await this.data.loadFinders();
+            try {
+                const allBookmarksResponse = await fetch('/api/bookmarks?all=true');
+                this.allBookmarksData = allBookmarksResponse.ok ? await allBookmarksResponse.json() : [];
+            } catch (error) {
+                this.allBookmarksData = [];
+            }
             this.settingsData = { ...this.settingsData, ...settings };
             if (!this.settingsData.language || this.settingsData.language === "") {
                 this.settingsData.language = 'en';
@@ -1190,13 +1198,24 @@ class ConfigManager {
             this.savedSnapshot = this.captureUndoSnapshot();
             this.setDirtyState(false);
             this.refreshSmartCollectionCounters();
+            try {
+                const allBookmarksResponse = await fetch('/api/bookmarks?all=true');
+                this.allBookmarksData = allBookmarksResponse.ok ? await allBookmarksResponse.json() : [];
+            } catch (error) {
+                // keep previous cache
+            }
         } catch (error) {
             console.error('Error saving configuration:', error);
             if (saveStatus) {
                 saveStatus.textContent = 'Save failed';
                 saveStatus.classList.add('is-unsaved');
             }
-            this.ui.showNotification(this.language.t('config.errorSavingConfig'), 'error');
+            const message = String(error?.message || '');
+            if (message.toLowerCase().includes('duplicate shortcut')) {
+                this.ui.showNotification(message, 'error');
+            } else {
+                this.ui.showNotification(this.language.t('config.errorSavingConfig'), 'error');
+            }
         }
     }
 
@@ -1234,6 +1253,17 @@ class ConfigManager {
         return Array.from(duplicates);
     }
 
+    getDuplicateFinderShortcutSet() {
+        const finderShortcuts = (Array.isArray(this.findersData) ? this.findersData : [])
+            .map((finder) => String(finder?.shortcut || '').trim().toUpperCase())
+            .filter(Boolean);
+        const counts = new Map();
+        finderShortcuts.forEach((shortcut) => {
+            counts.set(shortcut, (counts.get(shortcut) || 0) + 1);
+        });
+        return new Set(Array.from(counts.entries()).filter(([, count]) => count > 1).map(([shortcut]) => shortcut));
+    }
+
     validateBookmarkConflicts(options = {}) {
         const urlMap = new Map();
         const shortcutMap = new Map();
@@ -1260,6 +1290,8 @@ class ConfigManager {
 
         const duplicateUrlIndexes = new Set();
         const duplicateShortcutIndexes = new Set();
+        const finderConflictIndexes = new Set();
+        const globalDuplicateShortcutIndexes = new Set();
         urlMap.forEach((indexes) => {
             if (indexes.length > 1) {
                 indexes.forEach((idx) => duplicateUrlIndexes.add(idx));
@@ -1271,6 +1303,39 @@ class ConfigManager {
             }
         });
 
+        // Check shortcut conflicts against bookmarks from other pages.
+        const localShortcutCount = new Map();
+        normalizedShortcutByIndex.forEach((shortcut) => {
+            if (!shortcut) return;
+            localShortcutCount.set(shortcut, (localShortcutCount.get(shortcut) || 0) + 1);
+        });
+        const globalShortcutCount = new Map();
+        (Array.isArray(this.allBookmarksData) ? this.allBookmarksData : []).forEach((bookmark) => {
+            const shortcut = (bookmark?.shortcut || '').trim().toUpperCase();
+            if (!shortcut) return;
+            globalShortcutCount.set(shortcut, (globalShortcutCount.get(shortcut) || 0) + 1);
+        });
+        normalizedShortcutByIndex.forEach((shortcut, index) => {
+            if (!shortcut) return;
+            const globalCount = globalShortcutCount.get(shortcut) || 0;
+            const localCount = localShortcutCount.get(shortcut) || 0;
+            if (globalCount > localCount) {
+                globalDuplicateShortcutIndexes.add(index);
+            }
+        });
+
+        // Finder shortcut conflicts are warnings (non-blocking).
+        const finderShortcutSet = new Set(
+            (Array.isArray(this.findersData) ? this.findersData : [])
+                .map((finder) => String(finder?.shortcut || '').trim().toUpperCase())
+                .filter(Boolean)
+        );
+        normalizedShortcutByIndex.forEach((shortcut, index) => {
+            if (shortcut && finderShortcutSet.has(shortcut)) {
+                finderConflictIndexes.add(index);
+            }
+        });
+
         this.bookmarksData.forEach((_, index) => {
             const urlInput = document.getElementById(`bookmark-url-${index}`);
             const shortcutInput = document.getElementById(`bookmark-shortcut-${index}`);
@@ -1278,22 +1343,46 @@ class ConfigManager {
                 urlInput.classList.toggle('field-conflict', duplicateUrlIndexes.has(index));
             }
             if (shortcutInput) {
-                shortcutInput.classList.toggle('field-conflict', duplicateShortcutIndexes.has(index));
+                const hasBlockingShortcutConflict = duplicateShortcutIndexes.has(index) || globalDuplicateShortcutIndexes.has(index);
+                shortcutInput.classList.toggle('field-conflict', hasBlockingShortcutConflict);
+                const hasFinderWarning = finderConflictIndexes.has(index);
+                shortcutInput.classList.toggle('field-warning', hasFinderWarning && !hasBlockingShortcutConflict);
+                if (hasBlockingShortcutConflict) {
+                    shortcutInput.title = 'Shortcut must be unique across all bookmarks.';
+                } else if (hasFinderWarning) {
+                    shortcutInput.title = 'Shortcut matches a finder shortcut.';
+                } else {
+                    shortcutInput.removeAttribute('title');
+                }
             }
         });
 
-        const hasConflicts = duplicateUrlIndexes.size > 0 || duplicateShortcutIndexes.size > 0;
+        const hasConflicts = duplicateUrlIndexes.size > 0 || duplicateShortcutIndexes.size > 0 || globalDuplicateShortcutIndexes.size > 0;
         if (hasConflicts && options.showToast) {
             this.ui.showNotification(
-                `Fix conflicts first: ${duplicateUrlIndexes.size} duplicate URL(s), ${duplicateShortcutIndexes.size} duplicate shortcut(s).`,
+                `Fix conflicts first: ${duplicateUrlIndexes.size} duplicate URL(s), ${duplicateShortcutIndexes.size + globalDuplicateShortcutIndexes.size} duplicate shortcut(s).`,
                 'warning'
             );
+        }
+        if (!hasConflicts && finderConflictIndexes.size > 0 && options.showToast) {
+            const duplicateFinderShortcuts = this.getDuplicateFinderShortcutSet();
+            const severity = duplicateFinderShortcuts.size > 0 ? 'warning' : 'info';
+            this.ui.showNotification(
+                `Shortcut warning: ${finderConflictIndexes.size} bookmark shortcut(s) overlap with finder shortcuts.`,
+                severity
+            );
+        }
+
+        const saveBtn = document.getElementById('save-btn');
+        if (saveBtn) {
+            saveBtn.disabled = hasConflicts;
         }
 
         return {
             hasConflicts,
             duplicateUrlCount: duplicateUrlIndexes.size,
-            duplicateShortcutCount: duplicateShortcutIndexes.size
+            duplicateShortcutCount: duplicateShortcutIndexes.size + globalDuplicateShortcutIndexes.size,
+            finderShortcutConflictCount: finderConflictIndexes.size
         };
     }
 

@@ -193,6 +193,46 @@ class ConfigBackup {
                 return;
             }
 
+            const csvShortcutCounts = new Map();
+            importedBookmarks.forEach((bookmark) => {
+                const shortcut = String(bookmark.shortcut || '').trim().toUpperCase();
+                if (!shortcut) return;
+                csvShortcutCounts.set(shortcut, (csvShortcutCounts.get(shortcut) || 0) + 1);
+            });
+            const csvDuplicates = Array.from(csvShortcutCounts.entries())
+                .filter(([, count]) => count > 1)
+                .map(([shortcut]) => shortcut);
+            if (csvDuplicates.length > 0) {
+                if (configManager.ui) {
+                    configManager.ui.showNotification(`CSV has duplicate shortcuts: ${csvDuplicates.join(', ')}`, 'error');
+                }
+                return;
+            }
+
+            const globalShortcutCounts = await this.getAllBookmarkShortcutCounts();
+            const currentPageShortcuts = new Set(
+                (Array.isArray(configManager.bookmarksData) ? configManager.bookmarksData : [])
+                    .map((bookmark) => String(bookmark?.shortcut || '').trim().toUpperCase())
+                    .filter(Boolean)
+            );
+            const globalConflicts = [];
+            importedBookmarks.forEach((bookmark) => {
+                const shortcut = String(bookmark.shortcut || '').trim().toUpperCase();
+                if (!shortcut) return;
+                const globalCount = globalShortcutCounts.get(shortcut) || 0;
+                const localCount = currentPageShortcuts.has(shortcut) ? 1 : 0;
+                if (globalCount > localCount) {
+                    globalConflicts.push(shortcut);
+                }
+            });
+            if (globalConflicts.length > 0) {
+                const uniqueConflicts = Array.from(new Set(globalConflicts));
+                if (configManager.ui) {
+                    configManager.ui.showNotification(`CSV shortcut conflicts: ${uniqueConflicts.join(', ')}`, 'error');
+                }
+                return;
+            }
+
             const confirmed = window.AppModal ? await window.AppModal.confirm({
                 title: 'Import CSV',
                 message: `Import ${importedBookmarks.length} bookmarks into the current page? Existing bookmarks will be replaced.`,
@@ -270,6 +310,25 @@ class ConfigBackup {
         }
 
         return bookmarks;
+    }
+
+    async getAllBookmarkShortcutCounts() {
+        try {
+            const response = await fetch('/api/bookmarks?all=true');
+            if (!response.ok) {
+                return new Map();
+            }
+            const allBookmarks = await response.json();
+            const counts = new Map();
+            (Array.isArray(allBookmarks) ? allBookmarks : []).forEach((bookmark) => {
+                const shortcut = String(bookmark?.shortcut || '').trim().toUpperCase();
+                if (!shortcut) return;
+                counts.set(shortcut, (counts.get(shortcut) || 0) + 1);
+            });
+            return counts;
+        } catch (error) {
+            return new Map();
+        }
     }
 
     parseCsvLine(line) {

@@ -127,6 +127,11 @@
     box-shadow: inset 0 0 0 1px var(--accent-warning);
 }
 
+.bookmark-item input.field-warning {
+    border-color: var(--text-tertiary);
+    box-shadow: inset 0 0 0 1px var(--text-tertiary);
+}
+
 .bookmark-item input[name="shortcut"],
 .finder-item input[name="shortcut"] {
     flex: 0 0 100px;

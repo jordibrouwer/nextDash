@@ -54,6 +54,8 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Bookmark Metadata** - Extract title, description, and preview image from URLs
 - **Drag & Drop** - Easily reorder bookmarks within categories
 - **Conflict Validation** - Duplicate URL/shortcut detection with inline conflict highlights before save
+- **Global Shortcut Uniqueness** - Bookmark shortcuts must be unique across all pages (enforced in UI and backend)
+- **Inline Edit Guardrails** - Dashboard inline edit prevents duplicate shortcuts before save
 
 ### Categories
 - **Create/Edit/Delete Categories** - Organize bookmarks into categories
@@ -68,6 +70,7 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Dynamic URLs** - Use `%s` placeholder in finder URLs for search terms
 - **Space-Activated** - Type finder shortcut and press space to activate finder mode
 - **Include in Search** - Access finders directly from main search
+- **Shortcut Overlap Warning** - Warns when a bookmark shortcut overlaps with a finder shortcut
 
 ### Display & Layout Options
 - **Column Layout** - 1-6 columns per row, adjustable on the fly
@@ -134,6 +137,7 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
   - All custom themes
   - Favicon, fonts, and custom icons
 - **Import Backup** - Restore from previously exported ZIP
+- **Per-Page Category Files** - Backup includes explicit `categories-{page}.json` files for robust category restore
 - **Import Confirmation** - Confirmation dialog to prevent accidental overwrites
 - **Data Reset** - Reset all data to defaults
 
@@ -149,6 +153,7 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Undo Toasts** - Undo destructive actions (delete/reset) directly from notification toasts
 - **Settings Reset** - Reset all settings with confirmation
 - **Expanded Help Page** - Indexed help sections with quick links, troubleshooting, and feature deep-dives
+- **Save Blocking on Conflicts** - Save is blocked while duplicate bookmark URLs/shortcuts are present
 
 ### UI Customization
 - **Toggle Config Button** - Show/hide config access
@@ -209,6 +214,7 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Pinned First** - Custom pinned priority sorting
 - **Pinned Always Alphabetical** - Pinned bookmarks stay at top and are always sorted A-Z
 - **Undo Reorder** - Undo drag-drop changes
+- **Cross-Page Shortcut Validation** - Reorder/save respects global shortcut uniqueness checks
 
 ### Onboarding & In-App Guidance
 - **First Launch Tour** - Welcome overlay introduces search, shortcuts, and config in 4 concise steps

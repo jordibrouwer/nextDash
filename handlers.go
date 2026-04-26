@@ -20,6 +20,38 @@ type Handlers struct {
 	files embed.FS
 }
 
+func normalizeShortcut(shortcut string) string {
+	return strings.ToUpper(strings.TrimSpace(shortcut))
+}
+
+func findDuplicateShortcutInList(bookmarks []Bookmark) string {
+	seen := make(map[string]struct{})
+	for _, bookmark := range bookmarks {
+		shortcut := normalizeShortcut(bookmark.Shortcut)
+		if shortcut == "" {
+			continue
+		}
+		if _, exists := seen[shortcut]; exists {
+			return shortcut
+		}
+		seen[shortcut] = struct{}{}
+	}
+	return ""
+}
+
+func findShortcutConflictWithExisting(bookmarks []Bookmark, shortcut string) *Bookmark {
+	normalized := normalizeShortcut(shortcut)
+	if normalized == "" {
+		return nil
+	}
+	for i := range bookmarks {
+		if normalizeShortcut(bookmarks[i].Shortcut) == normalized {
+			return &bookmarks[i]
+		}
+	}
+	return nil
+}
+
 func NewHandlers(store Store, files embed.FS) *Handlers {
 	return &Handlers{
 		store: store,
@@ -133,6 +165,49 @@ func (h *Handlers) SaveBookmarks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate shortcut uniqueness in payload first.
+	if duplicateShortcut := findDuplicateShortcutInList(bookmarks); duplicateShortcut != "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":    "duplicate_shortcut",
+			"message":  "Duplicate shortcut in submitted bookmarks",
+			"shortcut": duplicateShortcut,
+		})
+		return
+	}
+
+	// Validate shortcut uniqueness across all pages (exclude current page, since payload replaces it).
+	allBookmarks := h.store.GetAllBookmarks()
+	existingOtherPages := make([]Bookmark, 0, len(allBookmarks))
+	for _, existing := range allBookmarks {
+		if existing.PageID == pageID {
+			continue
+		}
+		existingOtherPages = append(existingOtherPages, existing)
+	}
+	for _, bookmark := range bookmarks {
+		shortcut := normalizeShortcut(bookmark.Shortcut)
+		if shortcut == "" {
+			continue
+		}
+		if conflict := findShortcutConflictWithExisting(existingOtherPages, shortcut); conflict != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]any{
+				"error":    "duplicate_shortcut",
+				"message":  "Shortcut already exists on another page",
+				"shortcut": shortcut,
+				"conflict": map[string]any{
+					"name":   conflict.Name,
+					"url":    conflict.URL,
+					"pageId": conflict.PageID,
+				},
+			})
+			return
+		}
+	}
+
 	h.store.SaveBookmarksByPage(pageID, bookmarks)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
@@ -164,6 +239,25 @@ func (h *Handlers) AddBookmark(w http.ResponseWriter, r *http.Request) {
 	for _, existingBookmark := range existingBookmarks {
 		if strings.TrimSpace(strings.ToLower(existingBookmark.URL)) == newURL {
 			http.Error(w, "Duplicate bookmark URL", http.StatusConflict)
+			return
+		}
+	}
+
+	shortcut := normalizeShortcut(request.Bookmark.Shortcut)
+	if shortcut != "" {
+		if conflict := findShortcutConflictWithExisting(h.store.GetAllBookmarks(), shortcut); conflict != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]any{
+				"error":    "duplicate_shortcut",
+				"message":  "Shortcut already exists",
+				"shortcut": shortcut,
+				"conflict": map[string]any{
+					"name":   conflict.Name,
+					"url":    conflict.URL,
+					"pageId": conflict.PageID,
+				},
+			})
 			return
 		}
 	}

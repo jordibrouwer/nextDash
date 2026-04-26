@@ -1123,7 +1123,18 @@ class Dashboard {
             });
 
             if (!response.ok) {
-                throw new Error('Failed to save bookmark order');
+                let message = 'Failed to save bookmark order';
+                try {
+                    const errorBody = await response.json();
+                    if (response.status === 409 && errorBody?.error === 'duplicate_shortcut') {
+                        message = `Shortcut "${errorBody.shortcut}" already exists on another bookmark.`;
+                    } else if (errorBody?.message) {
+                        message = String(errorBody.message);
+                    }
+                } catch (error) {
+                    // Ignore parse issues and keep fallback message.
+                }
+                throw new Error(message);
             }
 
             // Keep global shortcut index updated when enabled
@@ -1141,7 +1152,7 @@ class Dashboard {
             }
             this.pendingReorderSave = null;
             this.pendingReorderSnapshot = null;
-            this.showErrorNotification('Failed to save bookmark order. Changes were reverted.');
+            this.showErrorNotification(`${error.message || 'Failed to save bookmark order.'} Changes were reverted.`);
         }
     }
 
@@ -1624,6 +1635,22 @@ class Dashboard {
             return;
         }
 
+        if (shortcut && this.hasShortcutConflict(shortcut, bookmarkIndex)) {
+            this.showErrorNotification('Shortcut must be unique across all bookmarks.');
+            fields.shortcutInput.focus();
+            fields.shortcutInput.select();
+            return;
+        }
+
+        if (shortcut) {
+            const finderShortcutConflict = (Array.isArray(this.finders) ? this.finders : []).some((finder) => {
+                return String(finder?.shortcut || '').trim().toUpperCase() === shortcut;
+            });
+            if (finderShortcutConflict) {
+                this.showNotification('Warning: this shortcut is also used by a finder.', 'error');
+            }
+        }
+
         this.ensureBookmarkMutationSnapshot();
         bookmark.name = name;
         bookmark.url = url;
@@ -1635,6 +1662,33 @@ class Dashboard {
         this.inlineEditingBookmarkIndex = null;
         this.renderDashboard();
         this.scheduleBookmarkOrderSave();
+    }
+
+    hasShortcutConflict(shortcut, ignoreBookmarkIndex = -1) {
+        const normalized = String(shortcut || '').trim().toUpperCase();
+        if (!normalized) {
+            return false;
+        }
+
+        const localConflict = (Array.isArray(this.bookmarks) ? this.bookmarks : []).some((bookmark, index) => {
+            if (index === ignoreBookmarkIndex) {
+                return false;
+            }
+            return String(bookmark?.shortcut || '').trim().toUpperCase() === normalized;
+        });
+        if (localConflict) {
+            return true;
+        }
+
+        const currentPageIdNumber = Number(this.currentPageId);
+        return (Array.isArray(this.allBookmarks) ? this.allBookmarks : []).some((bookmark) => {
+            const shortcutValue = String(bookmark?.shortcut || '').trim().toUpperCase();
+            if (!shortcutValue || shortcutValue !== normalized) {
+                return false;
+            }
+            const bookmarkPageId = Number(bookmark?.pageId || bookmark?.pageID || 0);
+            return bookmarkPageId !== currentPageIdNumber;
+        });
     }
 
     cancelBookmarkInlineEdit(row, bookmarkIndex) {
