@@ -6,15 +6,20 @@ class Onboarding {
         this.overlay = null;
         this.highlightedElement = null;
         this.keyHandler = null;
-        this.version = 1;
-        this.storageSeenKey = 'nextDashOnboardingSeen';
-        this.storageVersionKey = 'nextDashOnboardingVersion';
+        // Use v2 keys to avoid stale localStorage state blocking first-run onboarding.
+        this.version = 2;
+        this.storageSeenKey = 'nextDashOnboardingSeenV2';
+        this.storageVersionKey = 'nextDashOnboardingVersionV2';
+        this.serverCompleted = options.serverCompleted === true;
+        this.onPersist = typeof options.onPersist === 'function' ? options.onPersist : null;
+        this.persisted = false;
     }
 
     shouldStart() {
-        const seen = localStorage.getItem(this.storageSeenKey) === 'true';
-        const storedVersion = Number(localStorage.getItem(this.storageVersionKey) || 0);
-        return !seen || storedVersion < this.version;
+        if (this.serverCompleted) {
+            return false;
+        }
+        return true;
     }
 
     maybeStart() {
@@ -34,9 +39,14 @@ class Onboarding {
                 primaryLabel: 'Start quick tour'
             },
             {
+                title: 'Tip rotation',
+                body: 'Shortcut tips rotate above the buttons. You can hide them in config.',
+                selector: '#button-hint-text'
+            },
+            {
                 title: 'Search & shortcuts',
                 body: 'Use > for search, * for recent, and ! for cheatsheet.',
-                selector: '.button-container'
+                selector: '#search-button'
             },
             {
                 title: 'Configuration',
@@ -142,7 +152,9 @@ class Onboarding {
         }
         element.classList.add('onboarding-highlight');
         this.highlightedElement = element;
-        if (typeof element.scrollIntoView === 'function') {
+        const computedStyle = window.getComputedStyle ? window.getComputedStyle(element) : null;
+        const isFixedLike = computedStyle && (computedStyle.position === 'fixed' || computedStyle.position === 'sticky');
+        if (!isFixedLike && typeof element.scrollIntoView === 'function') {
             element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
         }
     }
@@ -160,8 +172,16 @@ class Onboarding {
     }
 
     finish() {
-        localStorage.setItem(this.storageSeenKey, 'true');
-        localStorage.setItem(this.storageVersionKey, String(this.version));
+        try {
+            localStorage.setItem(this.storageSeenKey, 'true');
+            localStorage.setItem(this.storageVersionKey, String(this.version));
+        } catch (error) {
+            // Ignore storage errors; onboarding can still close normally.
+        }
+        if (this.onPersist && !this.persisted) {
+            this.persisted = true;
+            Promise.resolve(this.onPersist()).catch(() => {});
+        }
         if (this.highlightedElement) {
             this.highlightedElement.classList.remove('onboarding-highlight');
             this.highlightedElement = null;

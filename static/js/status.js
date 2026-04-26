@@ -27,12 +27,29 @@ class StatusMonitor {
         }
     }
 
+    getBookmarkSelectorValue(url) {
+        const normalized = String(url || '');
+        if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+            return CSS.escape(normalized);
+        }
+        return normalized.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    }
+
+    getStatusTargetElement(bookmark) {
+        const url = String(bookmark?.url || '').trim();
+        if (!url) {
+            return null;
+        }
+        const escapedUrl = this.getBookmarkSelectorValue(url);
+        return document.querySelector(`.bookmarks-list[data-bookmarks-list="true"]:not([data-smart-collection="true"]) .bookmark-link[data-bookmark-url="${escapedUrl}"]`);
+    }
+
     async checkBookmarkStatus(bookmark) {
         if (!this.settings.showStatus || !bookmark.checkStatus) {
             return null;
         }
 
-        const bookmarkElement = document.querySelector(`[data-bookmark-url="${bookmark.url}"]`);
+        const bookmarkElement = this.getStatusTargetElement(bookmark);
         if (!bookmarkElement) {
             return null;
         }
@@ -166,8 +183,8 @@ class StatusMonitor {
     }
 
     clearAllStatuses() {
-        // Remove status classes and elements from all bookmarks
-        const bookmarkElements = document.querySelectorAll('.bookmark-link[data-bookmark-url]');
+        // Remove status classes and elements from normal bookmark rows only.
+        const bookmarkElements = document.querySelectorAll('.bookmarks-list[data-bookmarks-list="true"]:not([data-smart-collection="true"]) .bookmark-link[data-bookmark-url]');
         bookmarkElements.forEach(element => {
             element.classList.remove('status-online', 'status-offline', 'status-checking');
             
@@ -289,7 +306,7 @@ class StatusMonitor {
             if (bookmark.checkStatus) {
                 const cached = this.statusCache.get(bookmark.url);
                 if (cached) {
-                    const bookmarkElement = document.querySelector(`[data-bookmark-url="${bookmark.url}"]`);
+                    const bookmarkElement = this.getStatusTargetElement(bookmark);
                     if (bookmarkElement) {
                         const pingText = this.settings.showPing && cached.ping ? `${cached.ping}ms` : '';
                         this.setBookmarkStatus(bookmarkElement, cached.status, pingText);

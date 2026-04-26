@@ -57,3 +57,9 @@
     z-index: 2201;
     box-shadow: 0 0 0 2px var(--accent-success), 0 0 0 6px rgba(16, 185, 129, 0.18);
 }
+
+@media (max-width: 768px) {
+    .onboarding-highlight {
+        box-shadow: 0 0 0 1px var(--accent-success), 0 0 0 3px rgba(16, 185, 129, 0.14);
+    }
+}

@@ -112,6 +112,7 @@ type Settings struct {
 	SmartStalePageIds           []int   `json:"smartStalePageIds"`           // Page IDs where smart stale is enabled (empty = all)
 	SmartMostUsedPageIds        []int   `json:"smartMostUsedPageIds"`        // Page IDs where smart most used is enabled (empty = all)
 	SearchIndexed               bool    `json:"searchIndexed"`               // Is search index built
+	OnboardingCompleted         bool    `json:"onboardingCompleted"`
 }
 
 type ColorTheme struct {
@@ -279,6 +280,7 @@ func (fs *FileStore) initializeDefaultFiles() {
 			SmartRecentPageIds:          []int{},
 			SmartStalePageIds:           []int{},
 			SmartMostUsedPageIds:        []int{},
+			OnboardingCompleted:         false,
 		}
 		data, _ := json.MarshalIndent(defaultSettings, "", "  ")
 		os.WriteFile(fs.settingsFile, data, 0644)
@@ -871,6 +873,9 @@ func (fs *FileStore) GetSettings() Settings {
 		}
 		if _, ok := rawSettings["smartStalePageIds"]; !ok || settings.SmartStalePageIds == nil {
 			settings.SmartStalePageIds = []int{}
+		}
+		if _, ok := rawSettings["onboardingCompleted"]; !ok {
+			settings.OnboardingCompleted = true
 		}
 	}
 

@@ -86,7 +86,6 @@ class Dashboard {
         this.initializeHyprMode();
         this.renderPageNavigation();
         this.renderDashboard();
-        this.initializeOnboarding();
         this.setupPageShortcuts();
         this.setupReorderUndoShortcut();
         this.setupToolbarActions();
@@ -113,6 +112,9 @@ class Dashboard {
 
         // Show body after everything is loaded and rendered
         document.body.classList.remove('loading');
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => this.initializeOnboarding());
+        });
     }
 
     setupConfigStructureReloadListener() {
@@ -256,6 +258,9 @@ class Dashboard {
             }
             if (typeof this.settings.showSyncToasts === 'undefined') {
                 this.settings.showSyncToasts = true;
+            }
+            if (typeof this.settings.onboardingCompleted === 'undefined') {
+                this.settings.onboardingCompleted = true;
             }
             if (!Number.isFinite(Number(this.settings.smartRecentLimit)) || Number(this.settings.smartRecentLimit) < 0) {
                 this.settings.smartRecentLimit = 50;
@@ -757,8 +762,14 @@ class Dashboard {
         if (typeof window.Onboarding !== 'function') {
             return;
         }
+        const dash = this;
         const onboarding = new window.Onboarding({
-            hasBookmarks: Array.isArray(this.bookmarks) && this.bookmarks.length > 0
+            hasBookmarks: Array.isArray(this.bookmarks) && this.bookmarks.length > 0,
+            serverCompleted: dash.settings?.onboardingCompleted === true,
+            onPersist: async () => {
+                dash.settings.onboardingCompleted = true;
+                await dash.saveSettings();
+            }
         });
         onboarding.maybeStart();
     }

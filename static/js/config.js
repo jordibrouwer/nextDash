@@ -158,6 +158,9 @@ class ConfigManager {
             if (typeof this.settingsData.showSyncToasts === 'undefined') {
                 this.settingsData.showSyncToasts = true;
             }
+            if (typeof this.settingsData.onboardingCompleted === 'undefined') {
+                this.settingsData.onboardingCompleted = true;
+            }
             if (!Number.isFinite(Number(this.settingsData.smartRecentLimit)) || Number(this.settingsData.smartRecentLimit) < 0) {
                 this.settingsData.smartRecentLimit = 50;
             } else {
