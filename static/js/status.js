@@ -5,6 +5,7 @@ class StatusMonitor {
         this.statusCache = new Map(); // Cache for status results
         this.checkInterval = null;
         this.isChecking = false;
+        this.emptyStatusHintShown = false;
         this.loadingIndicator = document.getElementById('status-loading-indicator');
     }
 
@@ -139,6 +140,16 @@ class StatusMonitor {
 
         // Filter bookmarks that should be checked
         const bookmarksToCheck = bookmarks.filter(bookmark => bookmark.checkStatus);
+        if (bookmarksToCheck.length === 0) {
+            this.isChecking = false;
+            this.hideLoadingIndicator();
+            if (!this.emptyStatusHintShown && window.dashboardInstance && typeof window.dashboardInstance.showNotification === 'function') {
+                window.dashboardInstance.showNotification('Status is enabled, but no bookmarks have status checks turned on.', 'error');
+                this.emptyStatusHintShown = true;
+            }
+            return;
+        }
+        this.emptyStatusHintShown = false;
 
         // Check ALL bookmarks in parallel for instant loading
         const promises = bookmarksToCheck.map(bookmark => this.checkBookmarkStatus(bookmark));
@@ -156,7 +167,7 @@ class StatusMonitor {
 
     clearAllStatuses() {
         // Remove status classes and elements from all bookmarks
-        const bookmarkElements = document.querySelectorAll('[data-bookmark-id]');
+        const bookmarkElements = document.querySelectorAll('.bookmark-link[data-bookmark-url]');
         bookmarkElements.forEach(element => {
             element.classList.remove('status-online', 'status-offline', 'status-checking');
             
@@ -194,9 +205,13 @@ class StatusMonitor {
         }
     }
 
-    refreshBookmarkStatus(bookmarkId) {
+    refreshBookmarkStatus(bookmarkUrl) {
         if (window.dashboardInstance && window.dashboardInstance.bookmarks) {
-            const bookmark = window.dashboardInstance.bookmarks.find(b => b.id === bookmarkId);
+            const normalizedUrl = String(bookmarkUrl || '').trim();
+            if (!normalizedUrl) {
+                return;
+            }
+            const bookmark = window.dashboardInstance.bookmarks.find((b) => String(b?.url || '').trim() === normalizedUrl);
             if (bookmark) {
                 this.checkBookmarkStatus(bookmark);
             }
@@ -209,8 +224,12 @@ class StatusMonitor {
         }
     }
 
-    getCachedStatus(bookmarkId) {
-        return this.statusCache.get(bookmarkId);
+    getCachedStatus(bookmarkUrl) {
+        const normalizedUrl = String(bookmarkUrl || '').trim();
+        if (!normalizedUrl) {
+            return null;
+        }
+        return this.statusCache.get(normalizedUrl);
     }
 
     clearCache() {

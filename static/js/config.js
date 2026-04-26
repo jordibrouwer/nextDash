@@ -80,6 +80,7 @@ class ConfigManager {
         this.savedSnapshot = null;
         this.suppressDirtyTracking = false;
         this.structureSyncEventKey = 'nextdash:config-structure-sync';
+        this.settingsSyncEventKey = 'nextdash:config-settings-sync';
         this.tabId = `cfg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         this.lastSyncToastAt = 0;
 
@@ -500,6 +501,19 @@ class ConfigManager {
                 timestamp: Date.now()
             };
             localStorage.setItem(this.structureSyncEventKey, JSON.stringify(payload));
+        } catch (error) {
+            // Keep config functional even if storage access is blocked.
+        }
+    }
+
+    signalDashboardSettingsUpdated(eventType = 'settings-updated') {
+        try {
+            const payload = {
+                type: eventType,
+                sourceTabId: this.tabId,
+                timestamp: Date.now()
+            };
+            localStorage.setItem(this.settingsSyncEventKey, JSON.stringify(payload));
         } catch (error) {
             // Keep config functional even if storage access is blocked.
         }
@@ -1395,6 +1409,7 @@ class ConfigManager {
             }
 
             this.originalPagesData = JSON.parse(JSON.stringify(this.pagesData));
+            this.signalDashboardSettingsUpdated('settings-saved');
             if (duplicateUrls.length > 0) {
                 this.ui.showNotification('Configuration saved. Duplicate bookmark URLs detected.', 'warning');
             } else {

@@ -127,6 +127,9 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Loading Animation** - Show progress during status check
 - **Skip Fast Ping Option** - Option to skip TCP check, only HTTP request
 - **Toggle Status Display** - Show/hide status indicators globally
+- **Per-Bookmark Opt-In** - Status checks run only for bookmarks with the `status` toggle enabled in config
+- **Cross-Tab Settings Sync** - Saving config updates applies status settings on open dashboard tabs
+- **No-Selection Hint** - Shows a one-time hint when global status is enabled but no bookmarks have status checks enabled
 
 ### Backup & Import/Export
 - **Create Backup** - Export complete dashboard as ZIP file
@@ -154,6 +157,8 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Settings Reset** - Reset all settings with confirmation
 - **Expanded Help Page** - Indexed help sections with quick links, troubleshooting, and feature deep-dives
 - **Save Blocking on Conflicts** - Save is blocked while duplicate bookmark URLs/shortcuts are present
+- **Auto Structure Sync** - Page/category create-rename-delete updates dashboard tabs and dependent config lists immediately
+- **Sync Notification Toggle** - Optional setting to disable sync toasts in Advanced settings
 
 ### UI Customization
 - **Toggle Config Button** - Show/hide config access
@@ -436,6 +441,7 @@ Switch languages in **Config → General Settings → Language**
 - Background dots
 - Background opacity
 - Enable animations
+- Show/hide sync notifications
 - Device-specific settings
 - Global settings
 - Skip fast ping

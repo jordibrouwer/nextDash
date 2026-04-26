@@ -64,6 +64,7 @@ class Dashboard {
         this.tipRotationIndex = 0;
         this.tipPriorityIndex = 0;
         this.structureSyncEventKey = 'nextdash:config-structure-sync';
+        this.settingsSyncEventKey = 'nextdash:config-settings-sync';
         this.tabId = `dash-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         this.lastSyncToastAt = 0;
         this.language = new ConfigLanguage();
@@ -116,7 +117,7 @@ class Dashboard {
 
     setupConfigStructureReloadListener() {
         window.addEventListener('storage', async (event) => {
-            if (event.key !== this.structureSyncEventKey || !event.newValue) {
+            if (!event.newValue) {
                 return;
             }
             try {
@@ -124,8 +125,15 @@ class Dashboard {
                 if (payload?.sourceTabId && payload.sourceTabId === this.tabId) {
                     return;
                 }
-                await this.refreshAfterConfigStructureUpdate(payload);
-                this.showSyncToast('Synced config changes.');
+                if (event.key === this.structureSyncEventKey) {
+                    await this.refreshAfterConfigStructureUpdate(payload);
+                    this.showSyncToast('Synced config changes.');
+                    return;
+                }
+                if (event.key === this.settingsSyncEventKey) {
+                    await this.refreshAfterConfigSettingsUpdate(payload);
+                    this.showSyncToast('Applied dashboard settings update.');
+                }
             } catch (error) {
                 window.location.reload();
             }
@@ -154,6 +162,27 @@ class Dashboard {
             this.initializeButtonTipsRotation();
             if (this.searchComponent) {
                 this.updateSearchComponent();
+            }
+        } catch (error) {
+            window.location.reload();
+        }
+    }
+
+    async refreshAfterConfigSettingsUpdate(payload = {}) {
+        try {
+            await this.loadData();
+            this.applyVisualSettings();
+            this.updateStatusMonitor();
+            await this.withRetry(() => this.loadPageBookmarks(this.currentPageId), 2, 220);
+            await this.withRetry(() => this.loadAllBookmarks(), 2, 220);
+            this.renderPageNavigation();
+            this.renderDashboard();
+            this.initializeButtonTipsRotation();
+            if (this.searchComponent) {
+                this.updateSearchComponent();
+            }
+            if (this.statusMonitor && this.settings.showStatus) {
+                this.statusMonitor.refreshAllStatuses();
             }
         } catch (error) {
             window.location.reload();
