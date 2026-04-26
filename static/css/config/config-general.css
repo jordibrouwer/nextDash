@@ -45,7 +45,7 @@ body {
     top: 0;
     z-index: 100;
     background: var(--background-primary);
-    box-shadow: 0 1px 0 var(--border-primary);
+    box-shadow: none;
 }
 
 .config-section.section-content {
@@ -109,6 +109,34 @@ body {
     flex-wrap: wrap;
     gap: 1rem;
     align-items: center;
+}
+
+.save-status-indicator {
+    font-size: var(--font-size-controls);
+    color: var(--accent-success);
+    opacity: 0.9;
+}
+
+.save-status-indicator.is-unsaved {
+    color: var(--accent-warning);
+}
+
+.quick-actions-bar {
+    display: none;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0 0.75rem 0;
+    border-top: 1px dashed var(--border-primary);
+}
+
+.quick-actions-bar.is-visible {
+    display: flex;
+}
+
+.quick-actions-status {
+    margin-right: auto;
+    color: var(--text-secondary);
+    font-size: var(--font-size-controls);
 }
 
 /* Config Main */

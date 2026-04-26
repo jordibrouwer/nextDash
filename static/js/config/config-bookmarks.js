@@ -35,9 +35,13 @@ class ConfigBookmarks {
             emptyState.innerHTML = `
                 <div class="empty-state-icon">📚</div>
                 <div class="empty-state-text">${this.t('config.noBookmarks') || 'No bookmarks in this category'}</div>
-                <div class="empty-state-subtext">Use "Add Bookmark" below to create one quickly.</div>
+                <div class="empty-state-subtext">Use "Add Bookmark" below, or import existing bookmarks.</div>
+                <div class="empty-state-action">
+                    <a class="btn btn-secondary btn-small" href="/config#backups">Import CSV</a>
+                </div>
             `;
             container.appendChild(emptyState);
+            this.updateBulkSelectionToolbar();
             return;
         }
 
@@ -594,12 +598,22 @@ class ConfigBookmarks {
 
     updateBulkSelectionToolbar() {
         const count = this.selectedBookmarkIndexes.size;
+        const bulkDeleteButton = document.getElementById('bulk-delete-bookmarks-btn');
+        const bulkToolbar = bulkDeleteButton ? bulkDeleteButton.closest('.bookmarks-toolbar') : null;
         ['bulk-delete-bookmarks-btn', 'bulk-apply-category-btn', 'bulk-toggle-pin-btn'].forEach((buttonId) => {
             const button = document.getElementById(buttonId);
             if (button) {
                 button.disabled = count === 0;
             }
         });
+        if (bulkToolbar) {
+            bulkToolbar.classList.toggle('is-active-selection', count > 0);
+        }
+
+        const countLabel = document.getElementById('bulk-selection-count');
+        if (countLabel) {
+            countLabel.textContent = count > 0 ? `${count} selected` : '0 selected';
+        }
 
         const deleteButton = document.getElementById('bulk-delete-bookmarks-btn');
         if (deleteButton) {

@@ -19,6 +19,7 @@ class Dashboard {
             showDate: true,
             showConfigButton: true,
             showRecentButton: true,
+            showTips: true,
             showCheatSheetButton: true,
             showStatus: false,
             showPing: false,
@@ -42,6 +43,7 @@ class Dashboard {
             showSmartStaleCollection: false,
             showSmartMostUsedCollection: false,
             smartRecentLimit: 50,
+            smartStaleLimit: 50,
             smartMostUsedLimit: 25,
             smartRecentPageIds: [],
             smartStalePageIds: [],
@@ -57,6 +59,9 @@ class Dashboard {
         this.pendingReorderSnapshot = null;
         this.pendingMetadataSave = null;
         this.notificationTimeout = null;
+        this.tipRotationTimer = null;
+        this.tipRotationIndex = 0;
+        this.tipPriorityIndex = 0;
         this.language = new ConfigLanguage();
         this.inlineEditingBookmarkIndex = null;
         this.init();
@@ -76,6 +81,7 @@ class Dashboard {
         this.initializeHyprMode();
         this.renderPageNavigation();
         this.renderDashboard();
+        this.initializeOnboarding();
         this.setupPageShortcuts();
         this.setupReorderUndoShortcut();
         this.setupToolbarActions();
@@ -150,10 +156,18 @@ class Dashboard {
             if (typeof this.settings.showRecentButton === 'undefined') {
                 this.settings.showRecentButton = true;
             }
+            if (typeof this.settings.showTips === 'undefined') {
+                this.settings.showTips = true;
+            }
             if (!Number.isFinite(Number(this.settings.smartRecentLimit)) || Number(this.settings.smartRecentLimit) < 0) {
                 this.settings.smartRecentLimit = 50;
             } else {
                 this.settings.smartRecentLimit = Number(this.settings.smartRecentLimit);
+            }
+            if (!Number.isFinite(Number(this.settings.smartStaleLimit)) || Number(this.settings.smartStaleLimit) < 0) {
+                this.settings.smartStaleLimit = 50;
+            } else {
+                this.settings.smartStaleLimit = Number(this.settings.smartStaleLimit);
             }
             if (!Number.isFinite(Number(this.settings.smartMostUsedLimit)) || Number(this.settings.smartMostUsedLimit) < 0) {
                 this.settings.smartMostUsedLimit = 25;
@@ -386,6 +400,7 @@ class Dashboard {
         document.body.setAttribute('data-show-search-button-text', this.settings.showSearchButtonText);
         document.body.setAttribute('data-show-finders-button-text', this.settings.showFindersButtonText);
         document.body.setAttribute('data-show-commands-button-text', this.settings.showCommandsButtonText);
+        document.body.setAttribute('data-show-tips', this.settings.showTips !== false);
         document.body.setAttribute('data-layout-preset', this.settings.layoutPreset || 'default');
 
         // Apply font size
@@ -405,6 +420,7 @@ class Dashboard {
 
         // Control page tabs visibility dynamically
         this.updatePageTabsVisibility();
+        this.initializeButtonTipsRotation();
 
         // Apply columns setting
         const grid = document.getElementById('dashboard-layout');
@@ -638,6 +654,75 @@ class Dashboard {
         });
     }
 
+    initializeOnboarding() {
+        if (typeof window.Onboarding !== 'function') {
+            return;
+        }
+        const onboarding = new window.Onboarding({
+            hasBookmarks: Array.isArray(this.bookmarks) && this.bookmarks.length > 0
+        });
+        onboarding.maybeStart();
+    }
+
+    initializeButtonTipsRotation() {
+        const hintEl = document.getElementById('button-hint-text');
+        if (!hintEl) {
+            return;
+        }
+        if (this.tipRotationTimer) {
+            clearTimeout(this.tipRotationTimer);
+            this.tipRotationTimer = null;
+        }
+
+        const tipsEnabled = this.settings.showTips !== false;
+        document.body.setAttribute('data-show-tips', tipsEnabled);
+        if (!tipsEnabled) {
+            return;
+        }
+
+        const priorityTips = [
+            'Tip: <code>*</code> recent',
+            'Tip: <code>!</code> cheatsheet',
+            'Tip: <code>↑/↓</code> navigate bookmarks',
+            'Tip: <code>Ctrl+/</code> or <code>F1</code> cheatsheet',
+            'Tip: <code>Ctrl+Shift+A</code> quick add'
+        ];
+        const normalTips = [
+            'Tip: <code>&gt;</code> open search',
+            'Tip: <code>?</code> open finders',
+            'Tip: <code>:</code> open commands',
+            'Tip: <code>/</code> start fuzzy search',
+            'Tip: <code>1-9</code> jump to page',
+            'Tip: <code>Shift+←/→</code> switch page',
+            'Tip: <code>Enter</code> open selected bookmark',
+            'Tip: <code>Space</code> open selected bookmark',
+            'Tip: <code>E</code> edit selected bookmark',
+            'Tip: <code>Esc</code> cancel current state',
+            'Tip: <code>Alt+↑/↓</code> reorder in config',
+            'Tip: use <code>category:work</code> in search',
+            'Tip: use <code>status:online</code> in search',
+            'Tip: use <code>page:2</code> in search',
+            'Tip: use <code>?g term</code> finder shortcut'
+        ];
+
+        let normalCounter = 0;
+        const run = () => {
+            const showPriority = normalCounter >= 5;
+            if (showPriority) {
+                hintEl.innerHTML = priorityTips[this.tipPriorityIndex % priorityTips.length];
+                this.tipPriorityIndex += 1;
+                normalCounter = 0;
+            } else {
+                hintEl.innerHTML = normalTips[this.tipRotationIndex % normalTips.length];
+                this.tipRotationIndex += 1;
+                normalCounter += 1;
+            }
+            const delay = 5000 + Math.floor(Math.random() * 3001); // 5-8s
+            this.tipRotationTimer = setTimeout(run, delay);
+        };
+        run();
+    }
+
     isModalOpen() {
         return Boolean(document.querySelector('.modal-overlay.show'));
     }
@@ -796,6 +881,7 @@ class Dashboard {
                     <div class="empty-state-subtext">Use quick add (Ctrl+Shift+A) or open config to add your first bookmark.</div>
                     <div class="empty-state-action">
                         <a class="btn btn-primary" href="/config#bookmarks">Add bookmarks</a>
+                        <a class="btn btn-secondary" href="/config#backups">Import CSV</a>
                     </div>
                 </div>
             `;
@@ -880,20 +966,30 @@ class Dashboard {
     sortBookmarks(bookmarks) {
         const sorted = [...(Array.isArray(bookmarks) ? bookmarks : [])];
         const method = this.settings.sortMethod || 'order';
+        const pinned = sorted
+            .filter((bookmark) => Boolean(bookmark?.pinned))
+            .sort((a, b) => (a?.name || '').localeCompare(b?.name || '', undefined, { sensitivity: 'base' }));
+        const regular = sorted.filter((bookmark) => !bookmark?.pinned);
 
         if (method === 'az') {
-            return sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+            return [
+                ...pinned,
+                ...regular.sort((a, b) => (a?.name || '').localeCompare(b?.name || '', undefined, { sensitivity: 'base' }))
+            ];
         }
 
         if (method === 'recent') {
-            return sorted.sort((a, b) => (b.lastOpened || 0) - (a.lastOpened || 0));
+            return [
+                ...pinned,
+                ...regular.sort((a, b) => (b?.lastOpened || 0) - (a?.lastOpened || 0))
+            ];
         }
 
         if (method === 'custom') {
-            return sorted.sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned));
+            return [...pinned, ...regular];
         }
 
-        return sorted;
+        return [...pinned, ...regular];
     }
 
     initializeCategoryReorder() {
@@ -1054,9 +1150,10 @@ class Dashboard {
         categoryDiv.className = 'category';
         categoryDiv.setAttribute('data-category-id', category.id || '');
         const isSmartCollection = category.isSmartCollection === true;
-        const isCollapsed = isSmartCollection
-            ? false
-            : (this.settings.alwaysCollapseCategories ? true : (this.collapsedCategories[category.id] || false));
+        const collapsedKey = isSmartCollection ? `smart:${category.id}` : category.id;
+        const isCollapsed = this.settings.alwaysCollapseCategories
+            ? true
+            : (this.collapsedCategories[collapsedKey] || false);
         categoryDiv.setAttribute('data-collapsed', isCollapsed ? 'true' : 'false');
 
         // Category title
@@ -1077,12 +1174,9 @@ class Dashboard {
             titleElement.textContent = `${textIcon} ${category.name.toLowerCase()}`;
         }
         titleElement.addEventListener('click', () => {
-            if (isSmartCollection) {
-                return;
-            }
             const isCollapsed = categoryDiv.getAttribute('data-collapsed') === 'true';
             categoryDiv.setAttribute('data-collapsed', isCollapsed ? 'false' : 'true');
-            this.collapsedCategories[category.id] = !isCollapsed;
+            this.collapsedCategories[collapsedKey] = !isCollapsed;
             this.saveCollapsedStates();
         });
         categoryDiv.appendChild(titleElement);
@@ -1157,18 +1251,22 @@ class Dashboard {
                 : null;
             collections.push({
                 id: '__smart_recent__',
-                name: 'Smart: Recently opened',
+                name: `Smart: Recently opened (${effectiveLimit ? Math.min(recentBookmarks.length, effectiveLimit) : recentBookmarks.length})`,
                 icon: '⚡',
                 bookmarks: effectiveLimit ? recentBookmarks.slice(0, effectiveLimit) : recentBookmarks
             });
         }
 
         if (this.settings.showSmartStaleCollection !== false && pageAllowed(this.settings.smartStalePageIds)) {
+            const configuredLimit = Number(this.settings.smartStaleLimit ?? 50);
+            const effectiveLimit = Number.isFinite(configuredLimit) && configuredLimit > 0
+                ? configuredLimit
+                : null;
             collections.push({
                 id: '__smart_stale__',
-                name: 'Smart: Stale bookmarks',
+                name: `Smart: Stale bookmarks (${effectiveLimit ? Math.min(staleBookmarks.length, effectiveLimit) : staleBookmarks.length})`,
                 icon: '⌛',
-                bookmarks: staleBookmarks
+                bookmarks: effectiveLimit ? staleBookmarks.slice(0, effectiveLimit) : staleBookmarks
             });
         }
 
@@ -1179,7 +1277,7 @@ class Dashboard {
                 : null;
             collections.push({
                 id: '__smart_most_used__',
-                name: 'Smart: Most used',
+                name: `Smart: Most used (${effectiveLimit ? Math.min(mostUsedBookmarks.length, effectiveLimit) : mostUsedBookmarks.length})`,
                 icon: '📈',
                 bookmarks: effectiveLimit ? mostUsedBookmarks.slice(0, effectiveLimit) : mostUsedBookmarks
             });

@@ -25,3 +25,56 @@ code {
 .tab-content ul {
     padding-left: 1.5rem;
 }
+
+.help-layout {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 1.5rem;
+    align-items: start;
+}
+
+.help-index {
+    position: sticky;
+    top: 8rem;
+    border: 1px solid var(--border-primary);
+    padding: 0.75rem;
+    background: var(--background-primary);
+}
+
+.help-index ul {
+    margin-top: 0.5rem;
+}
+
+.help-index li {
+    margin-bottom: 0.45rem !important;
+}
+
+.help-content {
+    display: grid;
+    gap: 1rem;
+}
+
+.help-block {
+    border: 1px solid var(--border-primary);
+    background: var(--background-primary);
+    padding: 0.9rem 1rem;
+}
+
+.help-block .section-title {
+    margin-bottom: 0.5rem;
+}
+
+.help-signature {
+    margin-top: 0.5rem;
+    color: var(--text-secondary);
+}
+
+@media (max-width: 1024px) {
+    .help-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .help-index {
+        position: static;
+    }
+}

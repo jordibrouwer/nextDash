@@ -46,12 +46,19 @@
                     <div class="config-actions-buttons">
                         <button id="save-btn" class="btn btn-success" data-i18n="config.saveChanges">Save Changes</button>
                         <span id="unsaved-indicator" class="unsaved-indicator" aria-live="polite">Unsaved changes</span>
+                        <span id="save-status-indicator" class="save-status-indicator" aria-live="polite">Saved</span>
                         <button id="reset-btn" class="btn btn-danger" data-i18n="config.resetToDefaults">Reset to Defaults</button>
                     </div>
                     <div class="nav-links">
                         <a href="/colors" class="back-link" data-i18n="config.customizeColors">→ customize colors</a>
                         <a href="/" class="back-link" data-i18n="config.backToDashboard">← back to dashboard</a>
                     </div>
+                </div>
+                <div class="quick-actions-bar" id="quick-actions-bar">
+                    <span class="quick-actions-status" id="quick-actions-status">No unsaved changes</span>
+                    <button type="button" id="save-quick-btn" class="btn btn-success btn-small">Save</button>
+                    <button type="button" id="undo-quick-btn" class="btn btn-secondary btn-small">Undo</button>
+                    <button type="button" id="discard-quick-btn" class="btn btn-danger btn-small">Discard</button>
                 </div>
 
                 <div class="tabs">
@@ -206,6 +213,7 @@
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="show-smart-recent-collection-checkbox">
                                     <span class="checkbox-text">Show Smart: Recently opened</span>
+                                    <span class="smart-count-badge" id="smart-recent-count-badge">0</span>
                                 </label>
                             </div>
                             <div class="checkbox-tree-item checkbox-tree-child">
@@ -222,13 +230,14 @@
                                     <option value="25">25</option>
                                     <option value="50">50</option>
                                     <option value="100">100</option>
-                                    <option value="0">Unlimited</option>
+                                    <option value="0" title="May impact performance on very large bookmark sets">Unlimited</option>
                                 </select>
                             </div>
                             <div class="checkbox-tree-item">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="show-smart-stale-collection-checkbox">
                                     <span class="checkbox-text">Show Smart: Stale bookmarks</span>
+                                    <span class="smart-count-badge" id="smart-stale-count-badge">0</span>
                                 </label>
                             </div>
                             <div class="checkbox-tree-item checkbox-tree-child">
@@ -237,10 +246,22 @@
                                 <select id="smart-stale-pages-select" multiple size="4">
                                 </select>
                             </div>
+                            <div class="checkbox-tree-item checkbox-tree-child">
+                                <span class="tree-symbol">└──</span>
+                                <label for="smart-stale-limit-select">Visible items:</label>
+                                <select id="smart-stale-limit-select">
+                                    <option value="10">10</option>
+                                    <option value="25">25</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                    <option value="0" title="May impact performance on very large bookmark sets">Unlimited</option>
+                                </select>
+                            </div>
                             <div class="checkbox-tree-item">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="show-smart-most-used-collection-checkbox">
                                     <span class="checkbox-text">Show Smart: Most used</span>
+                                    <span class="smart-count-badge" id="smart-most-used-count-badge">0</span>
                                 </label>
                             </div>
                             <div class="checkbox-tree-item checkbox-tree-child">
@@ -257,7 +278,7 @@
                                     <option value="25">25</option>
                                     <option value="50">50</option>
                                     <option value="100">100</option>
-                                    <option value="0">Unlimited</option>
+                                    <option value="0" title="May impact performance on very large bookmark sets">Unlimited</option>
                                 </select>
                             </div>
                             <div class="checkbox-tree-item">
@@ -327,6 +348,12 @@
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="show-recent-button-checkbox">
                                     <span class="checkbox-text" data-i18n="config.showRecentButton">Show recent button</span>
+                                </label>
+                            </div>
+                            <div class="checkbox-tree-item">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="show-tips-checkbox">
+                                    <span class="checkbox-text">Show tips above buttons</span>
                                 </label>
                             </div>
                             <div class="checkbox-tree-item">
@@ -522,6 +549,7 @@
                 </div>
                 <div class="bookmarks-toolbar">
                     <label>Bulk actions:</label>
+                    <span id="bulk-selection-count" class="bulk-selection-count">0 selected</span>
                     <button type="button" id="select-all-bookmarks-btn" class="btn btn-secondary btn-small">Select all</button>
                     <button type="button" id="clear-bookmark-selection-btn" class="btn btn-secondary btn-small">Clear</button>
                     <button type="button" id="bulk-delete-bookmarks-btn" class="btn btn-danger btn-small">Delete</button>
@@ -569,58 +597,157 @@
 
             <div class="tab-content" data-tab-content="help">
             <div class="config-section">
-                <p data-i18n="help.introduction">Welcome to nextDash! Here are the main features and shortcuts to help you navigate and use the app efficiently.</p>
-                
-                <br>
-                
-                <h3 class="section-title">Navigation</h3>
-                <ul>
-                    <li data-i18n="help.pageNavigation">Page Navigation: Use number keys <code>1</code>, <code>2</code>, <code>3</code>, etc. to switch between pages on the dashboard.</li>
-                    <li data-i18n="help.touchNavigation">Touch Navigation: On mobile or touch devices, swipe left or right to change pages.</li>
-                    <li data-i18n="help.arrowNavigation">Arrow Navigation: Press <code>Shift + Left Arrow</code> or <code>Shift + Right Arrow</code> to navigate between pages.</li>
-                    <li data-i18n="help.keyboardNavigation">Keyboard Navigation: Use arrow keys to navigate between bookmarks on the dashboard. Press <code>Enter</code> or <code>Space</code> to open the selected bookmark.</li>
-                </ul>
-                
-                <h3 class="section-title">Search & Shortcuts</h3>
-                <ul>
-                    <li data-i18n="help.shortcutsLauncher">Bookmark Shortcuts: Press any letter key on the dashboard to start typing a shortcut. For example, if you have a bookmark with shortcut <code>yt</code>, just type <code>yt</code> and the app will open it automatically.</li>
-                    <li data-i18n="help.fuzzySearch">Fuzzy Search: Press <code>/</code> to search for bookmarks by name. Start typing and it will find matches as you go.</li>
-                    <li data-i18n="help.searchMode">Search Mode: You can switch the search behavior. By default, typing starts shortcuts and <code>/</code> starts fuzzy search. You can toggle this in <code>config#general</code>.</li>
-                </ul>
-                
-                <h3 class="section-title">Finders</h3>
-                <ul>
-                    <li data-i18n="help.findersIntro">Finders: Create shortcuts for search engines and websites. Start your search with <code>?</code> followed by your finder shortcut to quickly search on external sites.</li>
-                    <li data-i18n="help.findersActivation">Activation: Type <code>?shortcut searchterm</code> on the dashboard. For example, if you have a finder with shortcut <code>g</code> for Google, type <code>?g javascript</code> to search for "javascript" on Google.</li>
-                    <li data-i18n="help.findersConfig">Configuration: Go to <code>config#finders</code> to add, edit, or remove finders. Each finder needs a name, search URL, and shortcut.</li>
-                    <li data-i18n="help.findersUrlFormat">URL Format: Use <code>%s</code> in the URL where you want the search term to be inserted, or leave it out to append the search term to the end of the URL.</li>
-                </ul>
-                
-                <h3 class="section-title">Commands</h3>
-                <ul>
-                    <li data-i18n="help.commands">Commands: Type <code>:</code> followed by a command to control the app. Available commands include: <code>theme</code> (switch theme), <code>columns</code> (change columns), <code>fontsize</code> (change font size), and more to come.</li>
-                </ul>
-                
-                <h3 class="section-title">Data Storage</h3>
-                <ul>
-                    <li data-i18n="help.dataStorage">Data Storage: All app data is saved in the <code>/data</code> directory. This includes JSON files for settings (your dashboard settings), pages (pages order), and colors (custom themes), as well as uploaded favicon, fonts, and individual bookmark pages (bookmarks-1.json, bookmarks-2.json, etc.).</li>
-                    <li data-i18n="help.deviceSpecificSettings">Device-Specific Settings: When enabled, your dashboard settings are saved locally in your browser instead of on the server. This means settings are specific to this device/browser and won't sync across different devices.</li>
-                </ul>
-                                
-                <h3 class="section-title" data-i18n="help.chromeExtension">Chrome Extension</h3>
-                <p data-i18n="help.extensionIntro">nextDash includes a Chrome extension that allows you to quickly add bookmarks from any webpage directly to your dashboard.</p>
-                
-                <br>
-                
-                <ul>
-                    <li data-i18n="help.extensionInstall">To install the extension: Clone the <a href="https://github.com/jordibrouwer/nextDash" target="_blank" rel="noopener noreferrer"><code>GitHub repository</code></a> to your local machine, or download the latest version from <a href="https://github.com/jordibrouwer/nextDash/archive/refs/heads/main.zip" target="_blank" rel="noopener noreferrer"><code>here</code></a>. Then go to Chrome's extension settings (chrome://extensions/), enable "Developer mode", and click "Load unpacked". Select the <code>extension</code> folder from the downloaded or cloned repository.</li>
-                    <li data-i18n="help.extensionConfig">Configuration: Once installed, open the extension and go to the Settings tab. Enter your nextDash URL, set the Default Page where bookmarks will be saved, and choose the category within that page.</li>
-                    <li data-i18n="help.extensionUsage">Usage: Click the extension icon, optionally modify the name, URL, page, and category, then click Save Bookmark.</li>
-                </ul>
+                <div class="help-layout">
+                    <aside class="help-index">
+                        <h3 class="section-title">Quick links</h3>
+                        <ul>
+                            <li><a href="#help-quick-start">Quick start</a></li>
+                            <li><a href="#help-navigation">Navigation</a></li>
+                            <li><a href="#help-search">Search & modes</a></li>
+                            <li><a href="#help-smart">Smart collections</a></li>
+                            <li><a href="#help-sorting">Sorting & pinned</a></li>
+                            <li><a href="#help-manage">Manage bookmarks</a></li>
+                            <li><a href="#help-finders">Finders</a></li>
+                            <li><a href="#help-status">Status monitor</a></li>
+                            <li><a href="#help-tips">Tips rotation</a></li>
+                            <li><a href="#help-backup">Backup & import</a></li>
+                            <li><a href="#help-branding">Theme & branding</a></li>
+                            <li><a href="#help-data">Data & sync</a></li>
+                            <li><a href="#help-troubleshoot">Troubleshooting</a></li>
+                        </ul>
+                    </aside>
+                    <div class="help-content">
+                        <section id="help-quick-start" class="help-block">
+                            <h3 class="section-title">Quick Start (30 sec)</h3>
+                            <ul>
+                                <li>Open search with <code>&gt;</code>, type a bookmark, press <code>Enter</code>.</li>
+                                <li>Open recent bookmarks with <code>*</code>.</li>
+                                <li>Open keyboard cheatsheet with <code>!</code> or <code>Ctrl+/</code>.</li>
+                                <li>Open config and tune dashboard layout, sorting, and smart collections.</li>
+                            </ul>
+                        </section>
 
-                <h3 class="section-title">Feedback</h3>
-                <p data-i18n="help.feedback">Found a bug or have feedback? Visit the <a href="https://github.com/jordibrouwer/nextDash" target="_blank" rel="noopener noreferrer"><code>GitHub repository</code></a> to report issues or suggest improvements.</p>
+                        <section id="help-navigation" class="help-block">
+                            <h3 class="section-title">Navigation</h3>
+                            <ul>
+                                <li>Switch pages with number keys <code>1-9</code>.</li>
+                                <li>Move between pages with <code>Shift + Left/Right</code>.</li>
+                                <li>Navigate bookmarks with <code>Up/Down</code> and <code>Left/Right</code>.</li>
+                                <li>Open selected bookmark with <code>Enter</code> or <code>Space</code>.</li>
+                                <li>Inline edit selected bookmark with <code>E</code>; cancel with <code>Esc</code>.</li>
+                            </ul>
+                        </section>
 
+                        <section id="help-search" class="help-block">
+                            <h3 class="section-title">Search & Input Modes</h3>
+                            <ul>
+                                <li><code>&gt;</code> open normal search, <code>:</code> commands, <code>?</code> finders.</li>
+                                <li><code>/</code> fuzzy search behavior depends on the configured search mode.</li>
+                                <li>Use filters in search: <code>category:work</code>, <code>status:online</code>, <code>page:2</code>.</li>
+                                <li>Turn on "Keep search open when empty" for fast repeated searches.</li>
+                            </ul>
+                        </section>
+
+                        <section id="help-smart" class="help-block">
+                            <h3 class="section-title">Smart Collections</h3>
+                            <ul>
+                                <li><strong>Recently opened</strong>, <strong>Stale bookmarks</strong>, and <strong>Most used</strong> are generated automatically.</li>
+                                <li>Each smart collection can be enabled per page and limited in visible items.</li>
+                                <li>Set limit to <code>0</code> for unlimited items.</li>
+                                <li>Smart sections support collapse/expand on dashboard.</li>
+                            </ul>
+                        </section>
+
+                        <section id="help-sorting" class="help-block">
+                            <h3 class="section-title">Sorting, Pinned & Categories</h3>
+                            <ul>
+                                <li>Pinned bookmarks always stay on top of non-pinned bookmarks.</li>
+                                <li>Pinned bookmarks are always sorted alphabetically.</li>
+                                <li>Non-pinned bookmarks use your selected sort mode (manual, A-Z, recent, pinned-first behavior).</li>
+                                <li>Categories can be collapsed and can default to collapsed.</li>
+                            </ul>
+                        </section>
+
+                        <section id="help-manage" class="help-block">
+                            <h3 class="section-title">Manage Bookmarks</h3>
+                            <ul>
+                                <li>Add, edit, reorder, move, and remove bookmarks in config.</li>
+                                <li>Bulk actions: select, move category, toggle pin, delete.</li>
+                                <li>Use <code>Alt+Up</code> / <code>Alt+Down</code> to reorder quickly in config lists.</li>
+                                <li>Conflict highlighting warns about duplicate URLs and shortcuts before save.</li>
+                            </ul>
+                        </section>
+
+                        <section id="help-finders" class="help-block">
+                            <h3 class="section-title">Finders</h3>
+                            <ul>
+                                <li>Format: <code>?shortcut your query</code> (example: <code>?g nextdash</code>).</li>
+                                <li>Use <code>%s</code> in finder URL where query should be inserted.</li>
+                                <li>If bookmark and finder share a shortcut, both options are shown in search context.</li>
+                            </ul>
+                        </section>
+
+                        <section id="help-status" class="help-block">
+                            <h3 class="section-title">Status Monitor</h3>
+                            <ul>
+                                <li>Enable status checks to display online/offline state.</li>
+                                <li>Optionally show ping and loading indicators.</li>
+                                <li>Use "Skip fast ping check" to reduce noise and speed up checks.</li>
+                            </ul>
+                        </section>
+
+                        <section id="help-tips" class="help-block">
+                            <h3 class="section-title">Tips Rotation Above Buttons</h3>
+                            <ul>
+                                <li>Tips rotate every <strong>5 to 8 seconds</strong>.</li>
+                                <li>After every <strong>5 normal tips</strong>, a priority tip is shown.</li>
+                                <li>Priority tips include recent, cheatsheet, navigation, and quick-add shortcuts.</li>
+                                <li>You can toggle tips in <code>config#general</code> under Dashboard.</li>
+                            </ul>
+                        </section>
+
+                        <section id="help-backup" class="help-block">
+                            <h3 class="section-title">Backup, CSV & Import</h3>
+                            <ul>
+                                <li>ZIP backup exports pages, bookmarks, categories, settings, and themes.</li>
+                                <li>Importing ZIP replaces current data.</li>
+                                <li>CSV export/import focuses on bookmarks.</li>
+                                <li>Best practice: create a backup before large edits or imports.</li>
+                            </ul>
+                        </section>
+
+                        <section id="help-branding" class="help-block">
+                            <h3 class="section-title">Theme, Layout & Branding</h3>
+                            <ul>
+                                <li>Choose theme, font size, font weight, and layout preset.</li>
+                                <li>Enable auto dark mode to follow system appearance.</li>
+                                <li>Upload custom favicon and custom font.</li>
+                            </ul>
+                        </section>
+
+                        <section id="help-data" class="help-block">
+                            <h3 class="section-title">Data, Storage & Device-Specific Settings</h3>
+                            <ul>
+                                <li>Server-side data is stored in <code>/data</code>.</li>
+                                <li>Device-specific settings are stored in browser local storage.</li>
+                                <li>When device-specific mode is enabled, visual behavior can differ between devices.</li>
+                            </ul>
+                        </section>
+
+                        <section id="help-troubleshoot" class="help-block">
+                            <h3 class="section-title">Troubleshooting</h3>
+                            <ul>
+                                <li><strong>No bookmarks visible:</strong> check page selector and category filter in config.</li>
+                                <li><strong>Sorting seems wrong:</strong> verify sort mode and pin state.</li>
+                                <li><strong>Tips not visible:</strong> enable "Show tips above buttons" in Dashboard settings.</li>
+                                <li><strong>Search misses items:</strong> try fuzzy search and filter syntax.</li>
+                            </ul>
+                            <p>Found a bug or have feedback? Visit the <a href="https://github.com/jordibrouwer/nextDash" target="_blank" rel="noopener noreferrer"><code>GitHub repository</code></a> to report issues or suggest improvements.</p>
+                        </section>
+
+                        <p class="help-signature">Made with ❤️ by <a href="https://www.jordibrw.nl" target="_blank" rel="noopener noreferrer">Jordi Brouwer</a>.</p>
+                    </div>
+                </div>
             </div>
             </div>
 

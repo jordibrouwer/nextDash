@@ -79,6 +79,7 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Background Dots** - Animated background dots (toggle on/off)
 - **Background Opacity** - Slider control for background transparency
 - **Layout Presets** - Default, Compact, Cards, and Terminal-ish layouts
+- **First-Run Onboarding** - Guided 4-step quick tour shown on first launch
 
 ### Theme & Color Customization
 - **Default Themes** - Pre-configured light and dark themes
@@ -141,8 +142,10 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Global Settings** - Save settings to server
 - **Manual Save Flow** - Use **Save Changes** to persist most configuration updates
 - **Unsaved Changes Indicator** - Sticky unsaved badge and subtle save button pulse when config is dirty
+- **Quick Save Bar** - Save/Undo/Discard shortcuts when unsaved changes are present
 - **Undo Toasts** - Undo destructive actions (delete/reset) directly from notification toasts
 - **Settings Reset** - Reset all settings with confirmation
+- **Expanded Help Page** - Indexed help sections with quick links, troubleshooting, and feature deep-dives
 
 ### UI Customization
 - **Toggle Config Button** - Show/hide config access
@@ -157,6 +160,7 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Toggle Status Indicators** - Show/hide online/offline status
 - **Toggle Ping Times** - Show/hide response times
 - **Toggle Status Loading** - Show/hide loading animation
+- **Toggle Rotating Tips** - Show/hide rotating shortcut tips above dashboard action buttons
 
 ### PWA & Launcher
 - **Progressive Web App** - Installable as standalone app
@@ -190,7 +194,9 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Per-Collection Toggle** - Enable/disable each smart collection independently
 - **Per-Page Activation** - Control on which page(s) each smart collection appears via multi-select
 - **Recent Collection Limit** - Choose 10/25/50/100/unlimited items
+- **Stale Collection Limit** - Choose 10/25/50/100/unlimited items
 - **Most Used Collection Limit** - Choose 10/25/50/100/unlimited items
+- **Smart Collection Collapse** - Collapse/expand smart sections on the dashboard
 - **Default State** - Smart collections are disabled by default
 
 ### Sorting & Organization
@@ -198,7 +204,13 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Alphabetical Sorting** - Sort bookmarks A-Z
 - **Recently Used** - Sort by last opened time
 - **Pinned First** - Custom pinned priority sorting
+- **Pinned Always Alphabetical** - Pinned bookmarks stay at top and are always sorted A-Z
 - **Undo Reorder** - Undo drag-drop changes
+
+### Onboarding & In-App Guidance
+- **First Launch Tour** - Welcome overlay introduces search, shortcuts, and config in 4 concise steps
+- **Priority Tip Rotation** - Rotating tips every 5-8 seconds with recurring high-priority shortcuts
+- **Keyboard Escape Hatch** - `Esc` dismisses onboarding instantly
 
 ## 🚀 Quick Start
 
@@ -403,10 +415,11 @@ Switch languages in **Config → General Settings → Language**
 - Show/hide page tabs
 - Toggle smart collections (recent/stale/most used)
 - Configure smart collection page scope (multi-select pages)
-- Configure smart recent and most-used item limits (10/25/50/100/unlimited)
+- Configure smart recent, stale, and most-used item limits (10/25/50/100/unlimited)
 - Show/hide bookmark icons
 - Show/hide status indicators
 - Show/hide ping times
+- Show/hide rotating tips above action buttons
 
 ### Advanced Settings
 - Auto dark mode

@@ -204,8 +204,21 @@
     left: 50%;
     transform: translateX(-50%);
     display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
     gap: 1rem;
     z-index: 1000;
+}
+
+.button-hint {
+    width: 100%;
+    text-align: center;
+    font-size: var(--font-size-controls);
+    color: var(--text-tertiary);
+}
+
+body[data-show-tips="false"] .button-hint {
+    display: none;
 }
 
 /* Search Button */

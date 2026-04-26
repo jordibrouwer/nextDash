@@ -1,0 +1,59 @@
+.onboarding-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 2200;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 1rem;
+}
+
+.onboarding-card {
+    width: min(640px, 96vw);
+    border: 1px solid var(--border-primary);
+    background: var(--background-modal);
+    color: var(--text-primary);
+    padding: 1rem;
+}
+
+.onboarding-progress {
+    font-size: var(--font-size-controls);
+    color: var(--text-tertiary);
+    margin-bottom: 0.35rem;
+}
+
+.onboarding-title {
+    font-size: var(--font-size-category);
+    margin-bottom: 0.35rem;
+}
+
+.onboarding-body {
+    color: var(--text-secondary);
+    margin-bottom: 0.75rem;
+}
+
+.onboarding-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.onboarding-btn {
+    border: 1px solid var(--border-primary);
+    background: var(--background-primary);
+    color: var(--text-primary);
+    padding: 0.4rem 0.7rem;
+    cursor: pointer;
+}
+
+.onboarding-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.onboarding-highlight {
+    position: relative;
+    z-index: 2201;
+    box-shadow: 0 0 0 2px var(--accent-success), 0 0 0 6px rgba(16, 185, 129, 0.18);
+}

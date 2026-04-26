@@ -39,6 +39,7 @@ class ConfigManager {
             showDate: true,
             showCheatSheetButton: true,
             showRecentButton: true,
+            showTips: true,
             showStatus: false,
             showPing: false,
             skipFastPing: false,
@@ -65,6 +66,7 @@ class ConfigManager {
             showSmartStaleCollection: false,
             showSmartMostUsedCollection: false,
             smartRecentLimit: 50,
+            smartStaleLimit: 50,
             smartMostUsedLimit: 25,
             smartRecentPageIds: [],
             smartStalePageIds: [],
@@ -73,6 +75,7 @@ class ConfigManager {
         this.deviceSpecific = false;
         this.isDirty = false;
         this.undoSnapshot = null;
+        this.savedSnapshot = null;
         this.suppressDirtyTracking = false;
 
         this.init();
@@ -84,6 +87,7 @@ class ConfigManager {
         this.setupDOM();
         await this.setupEventListeners();
         this.language.setupLanguageSelector();
+        this.setupGeneralCardCollapsible();
         
         // Set language for global modal
         if (window.AppModal) {
@@ -103,6 +107,8 @@ class ConfigManager {
             this.currentCategoriesPageId = parseInt(this.currentPageId);
             this.loadPageCategories(this.currentPageId);
         }
+        this.savedSnapshot = this.captureUndoSnapshot();
+        this.refreshSmartCollectionCounters();
     }
 
     async loadData() {
@@ -133,10 +139,18 @@ class ConfigManager {
             if (typeof this.settingsData.showRecentButton === 'undefined') {
                 this.settingsData.showRecentButton = true;
             }
+            if (typeof this.settingsData.showTips === 'undefined') {
+                this.settingsData.showTips = true;
+            }
             if (!Number.isFinite(Number(this.settingsData.smartRecentLimit)) || Number(this.settingsData.smartRecentLimit) < 0) {
                 this.settingsData.smartRecentLimit = 50;
             } else {
                 this.settingsData.smartRecentLimit = Number(this.settingsData.smartRecentLimit);
+            }
+            if (!Number.isFinite(Number(this.settingsData.smartStaleLimit)) || Number(this.settingsData.smartStaleLimit) < 0) {
+                this.settingsData.smartStaleLimit = 50;
+            } else {
+                this.settingsData.smartStaleLimit = Number(this.settingsData.smartStaleLimit);
             }
             if (!Array.isArray(this.settingsData.smartRecentPageIds)) {
                 this.settingsData.smartRecentPageIds = [];
@@ -349,6 +363,23 @@ class ConfigManager {
         const saveBtn = document.getElementById('save-btn');
         if (saveBtn) saveBtn.addEventListener('click', () => this.saveChanges());
 
+        const saveQuickBtn = document.getElementById('save-quick-btn');
+        if (saveQuickBtn) saveQuickBtn.addEventListener('click', () => this.saveChanges());
+
+        const undoQuickBtn = document.getElementById('undo-quick-btn');
+        if (undoQuickBtn) {
+            undoQuickBtn.addEventListener('click', () => {
+                if (this.undoSnapshot) {
+                    this.restoreUndoSnapshot(this.undoSnapshot);
+                    this.undoSnapshot = null;
+                    this.ui.showNotification('Undone.', 'success');
+                }
+            });
+        }
+
+        const discardQuickBtn = document.getElementById('discard-quick-btn');
+        if (discardQuickBtn) discardQuickBtn.addEventListener('click', () => this.discardChanges());
+
         const resetBtn = document.getElementById('reset-btn');
         if (resetBtn) resetBtn.addEventListener('click', () => this.resetToDefaults());
         this.setupDirtyTracking();
@@ -391,11 +422,32 @@ class ConfigManager {
         this.isDirty = isDirty === true;
         const saveBtn = document.getElementById('save-btn');
         const badge = document.getElementById('unsaved-indicator');
+        const saveStatus = document.getElementById('save-status-indicator');
+        const quickBar = document.getElementById('quick-actions-bar');
+        const quickStatus = document.getElementById('quick-actions-status');
+        const undoQuickBtn = document.getElementById('undo-quick-btn');
+        const discardQuickBtn = document.getElementById('discard-quick-btn');
         if (saveBtn) {
             saveBtn.classList.toggle('has-unsaved', this.isDirty);
         }
         if (badge) {
             badge.classList.toggle('is-visible', this.isDirty);
+        }
+        if (saveStatus) {
+            saveStatus.textContent = this.isDirty ? 'Unsaved changes' : 'Saved';
+            saveStatus.classList.toggle('is-unsaved', this.isDirty);
+        }
+        if (quickBar) {
+            quickBar.classList.toggle('is-visible', this.isDirty);
+        }
+        if (quickStatus) {
+            quickStatus.textContent = this.isDirty ? 'Unsaved changes' : 'No unsaved changes';
+        }
+        if (undoQuickBtn) {
+            undoQuickBtn.disabled = !this.undoSnapshot;
+        }
+        if (discardQuickBtn) {
+            discardQuickBtn.disabled = !this.isDirty;
         }
     }
 
@@ -443,15 +495,80 @@ class ConfigManager {
         const activeSnapshot = snapshot || this.captureUndoSnapshot();
         if (!activeSnapshot) return;
         this.undoSnapshot = activeSnapshot;
+        this.setDirtyState(this.isDirty);
         this.ui.showNotification(message, 'warning', {
             actionLabel: 'Undo',
             durationMs: 8000,
             onAction: () => {
                 this.restoreUndoSnapshot(this.undoSnapshot);
                 this.undoSnapshot = null;
+                this.setDirtyState(this.isDirty);
                 this.ui.showNotification('Undone.', 'success');
             }
         });
+    }
+
+    setupGeneralCardCollapsible() {
+        const cards = document.querySelectorAll('.general-card');
+        cards.forEach((card, index) => {
+            const title = card.querySelector('.section-title');
+            if (!title) return;
+            card.classList.add('is-collapsible');
+            if (index > 1) {
+                card.classList.add('is-collapsed');
+            }
+            title.addEventListener('click', () => {
+                card.classList.toggle('is-collapsed');
+            });
+        });
+    }
+
+    async refreshSmartCollectionCounters() {
+        try {
+            const res = await fetch('/api/bookmarks?all=true');
+            if (!res.ok) return;
+            const allBookmarks = await res.json();
+            const list = Array.isArray(allBookmarks) ? allBookmarks : [];
+            const now = Date.now();
+            const weekMs = 7 * 24 * 60 * 60 * 1000;
+            const staleMs = 30 * 24 * 60 * 60 * 1000;
+
+            const recentCount = list.filter((bookmark) => {
+                const lastOpened = Number(bookmark?.lastOpened || 0);
+                return lastOpened > 0 && (now - lastOpened) <= weekMs;
+            }).length;
+            const staleCount = list.filter((bookmark) => {
+                const lastOpened = Number(bookmark?.lastOpened || 0);
+                return lastOpened === 0 || (now - lastOpened) > staleMs;
+            }).length;
+            const mostUsedCount = list.filter((bookmark) => Number(bookmark?.openCount || 0) > 0).length;
+
+            const setBadge = (id, count) => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = String(count);
+            };
+            setBadge('smart-recent-count-badge', recentCount);
+            setBadge('smart-stale-count-badge', staleCount);
+            setBadge('smart-most-used-count-badge', mostUsedCount);
+        } catch (error) {
+            // Keep config functional even if counters fail.
+        }
+    }
+
+    async discardChanges() {
+        if (!this.isDirty) {
+            return;
+        }
+        const confirmed = await window.AppModal.danger({
+            title: 'Discard unsaved changes',
+            message: 'Revert all unsaved changes from this session?',
+            confirmText: 'Discard',
+            cancelText: 'Cancel'
+        });
+        if (!confirmed) {
+            return;
+        }
+        window.location.reload();
     }
 
     setupCascadingCheckboxes() {
@@ -1034,6 +1151,11 @@ class ConfigManager {
         if (conflicts.hasConflicts) {
             return;
         }
+        const saveStatus = document.getElementById('save-status-indicator');
+        if (saveStatus) {
+            saveStatus.textContent = 'Saving...';
+            saveStatus.classList.remove('is-unsaved');
+        }
         this.ui.showNotification(this.language.t('config.savingChanges'), 'info');
 
         try {
@@ -1074,8 +1196,15 @@ class ConfigManager {
             }
             this.clearDirty();
             this.undoSnapshot = null;
+            this.savedSnapshot = this.captureUndoSnapshot();
+            this.setDirtyState(false);
+            this.refreshSmartCollectionCounters();
         } catch (error) {
             console.error('Error saving configuration:', error);
+            if (saveStatus) {
+                saveStatus.textContent = 'Save failed';
+                saveStatus.classList.add('is-unsaved');
+            }
             this.ui.showNotification(this.language.t('config.errorSavingConfig'), 'error');
         }
     }
@@ -1219,6 +1348,8 @@ class ConfigManager {
         document.getElementById('show-finders-button-checkbox').checked = this.settingsData.showFindersButton;
         document.getElementById('show-commands-button-checkbox').checked = this.settingsData.showCommandsButton;
         document.getElementById('show-cheatsheet-button-checkbox').checked = this.settingsData.showCheatSheetButton;
+        const showTipsCheckbox = document.getElementById('show-tips-checkbox');
+        if (showTipsCheckbox) showTipsCheckbox.checked = this.settingsData.showTips !== false;
         document.getElementById('show-search-button-text-checkbox').checked = this.settingsData.showSearchButtonText;
         document.getElementById('show-finders-button-text-checkbox').checked = this.settingsData.showFindersButtonText;
         document.getElementById('show-commands-button-text-checkbox').checked = this.settingsData.showCommandsButtonText;

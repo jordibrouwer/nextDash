@@ -37,6 +37,20 @@
     background: var(--background-primary);
 }
 
+.bulk-selection-count {
+    font-size: var(--font-size-controls);
+    color: var(--text-tertiary);
+    min-width: 6rem;
+}
+
+.bookmarks-toolbar.is-active-selection {
+    position: sticky;
+    bottom: 0.5rem;
+    z-index: 40;
+    border-color: var(--text-secondary);
+    box-shadow: 0 0 0 1px var(--border-primary);
+}
+
 .bookmarks-toolbar label {
     font-size: var(--font-size-text);
     font-weight: var(--font-weight-semibold);

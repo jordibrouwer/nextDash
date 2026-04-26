@@ -68,6 +68,7 @@ type Settings struct {
 	ShowFindersButton         bool    `json:"showFindersButton"`
 	ShowCommandsButton        bool    `json:"showCommandsButton"`
 	ShowRecentButton          bool    `json:"showRecentButton"`
+	ShowTips                  bool    `json:"showTips"`
 	ShowCheatSheetButton      bool    `json:"showCheatSheetButton"`
 	ShowSearchButtonText      bool    `json:"showSearchButtonText"`
 	ShowFindersButtonText     bool    `json:"showFindersButtonText"`
@@ -105,6 +106,7 @@ type Settings struct {
 	ShowSmartStaleCollection  bool    `json:"showSmartStaleCollection"`  // Show smart stale bookmarks collection
 	ShowSmartMostUsedCollection bool  `json:"showSmartMostUsedCollection"` // Show smart most used bookmarks collection
 	SmartRecentLimit          int     `json:"smartRecentLimit"`          // Max items in smart recently opened (0 = unlimited)
+	SmartStaleLimit           int     `json:"smartStaleLimit"`           // Max items in smart stale bookmarks (0 = unlimited)
 	SmartMostUsedLimit        int     `json:"smartMostUsedLimit"`        // Max items in smart most used (0 = unlimited)
 	SmartRecentPageIds        []int   `json:"smartRecentPageIds"`        // Page IDs where smart recent is enabled (empty = all)
 	SmartStalePageIds         []int   `json:"smartStalePageIds"`         // Page IDs where smart stale is enabled (empty = all)
@@ -234,6 +236,7 @@ func (fs *FileStore) initializeDefaultFiles() {
 			ShowFindersButton:         false,
 			ShowCommandsButton:        false,
 			ShowRecentButton:          true,
+			ShowTips:                  true,
 			ShowCheatSheetButton:      true,
 			ShowSearchButtonText:      true,
 			ShowFindersButtonText:     true,
@@ -795,6 +798,7 @@ func (fs *FileStore) GetSettings() Settings {
 			ShowFindersButton:         false,
 			ShowCommandsButton:        false,
 			ShowRecentButton:          true,
+			ShowTips:                  true,
 			ShowCheatSheetButton:      true,
 			ShowSearchButtonText:      true,
 			ShowFindersButtonText:     true,
@@ -829,6 +833,7 @@ func (fs *FileStore) GetSettings() Settings {
 			ShowSmartRecentCollection: false,
 			ShowSmartStaleCollection:  false,
 			SmartRecentLimit:          50,
+			SmartStaleLimit:           50,
 			SmartRecentPageIds:        []int{},
 			SmartStalePageIds:         []int{},
 		}
@@ -845,6 +850,9 @@ func (fs *FileStore) GetSettings() Settings {
 		if _, ok := rawSettings["showRecentButton"]; !ok {
 			settings.ShowRecentButton = true
 		}
+		if _, ok := rawSettings["showTips"]; !ok {
+			settings.ShowTips = true
+		}
 		if _, ok := rawSettings["showSmartRecentCollection"]; !ok {
 			settings.ShowSmartRecentCollection = false
 		}
@@ -853,6 +861,9 @@ func (fs *FileStore) GetSettings() Settings {
 		}
 		if _, ok := rawSettings["smartRecentLimit"]; !ok || settings.SmartRecentLimit < 0 {
 			settings.SmartRecentLimit = 50
+		}
+		if _, ok := rawSettings["smartStaleLimit"]; !ok || settings.SmartStaleLimit < 0 {
+			settings.SmartStaleLimit = 50
 		}
 		if _, ok := rawSettings["smartRecentPageIds"]; !ok || settings.SmartRecentPageIds == nil {
 			settings.SmartRecentPageIds = []int{}

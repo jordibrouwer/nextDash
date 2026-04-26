@@ -120,6 +120,23 @@ class ConfigSettings {
         );
     }
 
+    toggleSmartCollectionControls(type, enabled) {
+        const map = {
+            recent: ['smart-recent-pages-select', 'smart-recent-limit-select'],
+            stale: ['smart-stale-pages-select', 'smart-stale-limit-select'],
+            mostUsed: ['smart-most-used-pages-select', 'smart-most-used-limit-select']
+        };
+        (map[type] || []).forEach((id) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.disabled = !enabled;
+            const row = el.closest('.checkbox-tree-child');
+            if (row) {
+                row.classList.toggle('is-disabled', !enabled);
+            }
+        });
+    }
+
     async loadCustomThemes() {
         try {
             const response = await fetch('/api/colors/custom-themes');
@@ -671,6 +688,14 @@ class ConfigSettings {
             });
         }
 
+        const showTipsCheckbox = document.getElementById('show-tips-checkbox');
+        if (showTipsCheckbox) {
+            showTipsCheckbox.checked = settings.showTips !== false;
+            showTipsCheckbox.addEventListener('change', (e) => {
+                settings.showTips = e.target.checked;
+            });
+        }
+
         // Show search button text checkbox
         const showSearchButtonTextCheckbox = document.getElementById('show-search-button-text-checkbox');
         if (showSearchButtonTextCheckbox) {
@@ -799,7 +824,9 @@ class ConfigSettings {
             showSmartRecentCollectionCheckbox.checked = settings.showSmartRecentCollection !== false;
             showSmartRecentCollectionCheckbox.addEventListener('change', (e) => {
                 settings.showSmartRecentCollection = e.target.checked;
+                this.toggleSmartCollectionControls('recent', e.target.checked);
             });
+            this.toggleSmartCollectionControls('recent', showSmartRecentCollectionCheckbox.checked);
         }
 
         const showSmartStaleCollectionCheckbox = document.getElementById('show-smart-stale-collection-checkbox');
@@ -807,7 +834,9 @@ class ConfigSettings {
             showSmartStaleCollectionCheckbox.checked = settings.showSmartStaleCollection !== false;
             showSmartStaleCollectionCheckbox.addEventListener('change', (e) => {
                 settings.showSmartStaleCollection = e.target.checked;
+                this.toggleSmartCollectionControls('stale', e.target.checked);
             });
+            this.toggleSmartCollectionControls('stale', showSmartStaleCollectionCheckbox.checked);
         }
 
         const showSmartMostUsedCollectionCheckbox = document.getElementById('show-smart-most-used-collection-checkbox');
@@ -815,7 +844,9 @@ class ConfigSettings {
             showSmartMostUsedCollectionCheckbox.checked = settings.showSmartMostUsedCollection === true;
             showSmartMostUsedCollectionCheckbox.addEventListener('change', (e) => {
                 settings.showSmartMostUsedCollection = e.target.checked;
+                this.toggleSmartCollectionControls('mostUsed', e.target.checked);
             });
+            this.toggleSmartCollectionControls('mostUsed', showSmartMostUsedCollectionCheckbox.checked);
         }
 
         const smartRecentPagesSelect = document.getElementById('smart-recent-pages-select');
@@ -840,6 +871,17 @@ class ConfigSettings {
         if (smartStalePagesSelect) {
             smartStalePagesSelect.addEventListener('change', () => {
                 settings.smartStalePageIds = this.getSelectedPageIds(smartStalePagesSelect);
+            });
+        }
+
+        const smartStaleLimitSelect = document.getElementById('smart-stale-limit-select');
+        if (smartStaleLimitSelect) {
+            const currentLimit = Number(settings.smartStaleLimit ?? 50);
+            const normalizedLimit = Number.isFinite(currentLimit) && currentLimit >= 0 ? currentLimit : 50;
+            smartStaleLimitSelect.value = normalizedLimit === 0 ? '0' : String(normalizedLimit);
+            smartStaleLimitSelect.addEventListener('change', (e) => {
+                const value = Number(e.target.value);
+                settings.smartStaleLimit = Number.isFinite(value) && value >= 0 ? value : 50;
             });
         }
 
@@ -879,6 +921,7 @@ class ConfigSettings {
         const showCommandsButtonCheckbox = document.getElementById('show-commands-button-checkbox');
         const showCheatSheetButtonCheckbox = document.getElementById('show-cheatsheet-button-checkbox');
         const showRecentButtonCheckbox = document.getElementById('show-recent-button-checkbox');
+        const showTipsCheckbox = document.getElementById('show-tips-checkbox');
         const showSearchButtonTextCheckbox = document.getElementById('show-search-button-text-checkbox');
         const showFindersButtonTextCheckbox = document.getElementById('show-finders-button-text-checkbox');
         const showCommandsButtonTextCheckbox = document.getElementById('show-commands-button-text-checkbox');
@@ -906,6 +949,7 @@ class ConfigSettings {
         const smartStalePagesSelect = document.getElementById('smart-stale-pages-select');
         const smartMostUsedPagesSelect = document.getElementById('smart-most-used-pages-select');
         const smartRecentLimitSelect = document.getElementById('smart-recent-limit-select');
+        const smartStaleLimitSelect = document.getElementById('smart-stale-limit-select');
         const smartMostUsedLimitSelect = document.getElementById('smart-most-used-limit-select');
 
         if (themeSelect) settings.theme = themeSelect.value;
@@ -920,6 +964,7 @@ class ConfigSettings {
         if (showCommandsButtonCheckbox) settings.showCommandsButton = showCommandsButtonCheckbox.checked;
         if (showCheatSheetButtonCheckbox) settings.showCheatSheetButton = showCheatSheetButtonCheckbox.checked;
         if (showRecentButtonCheckbox) settings.showRecentButton = showRecentButtonCheckbox.checked;
+        if (showTipsCheckbox) settings.showTips = showTipsCheckbox.checked;
         if (showSearchButtonTextCheckbox) settings.showSearchButtonText = showSearchButtonTextCheckbox.checked;
         if (showFindersButtonTextCheckbox) settings.showFindersButtonText = showFindersButtonTextCheckbox.checked;
         if (showCommandsButtonTextCheckbox) settings.showCommandsButtonText = showCommandsButtonTextCheckbox.checked;
@@ -953,6 +998,10 @@ class ConfigSettings {
         if (smartRecentLimitSelect) {
             const parsedLimit = Number(smartRecentLimitSelect.value);
             settings.smartRecentLimit = Number.isFinite(parsedLimit) && parsedLimit >= 0 ? parsedLimit : 50;
+        }
+        if (smartStaleLimitSelect) {
+            const parsedLimit = Number(smartStaleLimitSelect.value);
+            settings.smartStaleLimit = Number.isFinite(parsedLimit) && parsedLimit >= 0 ? parsedLimit : 50;
         }
         if (smartMostUsedLimitSelect) {
             const parsedLimit = Number(smartMostUsedLimitSelect.value);
@@ -1187,6 +1236,7 @@ class ConfigSettings {
             showCommandsButton: true,
             showCheatSheetButton: true,
             showRecentButton: true,
+            showTips: true,
             showSearchButtonText: true,
             showFindersButtonText: true,
             showCommandsButtonText: true,
@@ -1212,6 +1262,7 @@ class ConfigSettings {
             showSmartStaleCollection: false,
             showSmartMostUsedCollection: false,
             smartRecentLimit: 50,
+            smartStaleLimit: 50,
             smartMostUsedLimit: 25,
             smartRecentPageIds: [],
             smartStalePageIds: [],
