@@ -41,16 +41,7 @@ func (h *Handlers) PingURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate that the URL belongs to a registered bookmark
-	allBookmarks := h.store.GetAllBookmarks()
-	isValidBookmark := false
-	for _, bookmark := range allBookmarks {
-		if bookmark.URL == urlParam {
-			isValidBookmark = true
-			break
-		}
-	}
-	if !isValidBookmark {
+	if !h.store.BookmarkURLExists(urlParam) {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"error":  "URL is not a registered bookmark",

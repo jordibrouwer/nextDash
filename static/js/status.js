@@ -7,6 +7,25 @@ class StatusMonitor {
         this.isChecking = false;
         this.emptyStatusHintShown = false;
         this.loadingIndicator = document.getElementById('status-loading-indicator');
+        // Cap parallel /api/ping calls so many bookmarks do not freeze browser + server.
+        this.maxConcurrentChecks = 4;
+    }
+
+    async runChecksWithConcurrency(bookmarks, fn) {
+        const list = Array.isArray(bookmarks) ? bookmarks : [];
+        if (list.length === 0) {
+            return;
+        }
+        const limit = Math.max(1, Math.min(this.maxConcurrentChecks, list.length));
+        let next = 0;
+        const worker = async () => {
+            while (next < list.length) {
+                const i = next;
+                next += 1;
+                await fn(list[i]);
+            }
+        };
+        await Promise.all(Array.from({ length: limit }, () => worker()));
     }
 
     updateSettings(settings) {
@@ -168,12 +187,8 @@ class StatusMonitor {
         }
         this.emptyStatusHintShown = false;
 
-        // Check ALL bookmarks in parallel for instant loading
-        const promises = bookmarksToCheck.map(bookmark => this.checkBookmarkStatus(bookmark));
-        
         try {
-            // All requests fire at once, results come back as they complete
-            await Promise.allSettled(promises);
+            await this.runChecksWithConcurrency(bookmarksToCheck, (bookmark) => this.checkBookmarkStatus(bookmark));
         } catch (error) {
             console.error('Error checking bookmarks:', error);
         }
@@ -325,12 +340,8 @@ class StatusMonitor {
         this.isChecking = true;
         this.showLoadingIndicator();
 
-        // Check ALL uncached bookmarks in parallel for instant loading
-        const promises = bookmarks.map(bookmark => this.checkBookmarkStatus(bookmark));
-        
         try {
-            // All requests fire at once, results come back as they complete
-            await Promise.allSettled(promises);
+            await this.runChecksWithConcurrency(bookmarks, (bookmark) => this.checkBookmarkStatus(bookmark));
         } catch (error) {
             console.error('Error checking bookmarks:', error);
         }

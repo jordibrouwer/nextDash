@@ -142,6 +142,7 @@ type Store interface {
 	// Bookmarks - per page only
 	GetBookmarksByPage(pageID int) []Bookmark
 	GetAllBookmarks() []Bookmark
+	BookmarkURLExists(url string) bool
 	SaveBookmarksByPage(pageID int, bookmarks []Bookmark)
 	AddBookmarkToPage(pageID int, bookmark Bookmark)
 	DeleteBookmarkFromPage(pageID int, bookmark Bookmark) error
@@ -481,21 +482,75 @@ func (fs *FileStore) GetAllBookmarks() []Bookmark {
 
 	fs.ensureDataDir()
 
-	// Get all pages
-	pages := fs.GetPages()
-
 	var allBookmarks []Bookmark
 
-	// Collect bookmarks from all pages
-	for _, page := range pages {
-		pageBookmarks := fs.GetBookmarksByPage(page.ID)
-		for i := range pageBookmarks {
-			pageBookmarks[i].PageID = page.ID
+	files, err := os.ReadDir(fs.dataDir)
+	if err != nil {
+		return allBookmarks
+	}
+
+	for _, file := range files {
+		if file.IsDir() || !strings.HasPrefix(file.Name(), "bookmarks-") || !strings.HasSuffix(file.Name(), ".json") {
+			continue
 		}
-		allBookmarks = append(allBookmarks, pageBookmarks...)
+
+		filePath := fmt.Sprintf("%s/%s", fs.dataDir, file.Name())
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			continue
+		}
+
+		var pageWithBookmarks PageWithBookmarks
+		if err := json.Unmarshal(data, &pageWithBookmarks); err != nil {
+			continue
+		}
+
+		pageID := pageWithBookmarks.Page.ID
+		for i := range pageWithBookmarks.Bookmarks {
+			pageWithBookmarks.Bookmarks[i].PageID = pageID
+		}
+		allBookmarks = append(allBookmarks, pageWithBookmarks.Bookmarks...)
 	}
 
 	return allBookmarks
+}
+
+// BookmarkURLExists reports whether url matches any bookmark (single pass; for /api/ping validation).
+func (fs *FileStore) BookmarkURLExists(urlParam string) bool {
+	fs.mutex.RLock()
+	defer fs.mutex.RUnlock()
+
+	fs.ensureDataDir()
+
+	files, err := os.ReadDir(fs.dataDir)
+	if err != nil {
+		return false
+	}
+
+	for _, file := range files {
+		if file.IsDir() || !strings.HasPrefix(file.Name(), "bookmarks-") || !strings.HasSuffix(file.Name(), ".json") {
+			continue
+		}
+
+		filePath := fmt.Sprintf("%s/%s", fs.dataDir, file.Name())
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			continue
+		}
+
+		var pageWithBookmarks PageWithBookmarks
+		if err := json.Unmarshal(data, &pageWithBookmarks); err != nil {
+			continue
+		}
+
+		for i := range pageWithBookmarks.Bookmarks {
+			if pageWithBookmarks.Bookmarks[i].URL == urlParam {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func (fs *FileStore) GetFinders() []Finder {
