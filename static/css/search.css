@@ -198,6 +198,7 @@
 }
 
 /* Button Container - Centered at bottom */
+/* Fixed max width so tip text length does not change container width (avoids button row jumping). */
 .button-container {
     position: fixed;
     bottom: 2rem;
@@ -206,19 +207,25 @@
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
+    align-content: flex-start;
     gap: 1rem;
     z-index: 1000;
+    width: min(52rem, calc(100vw - 2.5rem));
+    max-width: 100%;
+    box-sizing: border-box;
 }
 
 .button-hint {
-    width: 100%;
-    max-width: min(40rem, 100%);
+    flex: 1 1 100%;
+    min-width: 0;
+    max-width: 100%;
     margin-left: auto;
     margin-right: auto;
     text-align: center;
     font-size: var(--font-size-text);
     line-height: 1.5;
     color: var(--text-secondary);
+    overflow-wrap: break-word;
 }
 
 /* Keys in tips: same chip pattern as config help `code`, better contrast on dashboard */
