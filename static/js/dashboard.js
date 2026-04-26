@@ -1266,7 +1266,7 @@ class Dashboard {
                 : null;
             collections.push({
                 id: '__smart_recent__',
-                name: `Smart: Recently opened (${effectiveLimit ? Math.min(recentBookmarks.length, effectiveLimit) : recentBookmarks.length})`,
+                name: `Recently opened (${effectiveLimit ? Math.min(recentBookmarks.length, effectiveLimit) : recentBookmarks.length})`,
                 icon: '⚡',
                 bookmarks: effectiveLimit ? recentBookmarks.slice(0, effectiveLimit) : recentBookmarks
             });
@@ -1279,7 +1279,7 @@ class Dashboard {
                 : null;
             collections.push({
                 id: '__smart_stale__',
-                name: `Smart: Stale bookmarks (${effectiveLimit ? Math.min(staleBookmarks.length, effectiveLimit) : staleBookmarks.length})`,
+                name: `Stale bookmarks (${effectiveLimit ? Math.min(staleBookmarks.length, effectiveLimit) : staleBookmarks.length})`,
                 icon: '⌛',
                 bookmarks: effectiveLimit ? staleBookmarks.slice(0, effectiveLimit) : staleBookmarks
             });
@@ -1292,7 +1292,7 @@ class Dashboard {
                 : null;
             collections.push({
                 id: '__smart_most_used__',
-                name: `Smart: Most used (${effectiveLimit ? Math.min(mostUsedBookmarks.length, effectiveLimit) : mostUsedBookmarks.length})`,
+                name: 'Most used',
                 icon: '📈',
                 bookmarks: effectiveLimit ? mostUsedBookmarks.slice(0, effectiveLimit) : mostUsedBookmarks
             });
