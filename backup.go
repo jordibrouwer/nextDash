@@ -14,6 +14,18 @@ import (
 	"strings"
 )
 
+func extractPageIDFromCategoriesFilename(filename string) (int, bool) {
+	if !strings.HasPrefix(filename, "categories-") || !strings.HasSuffix(filename, ".json") {
+		return 0, false
+	}
+	numberPart := strings.TrimPrefix(strings.TrimSuffix(filename, ".json"), "categories-")
+	pageID, err := strconv.Atoi(numberPart)
+	if err != nil || pageID <= 0 {
+		return 0, false
+	}
+	return pageID, true
+}
+
 // validateBookmarkURL checks if the bookmark URL has a safe scheme (http or https)
 func validateBookmarkURL(bookmarkURL string) error {
 	if bookmarkURL == "" {
@@ -79,6 +91,11 @@ func (h *Handlers) isValidImportFilename(filename string) bool {
 		}
 	}
 
+	// Check if it's a per-page categories file (categories-{page}.json)
+	if _, ok := extractPageIDFromCategoriesFilename(filename); ok {
+		return true
+	}
+
 	// Check if it's an image file in root data directory
 	if !strings.Contains(filename, "/") {
 		validImageExtensions := []string{".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp"}
@@ -117,6 +134,8 @@ func (h *Handlers) Import(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No files provided", http.StatusBadRequest)
 		return
 	}
+
+	importedCategoriesByPage := make(map[int][]Category)
 
 	// Process each file
 	for _, fileHeader := range files {
@@ -157,6 +176,17 @@ func (h *Handlers) Import(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		// Categories are now per-page; apply these after all files are written.
+		if pageID, ok := extractPageIDFromCategoriesFilename(filename); ok {
+			var categories []Category
+			if err := json.Unmarshal(content, &categories); err != nil {
+				http.Error(w, fmt.Sprintf("Invalid categories JSON in file: %s", filename), http.StatusBadRequest)
+				return
+			}
+			importedCategoriesByPage[pageID] = categories
+			continue
+		}
+
 		// Determine destination path
 		var destPath string
 		if strings.HasPrefix(filename, "favicon.") {
@@ -194,6 +224,11 @@ func (h *Handlers) Import(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Failed to write file", http.StatusInternalServerError)
 			return
 		}
+	}
+
+	// Apply imported categories after bookmark/page files have been restored.
+	for pageID, categories := range importedCategoriesByPage {
+		h.store.SaveCategoriesByPage(pageID, categories)
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -247,6 +282,26 @@ func (h *Handlers) Backup(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "Failed to create backup", http.StatusInternalServerError)
 		return
+	}
+
+	// Also include per-page categories as dedicated files for compatibility.
+	for _, page := range h.store.GetPages() {
+		categories := h.store.GetCategoriesByPage(page.ID)
+		categoriesData, err := json.MarshalIndent(categories, "", "  ")
+		if err != nil {
+			http.Error(w, "Failed to serialize categories", http.StatusInternalServerError)
+			return
+		}
+		entryName := fmt.Sprintf("categories-%d.json", page.ID)
+		zipFile, err := zipWriter.Create(entryName)
+		if err != nil {
+			http.Error(w, "Failed to include categories in backup", http.StatusInternalServerError)
+			return
+		}
+		if _, err := zipFile.Write(categoriesData); err != nil {
+			http.Error(w, "Failed to write categories in backup", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	// Close the zip writer
