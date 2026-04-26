@@ -35,7 +35,8 @@
     "lightTheme": "Licht",
     "darkTheme": "Donker",
     "tipDisableTips": "Tip: zet deze tips uit via <code>configuratie</code> → algemeen → Zoeken & knoppen",
-    "tipDisableTipsAlt": "Tip: schakel tip-rotatie uit in <code>configuratie</code> voor een rustiger footer"
+    "tipDisableTipsAlt": "Tip: schakel tip-rotatie uit in <code>configuratie</code> voor een rustiger footer",
+    "tipPackedColumns": "Tip: strakke kolommen uit via <code>configuratie</code> → algemeen (layout en kolommen)"
   },
   "config": {
     "pageTitle": "Dashboard-configuratie",
@@ -83,6 +84,10 @@
     "aboutTab": "hulp",
     "themeLabel": "Thema:",
     "languageLabel": "Taal:",
+    "packedColumns": "Strakke kolommen (blokken vullen hoogte, minder lege ruimte)",
+    "packedColumnsSavedOn": "Strakke kolommen aan — opgeslagen.",
+    "packedColumnsSavedOff": "Strakke kolommen uit — opgeslagen.",
+    "packedColumnsSaveError": "Kolomlayout opslaan mislukt.",
     "columnsLabel": "Kolommen per rij:",
     "fontSizeLabel": "Tekengrootte:",
     "openLinksInNewTab": "Links openen in nieuw tabblad",

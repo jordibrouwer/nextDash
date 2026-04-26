@@ -99,6 +99,7 @@ type Settings struct {
 	IncludeFindersInSearch      bool    `json:"includeFindersInSearch"`      // Include finders in normal search
 	SortMethod                  string  `json:"sortMethod"`                  // Sort method for bookmarks: order, az, recent, custom
 	LayoutPreset                string  `json:"layoutPreset"`                // Dashboard layout preset
+	PackedColumns               bool    `json:"packedColumns"`               // Stack categories in vertical columns (round-robin) to reduce empty space
 	BackgroundOpacity           float64 `json:"backgroundOpacity"`           // Background opacity (0.0-1.0)
 	FontWeight                  string  `json:"fontWeight"`                  // Font weight: normal, 600, bold
 	AutoDarkMode                bool    `json:"autoDarkMode"`                // Auto-detect dark mode from system
@@ -282,6 +283,7 @@ func (fs *FileStore) initializeDefaultFiles() {
 			SmartStalePageIds:           []int{},
 			SmartMostUsedPageIds:        []int{},
 			OnboardingCompleted:         false,
+			PackedColumns:               true,
 		}
 		data, _ := json.MarshalIndent(defaultSettings, "", "  ")
 		os.WriteFile(fs.settingsFile, data, 0644)
@@ -894,6 +896,7 @@ func (fs *FileStore) GetSettings() Settings {
 			SmartStaleLimit:           50,
 			SmartRecentPageIds:        []int{},
 			SmartStalePageIds:         []int{},
+			PackedColumns:             true,
 		}
 	}
 
@@ -931,6 +934,9 @@ func (fs *FileStore) GetSettings() Settings {
 		}
 		if _, ok := rawSettings["onboardingCompleted"]; !ok {
 			settings.OnboardingCompleted = true
+		}
+		if _, ok := rawSettings["packedColumns"]; !ok {
+			settings.PackedColumns = true
 		}
 	}
 

@@ -293,6 +293,17 @@ class ConfigSettings {
             });
         }
 
+        const packedColumnsCheckbox = document.getElementById('packed-columns-checkbox');
+        if (packedColumnsCheckbox) {
+            packedColumnsCheckbox.checked = settings.packedColumns === true;
+            packedColumnsCheckbox.addEventListener('change', async (e) => {
+                settings.packedColumns = e.target.checked;
+                if (callbacks.onPackedColumnsChange) {
+                    await callbacks.onPackedColumnsChange(settings.packedColumns === true);
+                }
+            });
+        }
+
         const autoDarkModeCheckbox = document.getElementById('auto-dark-mode-checkbox');
         if (autoDarkModeCheckbox) {
             autoDarkModeCheckbox.checked = settings.autoDarkMode === true;
@@ -1037,6 +1048,8 @@ class ConfigSettings {
             const parsedLimit = Number(smartMostUsedLimitSelect.value);
             settings.smartMostUsedLimit = Number.isFinite(parsedLimit) && parsedLimit >= 0 ? parsedLimit : 25;
         }
+        const packedColumnsCheckbox = document.getElementById('packed-columns-checkbox');
+        if (packedColumnsCheckbox) settings.packedColumns = packedColumnsCheckbox.checked;
         const showIconsCheckbox = document.getElementById('show-icons-checkbox');
         if (showIconsCheckbox) settings.showIcons = showIconsCheckbox.checked;
     }
@@ -1297,7 +1310,8 @@ class ConfigSettings {
             smartMostUsedLimit: 25,
             smartRecentPageIds: [],
             smartStalePageIds: [],
-            smartMostUsedPageIds: []
+            smartMostUsedPageIds: [],
+            packedColumns: true
         };
     }
 
@@ -1359,15 +1373,24 @@ class ConfigSettings {
      * Save settings to server (used for favicon changes to always persist globally)
      * @param {Object} settings
      */
+    /**
+     * @returns {Promise<boolean>}
+     */
     async saveSettingsToServer(settings) {
         try {
-            await fetch('/api/settings', {
+            const response = await fetch('/api/settings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(settings)
             });
+            if (!response.ok) {
+                console.error('Settings save failed:', response.status);
+                return false;
+            }
+            return true;
         } catch (error) {
             console.error('Error saving settings to server:', error);
+            return false;
         }
     }
 }

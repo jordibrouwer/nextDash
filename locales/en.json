@@ -35,7 +35,8 @@
     "lightTheme": "Light",
     "darkTheme": "Dark",
     "tipDisableTips": "Tip: turn off tips in <code>config</code> → general → Search & Buttons",
-    "tipDisableTipsAlt": "Tip: disable tip rotation in <code>config</code> if you want a cleaner footer"
+    "tipDisableTipsAlt": "Tip: disable tip rotation in <code>config</code> if you want a cleaner footer",
+    "tipPackedColumns": "Tip: turn off tight column stack in <code>config</code> → general (layout & columns)"
 },
 "config": {
     "pageTitle": "Dashboard Configuration",
@@ -83,6 +84,10 @@
     "aboutTab": "help",
     "themeLabel": "Theme:",
     "languageLabel": "Language:",
+    "packedColumns": "Tight column stack (categories fill height, less empty space)",
+    "packedColumnsSavedOn": "Tight columns on — saved.",
+    "packedColumnsSavedOff": "Tight columns off — saved.",
+    "packedColumnsSaveError": "Could not save column layout setting.",
     "columnsLabel": "Columns per row:",
     "fontSizeLabel": "Font size:",
     "openLinksInNewTab": "Open links in new tab",

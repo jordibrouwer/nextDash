@@ -62,6 +62,7 @@ class ConfigManager {
             showIcons: false,
             sortMethod: 'order',
             layoutPreset: 'default',
+            packedColumns: true,
             backgroundOpacity: 1,
             fontWeight: 'normal',
             autoDarkMode: false,
@@ -167,6 +168,9 @@ class ConfigManager {
             }
             if (typeof this.settingsData.onboardingCompleted === 'undefined') {
                 this.settingsData.onboardingCompleted = true;
+            }
+            if (typeof this.settingsData.packedColumns === 'undefined') {
+                this.settingsData.packedColumns = true;
             }
             if (!Number.isFinite(Number(this.settingsData.smartRecentLimit)) || Number(this.settingsData.smartRecentLimit) < 0) {
                 this.settingsData.smartRecentLimit = 50;
@@ -280,6 +284,30 @@ class ConfigManager {
             },
             onStatusVisibilityChange: () => {
                 this.settings.updateStatusOptionsVisibility(this.settingsData.showStatus);
+            },
+            onPackedColumnsChange: async () => {
+                this.settings.updateFromUI(this.settingsData);
+                let ok = true;
+                if (this.deviceSpecific) {
+                    const settingsToSave = { ...this.settingsData };
+                    delete settingsToSave.enableCustomFavicon;
+                    delete settingsToSave.customFaviconPath;
+                    delete settingsToSave.enableCustomFont;
+                    delete settingsToSave.customFontPath;
+                    this.storage.saveDeviceSettings(settingsToSave);
+                } else {
+                    ok = await this.settings.saveSettingsToServer(this.settingsData);
+                }
+                if (!ok) {
+                    this.ui.showNotification(this.language.t('config.packedColumnsSaveError'), 'error');
+                    return;
+                }
+                this.signalDashboardSettingsUpdated('settings-updated');
+                const on = this.settingsData.packedColumns === true;
+                this.ui.showNotification(
+                    this.language.t(on ? 'config.packedColumnsSavedOn' : 'config.packedColumnsSavedOff'),
+                    'success'
+                );
             }
         });
 
@@ -628,7 +656,7 @@ class ConfigManager {
         };
         const shouldIgnoreTarget = (target) => {
             if (!target || !target.id) return false;
-            return target.id === 'page-selector' || target.id === 'categories-page-selector' || target.id === 'bookmarks-category-filter';
+            return target.id === 'page-selector' || target.id === 'categories-page-selector' || target.id === 'bookmarks-category-filter' || target.id === 'packed-columns-checkbox';
         };
         root.addEventListener('input', (event) => {
             if (this.suppressDirtyTracking) return;
@@ -1674,6 +1702,8 @@ class ConfigManager {
         document.getElementById('include-finders-in-search-checkbox').checked = this.settingsData.includeFindersInSearch;
         document.getElementById('interleave-mode-checkbox').checked = false;
         document.getElementById('show-page-tabs-checkbox').checked = this.settingsData.showPageTabs;
+        const packedColumnsCheckbox = document.getElementById('packed-columns-checkbox');
+        if (packedColumnsCheckbox) packedColumnsCheckbox.checked = this.settingsData.packedColumns === true;
         const smartRecentCheckbox = document.getElementById('show-smart-recent-collection-checkbox');
         if (smartRecentCheckbox) smartRecentCheckbox.checked = this.settingsData.showSmartRecentCollection;
         const smartStaleCheckbox = document.getElementById('show-smart-stale-collection-checkbox');

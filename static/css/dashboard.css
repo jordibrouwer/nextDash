@@ -193,6 +193,35 @@ body {
     grid-template-columns: repeat(6, 1fr);
 }
 
+/* Packed columns: vertical stacks per column (round-robin), less vertical gap than CSS grid rows */
+.dashboard-grid.packed-columns {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    grid-template-columns: unset;
+}
+
+.dashboard-grid.packed-columns .dashboard-column {
+    display: flex;
+    flex-direction: column;
+    gap: 3rem;
+    flex: 1 1 200px;
+    min-width: 0;
+}
+
+.dashboard-grid.layout-compact.packed-columns .dashboard-column {
+    gap: 1.5rem;
+}
+
+.dashboard-grid.layout-cards.packed-columns .dashboard-column {
+    gap: 1.5rem;
+}
+
+.dashboard-grid.layout-terminal.packed-columns .dashboard-column {
+    gap: 2rem;
+}
+
 /* Layout presets */
 .dashboard-grid.layout-default {
     gap: 3rem;

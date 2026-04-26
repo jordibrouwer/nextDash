@@ -12,6 +12,58 @@ class ConfigBookmarks {
         this.selectedBookmarkIndexes = new Set();
     }
 
+    isBookmarkUncategorized(bookmark) {
+        const c = bookmark?.category;
+        return c === undefined || c === null || String(c).trim() === '';
+    }
+
+    /**
+     * Persist visible bookmark row inputs into bookmarksData before DOM is cleared (filter change, re-render).
+     */
+    flushBookmarkFormsToData(bookmarks) {
+        if (!Array.isArray(bookmarks)) {
+            return;
+        }
+        const list = document.getElementById('bookmarks-list');
+        if (!list) {
+            return;
+        }
+        list.querySelectorAll('.bookmark-item').forEach((item) => {
+            const idx = parseInt(item.getAttribute('data-bookmark-index'), 10);
+            if (Number.isNaN(idx) || idx < 0 || idx >= bookmarks.length) {
+                return;
+            }
+            const ref = bookmarks[idx];
+            if (!ref) {
+                return;
+            }
+            const nameEl = document.getElementById(`bookmark-name-${idx}`);
+            const urlEl = document.getElementById(`bookmark-url-${idx}`);
+            const scEl = document.getElementById(`bookmark-shortcut-${idx}`);
+            const catEl = document.getElementById(`bookmark-category-${idx}`);
+            const csEl = document.getElementById(`bookmark-checkStatus-${idx}`);
+            const pinEl = document.getElementById(`bookmark-pinned-${idx}`);
+            if (nameEl) {
+                ref.name = nameEl.value;
+            }
+            if (urlEl) {
+                ref.url = urlEl.value;
+            }
+            if (scEl) {
+                ref.shortcut = scEl.value;
+            }
+            if (catEl) {
+                ref.category = catEl.value;
+            }
+            if (csEl) {
+                ref.checkStatus = csEl.checked;
+            }
+            if (pinEl) {
+                ref.pinned = pinEl.checked;
+            }
+        });
+    }
+
     /**
      * Render bookmarks list
      * @param {Array} bookmarks
@@ -20,6 +72,8 @@ class ConfigBookmarks {
     render(bookmarks, categories, options = {}) {
         const container = document.getElementById('bookmarks-list');
         if (!container) return;
+
+        this.flushBookmarkFormsToData(bookmarks);
 
         this.renderInsightsPanel();
 
@@ -246,7 +300,7 @@ class ConfigBookmarks {
         if (filterCategory === '__none__') {
             return bookmarks
                 .map((bookmark, index) => ({ bookmark, index }))
-                .filter(({ bookmark }) => !bookmark.category);
+                .filter(({ bookmark }) => this.isBookmarkUncategorized(bookmark));
         }
 
         return bookmarks
@@ -447,7 +501,7 @@ class ConfigBookmarks {
                 let scopeIndex = 0;
                 bookmarks.forEach((bookmark) => {
                     const inScope = (filterCategory === '__none__')
-                        ? !bookmark.category
+                        ? this.isBookmarkUncategorized(bookmark)
                         : bookmark.category === filterCategory;
 
                     if (inScope) {
@@ -499,7 +553,7 @@ class ConfigBookmarks {
                         return true;
                     }
                     if (filterCategory === '__none__') {
-                        return !bookmark.category;
+                        return this.isBookmarkUncategorized(bookmark);
                     }
                     return bookmark.category === filterCategory;
                 })

@@ -90,6 +90,18 @@
         grid-template-columns: repeat(2, 1fr) !important;
         gap: 1.5rem;
     }
+
+    .dashboard-grid.packed-columns {
+        display: flex !important;
+        flex-wrap: wrap;
+        grid-template-columns: unset !important;
+        gap: 1.5rem;
+    }
+
+    .dashboard-grid.packed-columns .dashboard-column {
+        flex: 1 1 calc(50% - 0.75rem);
+        gap: 1.5rem;
+    }
     
     .title {
         font-size: var(--font-size-title);

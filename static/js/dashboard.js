@@ -37,6 +37,7 @@ class Dashboard {
             showIcons: false,
             sortMethod: 'order',
             layoutPreset: 'default',
+            packedColumns: true,
             backgroundOpacity: 1,
             fontWeight: 'normal',
             autoDarkMode: false,
@@ -258,6 +259,9 @@ class Dashboard {
             }
             if (typeof this.settings.showSyncToasts === 'undefined') {
                 this.settings.showSyncToasts = true;
+            }
+            if (typeof this.settings.packedColumns === 'undefined') {
+                this.settings.packedColumns = true;
             }
             if (typeof this.settings.onboardingCompleted === 'undefined') {
                 this.settings.onboardingCompleted = true;
@@ -484,6 +488,14 @@ class Dashboard {
         });
     }
 
+    shouldPackDashboardColumns() {
+        return (
+            this.settings.packedColumns === true &&
+            typeof window.matchMedia === 'function' &&
+            window.matchMedia('(min-width: 768px)').matches
+        );
+    }
+
     setupDOM() {
         // Control date visibility and set up if visible
         this.updateDateVisibility();
@@ -529,7 +541,8 @@ class Dashboard {
         // Apply columns setting
         const grid = document.getElementById('dashboard-layout');
         if (grid) {
-            grid.className = `dashboard-grid columns-${this.settings.columnsPerRow} layout-${this.settings.layoutPreset || 'default'}`;
+            const packedClass = this.shouldPackDashboardColumns() ? ' packed-columns' : '';
+            grid.className = `dashboard-grid columns-${this.settings.columnsPerRow} layout-${this.settings.layoutPreset || 'default'}${packedClass}`;
         }
     }
 
@@ -813,6 +826,7 @@ class Dashboard {
             'Tip: use <code>status:online</code> in search',
             'Tip: use <code>page:2</code> in search',
             'Tip: use <code>?g term</code> finder shortcut',
+            this.language.t('dashboard.tipPackedColumns'),
             this.language.t('dashboard.tipDisableTips'),
             this.language.t('dashboard.tipDisableTipsAlt')
         ];
@@ -1015,6 +1029,8 @@ class Dashboard {
             return;
         }
 
+        const columnBlocks = [];
+
         // Render smart collections first for quick access to derived sets.
         const smartCollections = this.getSmartCollections(this.getSmartCollectionSourceBookmarks());
         smartCollections.forEach((collection) => {
@@ -1032,7 +1048,7 @@ class Dashboard {
                 icon: collection.icon,
                 isSmartCollection: true
             }, collectionBookmarks);
-            container.appendChild(collectionElement);
+            columnBlocks.push(collectionElement);
         });
 
         // Render categories
@@ -1041,7 +1057,7 @@ class Dashboard {
             if (categoryBookmarks.length === 0) return;
 
             const categoryElement = this.createCategoryElement(category, categoryBookmarks);
-            container.appendChild(categoryElement);
+            columnBlocks.push(categoryElement);
         });
 
         // Handle bookmarks without category
@@ -1049,7 +1065,22 @@ class Dashboard {
         if (uncategorizedBookmarks.length > 0) {
             const uncategorizedCategory = { id: '', name: this.language.t('dashboard.uncategorized') };
             const categoryElement = this.createCategoryElement(uncategorizedCategory, this.sortBookmarks(uncategorizedBookmarks));
-            container.appendChild(categoryElement);
+            columnBlocks.push(categoryElement);
+        }
+
+        const colCount = Math.max(1, Math.min(6, parseInt(String(this.settings.columnsPerRow), 10) || 3));
+        if (this.shouldPackDashboardColumns() && columnBlocks.length > 0) {
+            const columns = Array.from({ length: colCount }, () => {
+                const col = document.createElement('div');
+                col.className = 'dashboard-column';
+                return col;
+            });
+            columnBlocks.forEach((el, i) => {
+                columns[i % colCount].appendChild(el);
+            });
+            columns.forEach((c) => container.appendChild(c));
+        } else {
+            columnBlocks.forEach((el) => container.appendChild(el));
         }
 
         // Enable realtime drag-and-drop sorting within each category
