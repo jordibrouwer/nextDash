@@ -17,6 +17,7 @@ class ConfigManager {
         this.finders = new ConfigFinders(this.language.t.bind(this.language));
         this.backup = new ConfigBackup(this.language.t.bind(this.language));
         this.settings = new ConfigSettings(this.language);
+        this.stats = null;
 
         // Data
         this.pagesData = [];
@@ -90,6 +91,9 @@ class ConfigManager {
     async init() {
         await this.loadData();
         await this.language.init(this.settingsData.language);
+        if (typeof ConfigStats === 'function') {
+            this.stats = new ConfigStats(this.language.t.bind(this.language));
+        }
         this.setupDOM();
         await this.setupEventListeners();
         this.language.setupLanguageSelector();
@@ -116,6 +120,9 @@ class ConfigManager {
         this.savedSnapshot = this.captureUndoSnapshot();
         this.refreshSmartCollectionCounters();
         this.validateBookmarkConflicts({ showToast: false });
+        if (this.stats && window.location.hash === '#stats') {
+            this.stats.refresh(this);
+        }
     }
 
     async loadData() {
@@ -1428,6 +1435,9 @@ class ConfigManager {
                 this.allBookmarksData = allBookmarksResponse.ok ? await allBookmarksResponse.json() : [];
             } catch (error) {
                 // keep previous cache
+            }
+            if (this.stats && window.location.hash === '#stats') {
+                this.stats.refresh(this);
             }
         } catch (error) {
             console.error('Error saving configuration:', error);

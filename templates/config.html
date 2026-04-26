@@ -64,6 +64,7 @@
                     <button class="tab-button" data-tab="bookmarks" data-i18n="config.bookmarksTab">bookmarks</button>
                     <button class="tab-button" data-tab="finders" data-i18n="config.findersTab">finders</button>
                     <button class="tab-button" data-tab="backups" data-i18n="config.backupsTab">backups</button>
+                    <button class="tab-button" data-tab="stats" data-i18n="config.statsTab">stats</button>
                     <button class="tab-button" data-tab="help" data-i18n="config.aboutTab">help</button>
                 </div>
             </div>
@@ -597,6 +598,74 @@
             </div>
             </div>
 
+            <div class="tab-content" data-tab-content="stats">
+            <div class="config-section stats-tab">
+                <p class="stats-intro" data-i18n="config.statsIntro">Overview from all pages (read-only).</p>
+
+                <section class="stats-block">
+                    <h3 class="section-title" data-i18n="config.statsLibrarySection">Library</h3>
+                    <dl class="stats-dl">
+                        <div><dt data-i18n="config.statsPages">Pages</dt><dd id="stats-pages-count">0</dd></div>
+                        <div><dt data-i18n="config.statsCategories">Categories (slots)</dt><dd id="stats-categories-count">0</dd></div>
+                        <div><dt data-i18n="config.statsBookmarksTotal">Bookmarks total</dt><dd id="stats-bookmarks-total">0</dd></div>
+                        <div><dt data-i18n="config.statsWithUrl">With URL</dt><dd id="stats-with-url">0</dd></div>
+                        <div><dt data-i18n="config.statsWithoutUrl">Without URL</dt><dd id="stats-without-url">0</dd></div>
+                        <div><dt data-i18n="config.statsWithShortcut">With shortcut</dt><dd id="stats-with-shortcut">0</dd></div>
+                        <div><dt data-i18n="config.statsWithoutShortcut">Without shortcut</dt><dd id="stats-without-shortcut">0</dd></div>
+                        <div><dt data-i18n="config.statsWithIcon">With icon</dt><dd id="stats-with-icon">0</dd></div>
+                        <div><dt data-i18n="config.statsWithoutIcon">Without icon</dt><dd id="stats-without-icon">0</dd></div>
+                    </dl>
+                </section>
+
+                <section class="stats-block">
+                    <h3 class="section-title" data-i18n="config.statsOpensSection">Opens</h3>
+                    <p class="stats-muted" data-i18n="config.statsNeverOpenedLabel">Never opened (no opens, no last-opened)</p>
+                    <p class="stats-big" id="stats-never-opened">0</p>
+
+                    <h4 class="stats-subtitle" data-i18n="config.statsTopOpens">Top 10 by open count</h4>
+                    <div class="stats-table-wrap">
+                        <table class="stats-table">
+                            <thead>
+                                <tr>
+                                    <th data-i18n="config.statsColName">Name</th>
+                                    <th data-i18n="config.statsColOpens">Opens</th>
+                                    <th data-i18n="config.statsColPage">Page</th>
+                                    <th data-i18n="config.statsColLastOpened">Last opened</th>
+                                </tr>
+                            </thead>
+                            <tbody id="stats-top-opens-body"></tbody>
+                        </table>
+                    </div>
+
+                    <h4 class="stats-subtitle" data-i18n="config.statsRecentOpens">10 most recently opened</h4>
+                    <div class="stats-table-wrap">
+                        <table class="stats-table">
+                            <thead>
+                                <tr>
+                                    <th data-i18n="config.statsColName">Name</th>
+                                    <th data-i18n="config.statsColOpens">Opens</th>
+                                    <th data-i18n="config.statsColPage">Page</th>
+                                    <th data-i18n="config.statsColLastOpened">Last opened</th>
+                                </tr>
+                            </thead>
+                            <tbody id="stats-recent-opens-body"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="stats-block">
+                    <h3 class="section-title" data-i18n="config.statsSearchSection">Search &amp; status</h3>
+                    <dl class="stats-dl">
+                        <div><dt data-i18n="config.statsSearchIndexed">Search index built</dt><dd id="stats-search-indexed">—</dd></div>
+                        <div><dt data-i18n="config.statsInterleave">Interleave search mode</dt><dd id="stats-interleave">—</dd></div>
+                        <div><dt data-i18n="config.statsFuzzy">Fuzzy suggestions</dt><dd id="stats-fuzzy">—</dd></div>
+                        <div><dt data-i18n="config.statsShowStatus">Status monitor enabled</dt><dd id="stats-show-status">—</dd></div>
+                        <div><dt data-i18n="config.statsStatusCheckBookmarks">Bookmarks with status check</dt><dd id="stats-status-check-count">0</dd></div>
+                    </dl>
+                </section>
+            </div>
+            </div>
+
             <div class="tab-content" data-tab-content="help">
             <div class="config-section">
                 <div class="help-layout">
@@ -781,6 +850,7 @@
     <script src="/static/js/config/config-font.js"></script>
     <script src="/static/js/config/config-settings.js"></script>
     <script src="/static/js/config/config-language.js"></script>
+    <script src="/static/js/config/config-stats.js"></script>
     <!-- Main config orchestrator -->
     <script src="/static/js/config.js"></script>
     <!-- Keyboard shortcuts -->

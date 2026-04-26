@@ -58,13 +58,15 @@ class ConfigUI {
                         // Refresh custom select display
                         configManager.refreshCustomSelects();
                     }
+                } else if (targetTab === 'stats' && configManager.stats) {
+                    configManager.stats.refresh(configManager);
                 }
             }
         };
 
     // Check initial hash and switch to corresponding tab
     const initialHash = window.location.hash.substring(1);
-    const validTabs = ['general', 'pages', 'categories', 'bookmarks', 'finders', 'backups', 'help'];
+    const validTabs = ['general', 'pages', 'categories', 'bookmarks', 'finders', 'backups', 'stats', 'help'];
     if (validTabs.includes(initialHash)) {
         switchToTab(initialHash);
     } else {
