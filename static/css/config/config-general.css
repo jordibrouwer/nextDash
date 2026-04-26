@@ -121,22 +121,12 @@ body {
     color: var(--accent-warning);
 }
 
-.quick-actions-bar {
+.top-quick-action {
     display: none;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.5rem 0 0.75rem 0;
-    border-top: 1px dashed var(--border-primary);
 }
 
-.quick-actions-bar.is-visible {
-    display: flex;
-}
-
-.quick-actions-status {
-    margin-right: auto;
-    color: var(--text-secondary);
-    font-size: var(--font-size-controls);
+.top-quick-action.is-visible {
+    display: inline-flex;
 }
 
 /* Config Main */

@@ -2,6 +2,7 @@
 let colorsData = {
     light: {},
     dark: {},
+    builtIn: {},
     custom: {} // Object to store custom themes
 };
 
@@ -60,10 +61,7 @@ function initTabs() {
         // Update URL hash
         window.location.hash = `#${targetTab}`;
         
-        // Automatically switch theme for preview when selecting dark or light tab
-        if (targetTab === 'dark' || targetTab === 'light') {
-            switchToTheme(targetTab);
-        } else if (targetTab === 'custom') {
+        if (targetTab === 'custom') {
             // Reset custom theme selector when entering custom tab
             const selector = document.getElementById('custom-theme-selector');
             if (selector) {
@@ -92,12 +90,12 @@ function initTabs() {
 
     // Check initial hash and switch to corresponding tab
     const initialHash = window.location.hash.substring(1);
-    const validTabs = ['dark', 'light', 'custom'];
+    const validTabs = ['custom'];
     if (validTabs.includes(initialHash)) {
         switchToTab(initialHash);
     } else {
-        // If no hash, switch to default tab (dark)
-        switchToTab('dark');
+        // If no hash, switch to default tab (custom)
+        switchToTab('custom');
     }
 
     // Add hash change listener
@@ -131,12 +129,8 @@ async function loadColors() {
         
         populateColorInputs();
         
-        // Set initial preview theme based on current body class
-        if (document.body.classList.contains('dark')) {
-            currentPreviewTheme = 'dark';
-        } else if (document.body.classList.contains('light')) {
-            currentPreviewTheme = 'light';
-        }
+        // Keep preview focused on custom workflow in this page.
+        currentPreviewTheme = 'custom';
         
         // Render custom themes if manager exists
         if (customThemesManager) {
@@ -367,8 +361,13 @@ function showNotification(message, type = 'info') {
 function addCustomTheme() {
     if (!customThemesManager) return;
     
-    // Get default dark colors to use as template
-    const defaultColors = { ...colorsData.dark };
+    // Use the default built-in starter palette for new custom themes.
+    const starterTheme =
+        (colorsData.builtIn && colorsData.builtIn['cherry-graphite-dark']) ||
+        colorsData.dark ||
+        colorsData.light ||
+        {};
+    const defaultColors = { ...starterTheme };
     
     const themeId = customThemesManager.add(colorsData.custom, defaultColors);
     

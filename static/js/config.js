@@ -30,7 +30,7 @@ class ConfigManager {
         this.currentBookmarksCategoryFilter = '__all__';
         this.settingsData = {
             currentPage: 'default',
-            theme: 'dark',
+            theme: 'cherry-graphite-dark',
             openInNewTab: true,
             columnsPerRow: 3,
             fontSize: 'm',
@@ -363,12 +363,9 @@ class ConfigManager {
         const saveBtn = document.getElementById('save-btn');
         if (saveBtn) saveBtn.addEventListener('click', () => this.saveChanges());
 
-        const saveQuickBtn = document.getElementById('save-quick-btn');
-        if (saveQuickBtn) saveQuickBtn.addEventListener('click', () => this.saveChanges());
-
-        const undoQuickBtn = document.getElementById('undo-quick-btn');
-        if (undoQuickBtn) {
-            undoQuickBtn.addEventListener('click', () => {
+        const undoTopBtn = document.getElementById('undo-top-btn');
+        if (undoTopBtn) {
+            undoTopBtn.addEventListener('click', () => {
                 if (this.undoSnapshot) {
                     this.restoreUndoSnapshot(this.undoSnapshot);
                     this.undoSnapshot = null;
@@ -377,8 +374,8 @@ class ConfigManager {
             });
         }
 
-        const discardQuickBtn = document.getElementById('discard-quick-btn');
-        if (discardQuickBtn) discardQuickBtn.addEventListener('click', () => this.discardChanges());
+        const discardTopBtn = document.getElementById('discard-top-btn');
+        if (discardTopBtn) discardTopBtn.addEventListener('click', () => this.discardChanges());
 
         const resetBtn = document.getElementById('reset-btn');
         if (resetBtn) resetBtn.addEventListener('click', () => this.resetToDefaults());
@@ -423,10 +420,8 @@ class ConfigManager {
         const saveBtn = document.getElementById('save-btn');
         const badge = document.getElementById('unsaved-indicator');
         const saveStatus = document.getElementById('save-status-indicator');
-        const quickBar = document.getElementById('quick-actions-bar');
-        const quickStatus = document.getElementById('quick-actions-status');
-        const undoQuickBtn = document.getElementById('undo-quick-btn');
-        const discardQuickBtn = document.getElementById('discard-quick-btn');
+        const undoTopBtn = document.getElementById('undo-top-btn');
+        const discardTopBtn = document.getElementById('discard-top-btn');
         if (saveBtn) {
             saveBtn.classList.toggle('has-unsaved', this.isDirty);
         }
@@ -437,17 +432,13 @@ class ConfigManager {
             saveStatus.textContent = this.isDirty ? 'Unsaved changes' : 'Saved';
             saveStatus.classList.toggle('is-unsaved', this.isDirty);
         }
-        if (quickBar) {
-            quickBar.classList.toggle('is-visible', this.isDirty);
+        if (undoTopBtn) {
+            undoTopBtn.disabled = !this.undoSnapshot;
+            undoTopBtn.classList.toggle('is-visible', this.isDirty);
         }
-        if (quickStatus) {
-            quickStatus.textContent = this.isDirty ? 'Unsaved changes' : 'No unsaved changes';
-        }
-        if (undoQuickBtn) {
-            undoQuickBtn.disabled = !this.undoSnapshot;
-        }
-        if (discardQuickBtn) {
-            discardQuickBtn.disabled = !this.isDirty;
+        if (discardTopBtn) {
+            discardTopBtn.disabled = !this.isDirty;
+            discardTopBtn.classList.toggle('is-visible', this.isDirty);
         }
     }
 
@@ -1335,7 +1326,8 @@ class ConfigManager {
             { id: 'utilities', name: 'Utilities' }
         ];
 
-        this.settingsData = this.settings.getDefaults();
+        const defaultSettings = this.settings.getDefaults();
+        Object.assign(this.settingsData, defaultSettings);
         document.getElementById('theme-select').value = this.settingsData.theme;
         document.getElementById('columns-input').value = this.settingsData.columnsPerRow;
         document.getElementById('font-size-select').value = this.settingsData.fontSize;
@@ -1369,6 +1361,10 @@ class ConfigManager {
         document.getElementById('always-collapse-categories-checkbox').checked = this.settingsData.alwaysCollapseCategories;
 
         this.setupDOM();
+        this.settings.applyTheme(this.settingsData.theme);
+        if (this.settings && typeof this.settings.reloadThemeCSS === 'function') {
+            this.settings.reloadThemeCSS();
+        }
         this.renderConfig();
         this.initReordering();
         this.showUndoNotification('Settings reset to defaults.', undoSnapshot);

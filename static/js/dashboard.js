@@ -10,7 +10,7 @@ class Dashboard {
         this.currentPageId = 'default';
         this.settings = {
             currentPage: 'default',
-            theme: 'dark',
+            theme: 'cherry-graphite-dark',
             openInNewTab: true,
             columnsPerRow: 3,
             fontSize: 'm',
@@ -388,6 +388,7 @@ class Dashboard {
         // Apply theme - use classList to preserve other classes
         document.body.classList.remove('dark', 'light');
         document.body.classList.add(this.settings.theme);
+        document.documentElement.setAttribute('data-theme', this.settings.theme);
         document.body.setAttribute('data-theme', this.settings.theme);
         document.body.setAttribute('data-show-title', this.settings.showTitle);
         document.body.setAttribute('data-show-date', this.settings.showDate);
@@ -850,10 +851,12 @@ class Dashboard {
             if (!this.settings.autoDarkMode || !media) {
                 return;
             }
-            const preferred = media.matches ? 'dark' : 'light';
+            const preferred = this.getPairedThemeVariant(this.settings.theme || 'dark', media.matches);
             document.body.classList.remove('dark', 'light');
             document.body.classList.add(preferred);
+            document.documentElement.setAttribute('data-theme', preferred);
             document.body.setAttribute('data-theme', preferred);
+            this.settings.theme = preferred;
         };
 
         applyPreferredTheme();
@@ -861,6 +864,18 @@ class Dashboard {
         if (media && typeof media.addEventListener === 'function') {
             media.addEventListener('change', applyPreferredTheme);
         }
+    }
+
+    getPairedThemeVariant(themeId, wantsDark) {
+        const base = String(themeId || 'dark');
+        if (base === 'dark' || base === 'light') {
+            return wantsDark ? 'dark' : 'light';
+        }
+        const match = base.match(/^(.*)-(dark|light)$/);
+        if (!match) {
+            return wantsDark ? 'dark' : 'light';
+        }
+        return `${match[1]}-${wantsDark ? 'dark' : 'light'}`;
     }
 
     renderDashboard() {

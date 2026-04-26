@@ -52,9 +52,7 @@
                 </div>
 
                 <div class="tabs">
-                    <button class="tab-button active" data-tab="dark" data-i18n="colors.darkThemeTab">dark theme</button>
-                    <button class="tab-button" data-tab="light" data-i18n="colors.lightThemeTab">light theme</button>
-                    <button class="tab-button" data-tab="custom" data-i18n="colors.customThemesTab">custom themes</button>
+                    <button class="tab-button active" data-tab="custom" data-i18n="colors.customThemesTab">custom themes</button>
                 </div>
             </div>
         </div>
@@ -64,7 +62,7 @@
     <div class="config-section section-content">
         <div class="container">
             <main class="config-main">
-            <div class="tab-content active" data-tab-content="dark">
+            <div class="tab-content" data-tab-content="dark">
             <div class="config-section">
                 <div class="colors-grid">
                     <div class="color-group">
@@ -274,8 +272,9 @@
             </div>
             </div>
 
-            <div class="tab-content" data-tab-content="custom">
+            <div class="tab-content active" data-tab-content="custom">
             <div class="config-section">
+                <p class="help-text">Default light/dark themes are hidden here. Use "Add Custom Theme" to start from the default palette.</p>
                 <div class="page-selector-wrapper">
                     <label for="custom-theme-selector" data-i18n="colors.selectCustomThemeLabel">Select Custom Theme:</label>
                     <select id="custom-theme-selector" class="page-selector">

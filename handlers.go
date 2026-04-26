@@ -8,8 +8,8 @@ import (
 	"html/template"
 	"net/http"
 	"sort"
-	"strings"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -472,35 +472,10 @@ func (h *Handlers) ResetColors(w http.ResponseWriter, r *http.Request) {
 
 	// Reset only light and dark themes to defaults, keep custom themes
 	defaultColors := ColorTheme{
-		Light: ThemeColors{
-			TextPrimary:         "#1F2937",
-			TextSecondary:       "#6B7280",
-			TextTertiary:        "#9CA3AF",
-			BackgroundPrimary:   "#F9FAFB",
-			BackgroundSecondary: "#F3F4F6",
-			BackgroundDots:      "#E5E7EB",
-			BackgroundModal:     "rgba(255, 255, 255, 0.9)",
-			BorderPrimary:       "#D1D5DB",
-			BorderSecondary:     "#E5E7EB",
-			AccentSuccess:       "#059669",
-			AccentWarning:       "#D97706",
-			AccentError:         "#DC2626",
-		},
-		Dark: ThemeColors{
-			TextPrimary:         "#E5E7EB",
-			TextSecondary:       "#9CA3AF",
-			TextTertiary:        "#6B7280",
-			BackgroundPrimary:   "#000",
-			BackgroundSecondary: "#1F2937",
-			BackgroundDots:      "#1F2937",
-			BackgroundModal:     "rgba(0, 0, 0, 0.8)",
-			BorderPrimary:       "#4B5563",
-			BorderSecondary:     "#374151",
-			AccentSuccess:       "#10B981",
-			AccentWarning:       "#F59E0B",
-			AccentError:         "#EF4444",
-		},
-		Custom: currentColors.Custom, // Preserve existing custom themes
+		Light:   getDefaultLightTheme(),
+		Dark:    getDefaultDarkTheme(),
+		BuiltIn: getDefaultBuiltInThemes(),
+		Custom:  currentColors.Custom, // Preserve existing custom themes
 	}
 
 	h.store.SaveColors(defaultColors)
@@ -512,6 +487,9 @@ func (h *Handlers) GetCustomThemesList(w http.ResponseWriter, r *http.Request) {
 	colors := h.store.GetColors()
 
 	themesMap := make(map[string]string)
+	for themeID, themeColors := range colors.BuiltIn {
+		themesMap[themeID] = themeColors.Name
+	}
 	for themeID, themeColors := range colors.Custom {
 		themesMap[themeID] = themeColors.Name
 	}
@@ -604,6 +582,34 @@ html[data-theme="` + themeID + `"] body {
 		css += customThemeCSS
 	}
 
+	// Add built-in themes CSS
+	builtInThemeIDs := make([]string, 0, len(colors.BuiltIn))
+	for themeID := range colors.BuiltIn {
+		builtInThemeIDs = append(builtInThemeIDs, themeID)
+	}
+	sort.Strings(builtInThemeIDs)
+	for _, themeID := range builtInThemeIDs {
+		themeColors := colors.BuiltIn[themeID]
+		builtInThemeCSS := `
+/* Built-in Theme: ` + themeID + ` */
+html[data-theme="` + themeID + `"] body {
+    --text-primary: ` + themeColors.TextPrimary + `;
+    --text-secondary: ` + themeColors.TextSecondary + `;
+    --text-tertiary: ` + themeColors.TextTertiary + `;
+    --background-primary: ` + themeColors.BackgroundPrimary + `;
+    --background-secondary: ` + themeColors.BackgroundSecondary + `;
+    --background-dots: ` + themeColors.BackgroundDots + `;
+    --background-modal: ` + themeColors.BackgroundModal + `;
+    --border-primary: ` + themeColors.BorderPrimary + `;
+    --border-secondary: ` + themeColors.BorderSecondary + `;
+    --accent-success: ` + themeColors.AccentSuccess + `;
+    --accent-warning: ` + themeColors.AccentWarning + `;
+    --accent-error: ` + themeColors.AccentError + `;
+}
+`
+		css += builtInThemeCSS
+	}
+
 	w.Write([]byte(css))
 }
 
@@ -693,10 +699,10 @@ func (h *Handlers) GetAnalytics(w http.ResponseWriter, r *http.Request) {
 // Duplicate detection endpoint
 func (h *Handlers) CheckDuplicates(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	
+
 	pages := h.store.GetPages()
 	duplicates := make(map[string][]BookmarkRef)
-	
+
 	for _, page := range pages {
 		bookmarks := h.store.GetBookmarksByPage(page.ID)
 		for idx, bm := range bookmarks {
@@ -708,7 +714,7 @@ func (h *Handlers) CheckDuplicates(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
-	
+
 	var duplicateGroups []DuplicateGroup
 	for url, refs := range duplicates {
 		if len(refs) > 1 {
@@ -718,11 +724,11 @@ func (h *Handlers) CheckDuplicates(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
-	
+
 	warning := DuplicateWarning{
 		DuplicateURLs: duplicateGroups,
 	}
-	
+
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(warning)
 }
@@ -730,10 +736,10 @@ func (h *Handlers) CheckDuplicates(w http.ResponseWriter, r *http.Request) {
 // Build search index
 func (h *Handlers) BuildSearchIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	
+
 	pages := h.store.GetPages()
 	var entries []SearchEntry
-	
+
 	for _, page := range pages {
 		bookmarks := h.store.GetBookmarksByPage(page.ID)
 		for idx, bm := range bookmarks {
@@ -749,12 +755,12 @@ func (h *Handlers) BuildSearchIndex(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
-	
+
 	index := SearchIndex{Entries: entries}
 	settings := h.store.GetSettings()
 	settings.SearchIndexed = true
 	h.store.SaveSettings(settings)
-	
+
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(index)
 }
@@ -762,14 +768,14 @@ func (h *Handlers) BuildSearchIndex(w http.ResponseWriter, r *http.Request) {
 // Get bookmark preview metadata
 func (h *Handlers) GetBookmarkPreview(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	
+
 	url := r.URL.Query().Get("url")
 	if url == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "URL required"})
 		return
 	}
-	
+
 	// Simple preview extraction (in production, use a library like colly or metascraper)
 	preview := BookmarkPreview{
 		URL:       url,
@@ -777,7 +783,7 @@ func (h *Handlers) GetBookmarkPreview(w http.ResponseWriter, r *http.Request) {
 		Domain:    extractDomain(url),
 		FetchedAt: 0,
 	}
-	
+
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(preview)
 }
@@ -788,11 +794,11 @@ func extractDomain(url string) string {
 	} else if strings.HasPrefix(url, "https://") {
 		url = url[8:]
 	}
-	
+
 	if idx := strings.Index(url, "/"); idx != -1 {
 		url = url[:idx]
 	}
-	
+
 	return url
 }
 

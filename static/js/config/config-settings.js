@@ -7,23 +7,23 @@ class ConfigSettings {
     constructor(language) {
         this.language = language;
         this.t = language.t.bind(language); // Translation function
-        this.customThemes = {}; // Store available custom themes (id -> name)
+        this.customThemes = {}; // Store selectable themes (id -> display name)
         this.legacyThemeMap = {
-            aurora: 'aurora-borealis',
-            cyberpunk: 'neon-grid',
-            ember: 'desert-ember',
-            forest: 'forest-moss',
-            lavender: 'lavender-mist',
-            matcha: 'forest-moss',
-            midnight: 'midnight-terminal',
-            mint: 'iceberg',
-            nerd: 'midnight-terminal',
-            ocean: 'iceberg',
-            paper: 'paper-ink',
-            peach: 'desert-ember',
-            sunset: 'sunset-pulse',
-            synthwave: 'neon-grid',
-            void: 'void-mono'
+            aurora: 'midnight-neon-dark',
+            cyberpunk: 'retro-crt-dark',
+            ember: 'solar-ember-dark',
+            forest: 'forest-moss-dark',
+            lavender: 'lavender-mist-dark',
+            matcha: 'forest-moss-dark',
+            midnight: 'midnight-neon-dark',
+            mint: 'nordic-frost-light',
+            nerd: 'retro-crt-dark',
+            ocean: 'ocean-depth-dark',
+            paper: 'paper-ink-light',
+            peach: 'desert-sand-light',
+            sunset: 'solar-ember-light',
+            synthwave: 'cherry-graphite-dark',
+            void: 'paper-ink-dark'
         };
     }
 
@@ -35,14 +35,47 @@ class ConfigSettings {
             return normalized;
         }
 
-        const customThemeIds = Array.isArray(this.customThemes)
-            ? this.customThemes
-            : Object.keys(this.customThemes || {});
-        if (customThemeIds.includes(normalized)) {
+        const themeIds = Object.keys(this.customThemes || {});
+        if (themeIds.includes(normalized)) {
+            return normalized;
+        }
+
+        // Allow built-in theme families before the async theme list is loaded.
+        if (/-((dark)|(light))$/.test(normalized)) {
             return normalized;
         }
 
         return 'dark';
+    }
+
+    getThemeDisplayName(themeId, value) {
+        if (themeId === 'dark') {
+            return 'Old Default [dark]';
+        }
+        if (themeId === 'light') {
+            return 'Old Default [light]';
+        }
+        if (value && typeof value === 'object' && value.name) {
+            return String(value.name);
+        }
+        if (typeof value === 'string' && value.trim()) {
+            return value;
+        }
+        return String(themeId || this.t('config.unnamedTheme') || 'Theme');
+    }
+
+    getPairedThemeVariant(themeId, wantsDark) {
+        const normalized = this.normalizeThemeId(themeId);
+        if (normalized === 'dark' || normalized === 'light') {
+            return wantsDark ? 'dark' : 'light';
+        }
+        const match = normalized.match(/^(.*)-(dark|light)$/);
+        if (!match) {
+            return wantsDark ? 'dark' : 'light';
+        }
+        const pairCandidate = `${match[1]}-${wantsDark ? 'dark' : 'light'}`;
+        const hasPair = Object.prototype.hasOwnProperty.call(this.customThemes || {}, pairCandidate);
+        return hasPair ? pairCandidate : normalized;
     }
 
     formatPageIds(ids) {
@@ -162,35 +195,22 @@ class ConfigSettings {
 
         const currentValue = themeSelect.value;
 
-        themeSelect.innerHTML = '';
-
-        const darkOption = document.createElement('option');
-        darkOption.value = 'dark';
-        darkOption.textContent = this.t('dashboard.darkTheme');
-        themeSelect.appendChild(darkOption);
-
-        const lightOption = document.createElement('option');
-        lightOption.value = 'light';
-        lightOption.textContent = this.t('dashboard.lightTheme');
-        themeSelect.appendChild(lightOption);
-
-        const getThemeName = (value) => {
-            if (value && typeof value === 'object' && value.name) {
-                return value.name;
-            }
-            return value;
+        const allThemes = {
+            dark: this.t('dashboard.darkTheme') || 'Dark',
+            light: this.t('dashboard.lightTheme') || 'Light',
+            ...(this.customThemes || {})
         };
-
-        const sortedCustomThemes = Object.entries(this.customThemes || {}).sort(([, nameA], [, nameB]) => {
-            const safeNameA = (getThemeName(nameA) || this.t('config.unnamedTheme')).toString();
-            const safeNameB = (getThemeName(nameB) || this.t('config.unnamedTheme')).toString();
-            return safeNameA.localeCompare(safeNameB, undefined, { sensitivity: 'base' });
+        const sortedThemes = Object.entries(allThemes).sort(([idA, valueA], [idB, valueB]) => {
+            const labelA = this.getThemeDisplayName(idA, valueA);
+            const labelB = this.getThemeDisplayName(idB, valueB);
+            return labelA.localeCompare(labelB, undefined, { sensitivity: 'base' });
         });
 
-        sortedCustomThemes.forEach(([themeId, themeName]) => {
+        themeSelect.innerHTML = '';
+        sortedThemes.forEach(([themeId, themeValue]) => {
             const option = document.createElement('option');
             option.value = themeId;
-            option.textContent = (getThemeName(themeName) || this.t('config.unnamedTheme')).toString();
+            option.textContent = this.getThemeDisplayName(themeId, themeValue);
             themeSelect.appendChild(option);
         });
 
@@ -1223,7 +1243,7 @@ class ConfigSettings {
      */
     getDefaults() {
         return {
-            theme: 'dark',
+            theme: 'cherry-graphite-dark',
             openInNewTab: true,
             columnsPerRow: 3,
             fontSize: 'm',
@@ -1302,11 +1322,18 @@ class ConfigSettings {
 
         const media = window.matchMedia('(prefers-color-scheme: dark)');
         const apply = () => {
-            const nextTheme = media.matches ? 'dark' : 'light';
+            const nextTheme = this.getPairedThemeVariant(settings?.theme || 'dark', media.matches);
             if (settings) {
                 settings.theme = nextTheme;
             }
             this.applyTheme(nextTheme);
+            const themeSelect = document.getElementById('theme-select');
+            if (themeSelect) {
+                const hasTheme = Array.from(themeSelect.options).some((option) => option.value === nextTheme);
+                if (hasTheme) {
+                    themeSelect.value = nextTheme;
+                }
+            }
         };
 
         apply();

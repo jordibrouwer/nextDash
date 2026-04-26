@@ -85,8 +85,8 @@ class SearchCommandTheme {
      * @returns {string} The display name
      */
     getThemeDisplayName(themeId) {
-        if (themeId === 'light') return this.language ? this.language.t('dashboard.lightTheme') : 'Light';
-        if (themeId === 'dark') return this.language ? this.language.t('dashboard.darkTheme') : 'Dark';
+        if (themeId === 'light') return 'Old Default [light]';
+        if (themeId === 'dark') return 'Old Default [dark]';
 
         if (this.customThemes && typeof this.customThemes === 'object') {
             if (Array.isArray(this.customThemes)) {

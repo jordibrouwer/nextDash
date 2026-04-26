@@ -74,17 +74,20 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Font Sizes** - 7 preset sizes (XS, S, SM, M, LG, L, XL)
 - **Font Weight** - Normal, 600 (semi-bold), or Bold options
 - **Custom Fonts** - Upload and use custom font files
-- **Light/Dark Themes** - Toggle between light and dark themes
+- **Expanded Built-In Themes** - 32 built-in themes (16 families with dark/light variants), plus user custom themes
 - **Auto Dark Mode** - Automatically follow system dark mode preference
+- **Family-Aware Auto Dark Mode** - Keeps your selected family and swaps only variant (`[dark]`/`[light]`)
 - **Background Dots** - Animated background dots (toggle on/off)
 - **Background Opacity** - Slider control for background transparency
 - **Layout Presets** - Default, Compact, Cards, and Terminal-ish layouts
 - **First-Run Onboarding** - Guided 4-step quick tour shown on first launch
 
 ### Theme & Color Customization
-- **Default Themes** - Pre-configured light and dark themes
+- **Built-In Theme Families** - Includes original defaults (`Old Default [dark/light]`) plus many curated families
 - **User-Managed Custom Themes** - Create, apply, save, and delete custom themes from `/colors`
-- **Alphabetical Theme Ordering** - Dark/Light pinned first, custom themes sorted alphabetically
+- **Alphabetical Theme Ordering** - All selectable themes are sorted alphabetically in config
+- **Colors Page Custom-Only Editing** - `/colors` now focuses on custom themes; default dark/light editors are hidden
+- **Custom Theme Starter Palette** - New custom themes start from the built-in `cherry-graphite-dark` palette
 - **Color Picker** - Customize individual colors:
   - Text colors (primary, secondary, tertiary)
   - Background colors
@@ -142,7 +145,7 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Global Settings** - Save settings to server
 - **Manual Save Flow** - Use **Save Changes** to persist most configuration updates
 - **Unsaved Changes Indicator** - Sticky unsaved badge and subtle save button pulse when config is dirty
-- **Quick Save Bar** - Save/Undo/Discard shortcuts when unsaved changes are present
+- **Integrated Undo/Discard Actions** - Undo and discard actions are integrated in the top config actions area (single save button flow)
 - **Undo Toasts** - Undo destructive actions (delete/reset) directly from notification toasts
 - **Settings Reset** - Reset all settings with confirmation
 - **Expanded Help Page** - Indexed help sections with quick links, troubleshooting, and feature deep-dives
@@ -285,7 +288,8 @@ Access the color customization page by:
 - Typing `:colors` in the command bar
 
 Custom themes are fully managed here (create/apply/delete).  
-In the config theme dropdown, `dark` and `light` are always first, followed by custom themes in alphabetical order.
+The `/colors` page hides direct default dark/light editors; use **Add Custom Theme** to start from default palette values.  
+In config, all themes are shown alphabetically.
 
 ### Keyboard Shortcuts Reference
 | Action | Shortcut |
@@ -399,7 +403,7 @@ Switch languages in **Config → General Settings → Language**
 ## 🛠️ Configuration Options
 
 ### General Settings
-- Theme (Light, Dark, and any custom themes created in `/colors`)
+- Theme (built-in families, `Old Default [dark/light]`, and custom themes)
 - Language
 - Columns (1-6)
 - Font Size (XS, S, SM, M, LG, L, XL)
