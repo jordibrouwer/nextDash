@@ -703,7 +703,8 @@ class Dashboard {
             'Tip: use <code>category:work</code> in search',
             'Tip: use <code>status:online</code> in search',
             'Tip: use <code>page:2</code> in search',
-            'Tip: use <code>?g term</code> finder shortcut'
+            'Tip: use <code>?g term</code> finder shortcut',
+            this.language.t('dashboard.tipDisableTips')
         ];
 
         let normalCounter = 0;

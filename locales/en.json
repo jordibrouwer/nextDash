@@ -33,7 +33,8 @@
     "fiveColumns": "5 Columns",
     "sixColumns": "6 Columns",
     "lightTheme": "Light",
-    "darkTheme": "Dark"
+    "darkTheme": "Dark",
+    "tipDisableTips": "Tip: turn off tips in <code>config</code> → general → Search & Buttons"
 },
 "config": {
     "pageTitle": "Dashboard Configuration",

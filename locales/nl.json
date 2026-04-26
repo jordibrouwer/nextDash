@@ -33,7 +33,8 @@
     "fiveColumns": "5 Kolommen",
     "sixColumns": "6 Kolommen",
     "lightTheme": "Licht",
-    "darkTheme": "Donker"
+    "darkTheme": "Donker",
+    "tipDisableTips": "Tip: zet deze tips uit via <code>configuratie</code> → algemeen → Zoeken & knoppen"
   },
   "config": {
     "pageTitle": "Dashboard-configuratie",
