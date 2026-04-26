@@ -34,7 +34,8 @@
     "sixColumns": "6 Kolommen",
     "lightTheme": "Licht",
     "darkTheme": "Donker",
-    "tipDisableTips": "Tip: zet deze tips uit via <code>configuratie</code> → algemeen → Zoeken & knoppen"
+    "tipDisableTips": "Tip: zet deze tips uit via <code>configuratie</code> → algemeen → Zoeken & knoppen",
+    "tipDisableTipsAlt": "Tip: schakel tip-rotatie uit in <code>configuratie</code> voor een rustiger footer"
   },
   "config": {
     "pageTitle": "Dashboard-configuratie",
@@ -85,6 +86,7 @@
     "interleaveModeInfoTitle": "Informatie over zoekmodus wijzigen",
     "interleaveModeInfoMessage": "Ingeschakeld:\n• Druk op een willekeurige letter om fuzzy zoeken te starten (bladwijzers op naam zoeken)\n• Druk op '/' gevolgd door letters om snelkoppelingen te gebruiken (bijv. /yt voor YouTube)\n\nUitgeschakeld:\n• Druk op een willekeurige letter om snelkoppeling te zoeken\n• Druk op '/' gevolgd door letters om fuzzy zoeken te gebruiken",
     "enableAnimations": "Animaties inschakelen",
+    "showSyncToasts": "Sync-meldingen tonen",
     "deviceSpecificSettings": "Apparaatspecifieke instellingen gebruiken",
     "globalShortcuts": "Snelkoppelingen van alle pagina's gebruiken",
     "showBookmarkStatus": "Bladwijzerstatus weergeven (online/offline)",

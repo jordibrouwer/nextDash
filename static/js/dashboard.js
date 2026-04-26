@@ -20,6 +20,7 @@ class Dashboard {
             showConfigButton: true,
             showRecentButton: true,
             showTips: true,
+            showSyncToasts: true,
             showCheatSheetButton: true,
             showStatus: false,
             showPing: false,
@@ -62,6 +63,9 @@ class Dashboard {
         this.tipRotationTimer = null;
         this.tipRotationIndex = 0;
         this.tipPriorityIndex = 0;
+        this.structureSyncEventKey = 'nextdash:config-structure-sync';
+        this.tabId = `dash-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        this.lastSyncToastAt = 0;
         this.language = new ConfigLanguage();
         this.inlineEditingBookmarkIndex = null;
         this.init();
@@ -85,6 +89,7 @@ class Dashboard {
         this.setupPageShortcuts();
         this.setupReorderUndoShortcut();
         this.setupToolbarActions();
+        this.setupConfigStructureReloadListener();
 
             // Initialize new features
             this.quickAddWidget = new QuickAddWidget(this);
@@ -107,6 +112,67 @@ class Dashboard {
 
         // Show body after everything is loaded and rendered
         document.body.classList.remove('loading');
+    }
+
+    setupConfigStructureReloadListener() {
+        window.addEventListener('storage', async (event) => {
+            if (event.key !== this.structureSyncEventKey || !event.newValue) {
+                return;
+            }
+            try {
+                const payload = JSON.parse(event.newValue);
+                if (payload?.sourceTabId && payload.sourceTabId === this.tabId) {
+                    return;
+                }
+                await this.refreshAfterConfigStructureUpdate(payload);
+                this.showSyncToast('Synced config changes.');
+            } catch (error) {
+                window.location.reload();
+            }
+        });
+    }
+
+    showSyncToast(message) {
+        if (this.settings?.showSyncToasts === false) {
+            return;
+        }
+        const now = Date.now();
+        if (now - this.lastSyncToastAt < 2000) {
+            return;
+        }
+        this.lastSyncToastAt = now;
+        this.showNotification(message, 'success');
+    }
+
+    async refreshAfterConfigStructureUpdate(payload = {}) {
+        try {
+            await this.loadData();
+            await this.withRetry(() => this.loadPageBookmarks(this.currentPageId), 2, 220);
+            await this.withRetry(() => this.loadAllBookmarks(), 2, 220);
+            this.renderPageNavigation();
+            this.renderDashboard();
+            this.initializeButtonTipsRotation();
+            if (this.searchComponent) {
+                this.updateSearchComponent();
+            }
+        } catch (error) {
+            window.location.reload();
+        }
+    }
+
+    async withRetry(task, retries = 2, baseDelayMs = 220) {
+        let lastError = null;
+        for (let attempt = 0; attempt <= retries; attempt += 1) {
+            try {
+                return await task();
+            } catch (error) {
+                lastError = error;
+                if (attempt >= retries) break;
+                const delayMs = baseDelayMs * (2 ** attempt);
+                await new Promise((resolve) => setTimeout(resolve, delayMs));
+            }
+        }
+        throw lastError;
     }
 
     async loadData() {
@@ -158,6 +224,9 @@ class Dashboard {
             }
             if (typeof this.settings.showTips === 'undefined') {
                 this.settings.showTips = true;
+            }
+            if (typeof this.settings.showSyncToasts === 'undefined') {
+                this.settings.showSyncToasts = true;
             }
             if (!Number.isFinite(Number(this.settings.smartRecentLimit)) || Number(this.settings.smartRecentLimit) < 0) {
                 this.settings.smartRecentLimit = 50;
@@ -704,7 +773,8 @@ class Dashboard {
             'Tip: use <code>status:online</code> in search',
             'Tip: use <code>page:2</code> in search',
             'Tip: use <code>?g term</code> finder shortcut',
-            this.language.t('dashboard.tipDisableTips')
+            this.language.t('dashboard.tipDisableTips'),
+            this.language.t('dashboard.tipDisableTipsAlt')
         ];
 
         let normalCounter = 0;

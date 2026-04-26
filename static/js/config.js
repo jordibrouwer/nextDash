@@ -41,6 +41,7 @@ class ConfigManager {
             showCheatSheetButton: true,
             showRecentButton: true,
             showTips: true,
+            showSyncToasts: true,
             showStatus: false,
             showPing: false,
             skipFastPing: false,
@@ -78,6 +79,9 @@ class ConfigManager {
         this.undoSnapshot = null;
         this.savedSnapshot = null;
         this.suppressDirtyTracking = false;
+        this.structureSyncEventKey = 'nextdash:config-structure-sync';
+        this.tabId = `cfg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        this.lastSyncToastAt = 0;
 
         this.init();
     }
@@ -149,6 +153,9 @@ class ConfigManager {
             }
             if (typeof this.settingsData.showTips === 'undefined') {
                 this.settingsData.showTips = true;
+            }
+            if (typeof this.settingsData.showSyncToasts === 'undefined') {
+                this.settingsData.showSyncToasts = true;
             }
             if (!Number.isFinite(Number(this.settingsData.smartRecentLimit)) || Number(this.settingsData.smartRecentLimit) < 0) {
                 this.settingsData.smartRecentLimit = 50;
@@ -387,7 +394,203 @@ class ConfigManager {
 
         const resetBtn = document.getElementById('reset-btn');
         if (resetBtn) resetBtn.addEventListener('click', () => this.resetToDefaults());
+        this.setupStructureAutoSyncListeners();
         this.setupDirtyTracking();
+    }
+
+    setupStructureAutoSyncListeners() {
+        const pagesList = document.getElementById('pages-list');
+        if (pagesList) {
+            pagesList.addEventListener('change', async (event) => {
+                const target = event.target;
+                if (!(target instanceof HTMLInputElement)) return;
+                if (target.getAttribute('data-field') !== 'name') return;
+                await this.persistPagesStructureAndRefresh('page-renamed');
+            });
+        }
+
+        const categoriesList = document.getElementById('categories-list');
+        if (categoriesList) {
+            categoriesList.addEventListener('change', async (event) => {
+                const target = event.target;
+                if (!(target instanceof HTMLInputElement)) return;
+                if (target.getAttribute('data-field') !== 'name') return;
+                const row = target.closest('.category-item');
+                const category = row ? row._categoryRef : null;
+                if (!category) return;
+                const categoryBeforeRename = category.originalId || category.id;
+                const renameResult = this.applyCategoryRenameWithConflictGuard(category, target.value, categoryBeforeRename);
+                if (!renameResult) {
+                    return;
+                }
+                await this.persistCategoriesStructureAndRefresh({
+                    persistBookmarks: true,
+                    eventType: 'category-renamed',
+                    categoryRenameMap: renameResult
+                });
+            });
+        }
+    }
+
+    applyCategoryRenameWithConflictGuard(category, rawName, previousId) {
+        const nextName = String(rawName || '').trim();
+        const nextId = this.generateId(nextName);
+        const originalName = category.name || '';
+        const currentId = category.id || '';
+        const oldId = previousId || category.originalId || currentId;
+        const hasDuplicate = this.categoriesData.some((item) => item !== category && item.id === nextId);
+
+        if (!nextName || !nextId || hasDuplicate) {
+            const fallbackName = originalName || oldId || this.language.t('config.newCategoryPrefix');
+            category.name = fallbackName;
+            category.id = oldId;
+            category.originalId = oldId;
+            this.categories.render(this.categoriesData, this.generateId.bind(this));
+            this.categories.initReorder(this.categoriesData, (newCategories) => {
+                this.categoriesData = newCategories;
+            });
+            this.ui.showNotification('Category name must be unique and not empty.', 'error');
+            return false;
+        }
+
+        category.name = nextName;
+        category.id = nextId;
+        category.originalId = nextId;
+        this.reassignBookmarkCategoryIds(oldId, nextId);
+        return { oldId, newId: nextId };
+    }
+
+    reassignBookmarkCategoryIds(oldId, nextId) {
+        if (!oldId || !nextId || oldId === nextId) {
+            return;
+        }
+        this.bookmarksData.forEach((bookmark) => {
+            if (bookmark.category === oldId) {
+                bookmark.category = nextId;
+            }
+        });
+    }
+
+    async withRetry(task, options = {}) {
+        const retries = Number(options.retries ?? 2);
+        const baseDelayMs = Number(options.baseDelayMs ?? 250);
+        let lastError = null;
+
+        for (let attempt = 0; attempt <= retries; attempt += 1) {
+            try {
+                return await task();
+            } catch (error) {
+                lastError = error;
+                if (attempt >= retries) {
+                    break;
+                }
+                const delayMs = baseDelayMs * (2 ** attempt);
+                await new Promise((resolve) => setTimeout(resolve, delayMs));
+            }
+        }
+
+        throw lastError;
+    }
+
+    signalDashboardReload(eventType = 'structure-updated') {
+        try {
+            const payload = {
+                type: eventType,
+                sourceTabId: this.tabId,
+                timestamp: Date.now()
+            };
+            localStorage.setItem(this.structureSyncEventKey, JSON.stringify(payload));
+        } catch (error) {
+            // Keep config functional even if storage access is blocked.
+        }
+    }
+
+    showSyncToast(message, type = 'success') {
+        if (this.settingsData?.showSyncToasts === false) {
+            return;
+        }
+        const now = Date.now();
+        if (now - this.lastSyncToastAt < 2000) {
+            return;
+        }
+        this.lastSyncToastAt = now;
+        this.ui.showNotification(message, type);
+    }
+
+    async persistPagesStructureAndRefresh(eventType = 'page-updated') {
+        try {
+            await this.withRetry(() => this.data.savePages(this.pagesData));
+            await this.refreshStructureDependentUI();
+            this.signalDashboardReload(eventType);
+            this.showSyncToast('Dashboard sync complete.', 'success');
+        } catch (error) {
+            console.error('Error persisting page structure:', error);
+            this.showSyncToast('Dashboard sync failed. Retry from config.', 'error');
+        }
+    }
+
+    async persistCategoriesStructureAndRefresh(options = {}) {
+        if (!this.currentCategoriesPageId) {
+            return;
+        }
+
+        try {
+            const categoriesForSelectedPage = this.getCategoriesFromDOM();
+            if (categoriesForSelectedPage && categoriesForSelectedPage.length >= 0) {
+                this.categoriesData = categoriesForSelectedPage;
+                await this.withRetry(() => this.data.saveCategoriesByPage(categoriesForSelectedPage, this.currentCategoriesPageId));
+            }
+
+            if (options.persistBookmarks === true) {
+                const renameMap = options.categoryRenameMap || null;
+                if (this.currentPageId === this.currentCategoriesPageId) {
+                    if (renameMap && renameMap.oldId && renameMap.newId && renameMap.oldId !== renameMap.newId) {
+                        this.reassignBookmarkCategoryIds(renameMap.oldId, renameMap.newId);
+                    }
+                    await this.withRetry(() => this.data.saveBookmarks(this.bookmarksData, this.currentPageId));
+                } else {
+                    const pageBookmarks = await this.withRetry(() => this.data.loadBookmarksByPage(this.currentCategoriesPageId));
+                    let changed = false;
+                    const categoryIdSet = new Set(this.categoriesData.map((category) => category.id));
+                    const nextBookmarks = pageBookmarks.map((bookmark) => {
+                        if (renameMap && bookmark.category === renameMap.oldId) {
+                            changed = true;
+                            return { ...bookmark, category: renameMap.newId };
+                        }
+                        if (bookmark.category && !categoryIdSet.has(bookmark.category)) {
+                            changed = true;
+                            return { ...bookmark, category: '' };
+                        }
+                        return bookmark;
+                    });
+                    if (changed) {
+                        await this.withRetry(() => this.data.saveBookmarks(nextBookmarks, this.currentCategoriesPageId));
+                    }
+                }
+            }
+
+            await this.refreshStructureDependentUI();
+            this.signalDashboardReload(options.eventType || 'category-updated');
+            this.showSyncToast('Dashboard sync complete.', 'success');
+        } catch (error) {
+            console.error('Error persisting category structure:', error);
+            this.showSyncToast('Dashboard sync failed. Retry from config.', 'error');
+        }
+    }
+
+    async refreshStructureDependentUI() {
+        const previousPageId = Number(this.currentPageId) || 1;
+        const previousCategoriesPageId = Number(this.currentCategoriesPageId) || previousPageId;
+        const selectedPageExists = this.pagesData.some((page) => Number(page.id) === previousPageId);
+        const selectedCategoriesPageExists = this.pagesData.some((page) => Number(page.id) === previousCategoriesPageId);
+
+        this.currentPageId = selectedPageExists ? previousPageId : (this.pagesData[0]?.id || 1);
+        this.currentCategoriesPageId = selectedCategoriesPageExists ? previousCategoriesPageId : this.currentPageId;
+
+        await this.loadPageBookmarks(this.currentPageId);
+        await this.loadPageCategories(this.currentCategoriesPageId);
+        this.renderConfig();
+        this.initReordering();
     }
 
     setupDirtyTracking() {
@@ -845,9 +1048,11 @@ class ConfigManager {
             this.currentCategoriesPageId = newPage.id;
             this.loadPageCategories(newPage.id);
         }
+
+        await this.persistPagesStructureAndRefresh('page-added');
     }
 
-    addCategory() {
+    async addCategory() {
         if (!this.categoriesData) this.categoriesData = [];
         
         this.categories.add(this.categoriesData, this.generateId.bind(this));
@@ -856,6 +1061,7 @@ class ConfigManager {
             this.categoriesData = newCategories;
         });
         this.markDirty();
+        await this.persistCategoriesStructureAndRefresh({ eventType: 'category-added' });
     }
 
     addBookmark() {
@@ -928,7 +1134,7 @@ class ConfigManager {
                     categoriesSelector.appendChild(option);
                 });
             }
-            
+            await this.persistPagesStructureAndRefresh('page-removed');
             this.ui.showNotification(this.language.t('config.pageDeleted'), 'success');
         } catch (error) {
             console.error('Error deleting page:', error);
@@ -957,6 +1163,7 @@ class ConfigManager {
             });
             this.showUndoNotification('Category removed.', undoSnapshot);
             this.markDirty();
+            await this.persistCategoriesStructureAndRefresh({ persistBookmarks: true, eventType: 'category-removed' });
         }
     }
 
@@ -1431,6 +1638,8 @@ class ConfigManager {
         document.getElementById('show-cheatsheet-button-checkbox').checked = this.settingsData.showCheatSheetButton;
         const showTipsCheckbox = document.getElementById('show-tips-checkbox');
         if (showTipsCheckbox) showTipsCheckbox.checked = this.settingsData.showTips !== false;
+        const showSyncToastsCheckbox = document.getElementById('show-sync-toasts-checkbox');
+        if (showSyncToastsCheckbox) showSyncToastsCheckbox.checked = this.settingsData.showSyncToasts !== false;
         document.getElementById('show-search-button-text-checkbox').checked = this.settingsData.showSearchButtonText;
         document.getElementById('show-finders-button-text-checkbox').checked = this.settingsData.showFindersButtonText;
         document.getElementById('show-commands-button-text-checkbox').checked = this.settingsData.showCommandsButtonText;

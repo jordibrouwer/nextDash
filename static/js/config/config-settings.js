@@ -762,6 +762,14 @@ class ConfigSettings {
             });
         }
 
+        const showSyncToastsCheckbox = document.getElementById('show-sync-toasts-checkbox');
+        if (showSyncToastsCheckbox) {
+            showSyncToastsCheckbox.checked = settings.showSyncToasts !== false;
+            showSyncToastsCheckbox.addEventListener('change', (e) => {
+                settings.showSyncToasts = e.target.checked;
+            });
+        }
+
         // Show status checkbox
         const showStatusCheckbox = document.getElementById('show-status-checkbox');
         if (showStatusCheckbox) {
@@ -952,6 +960,7 @@ class ConfigSettings {
         const skipFastPingCheckbox = document.getElementById('skip-fast-ping-checkbox');
         const globalShortcutsCheckbox = document.getElementById('global-shortcuts-checkbox');
         const animationsEnabledCheckbox = document.getElementById('animations-enabled-checkbox');
+        const showSyncToastsCheckbox = document.getElementById('show-sync-toasts-checkbox');
         const enableCustomTitleCheckbox = document.getElementById('enable-custom-title-checkbox');
         const customTitleInput = document.getElementById('custom-title-input');
         const showPageInTitleCheckbox = document.getElementById('show-page-in-title-checkbox');
@@ -990,6 +999,7 @@ class ConfigSettings {
         if (showCommandsButtonTextCheckbox) settings.showCommandsButtonText = showCommandsButtonTextCheckbox.checked;
         if (includeFindersInSearchCheckbox) settings.includeFindersInSearch = includeFindersInSearchCheckbox.checked;
         if (animationsEnabledCheckbox) settings.animationsEnabled = animationsEnabledCheckbox.checked;
+        if (showSyncToastsCheckbox) settings.showSyncToasts = showSyncToastsCheckbox.checked;
         if (showStatusCheckbox) settings.showStatus = showStatusCheckbox.checked;
         if (showPingCheckbox) settings.showPing = showPingCheckbox.checked;
         if (showStatusLoadingCheckbox) settings.showStatusLoading = showStatusLoadingCheckbox.checked;
@@ -1265,6 +1275,7 @@ class ConfigSettings {
             globalShortcuts: true,
             hyprMode: false,
             animationsEnabled: true,
+            showSyncToasts: true,
             enableCustomTitle: false,
             customTitle: '',
             showPageInTitle: false,

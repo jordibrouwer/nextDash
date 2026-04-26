@@ -34,7 +34,8 @@
     "sixColumns": "6 Columns",
     "lightTheme": "Light",
     "darkTheme": "Dark",
-    "tipDisableTips": "Tip: turn off tips in <code>config</code> → general → Search & Buttons"
+    "tipDisableTips": "Tip: turn off tips in <code>config</code> → general → Search & Buttons",
+    "tipDisableTipsAlt": "Tip: disable tip rotation in <code>config</code> if you want a cleaner footer"
 },
 "config": {
     "pageTitle": "Dashboard Configuration",
@@ -85,6 +86,7 @@
     "interleaveModeInfoTitle": "Switch Search Mode Information",
     "interleaveModeInfoMessage": "Enabled:\n• Press any letter to start fuzzy search (find bookmarks by name)\n• Press '/' followed by letters to use shortcuts (e.g., /yt for YouTube)\n\nDisabled:\n• Press any letter to start shortcut search\n• Press '/' followed by letters to use fuzzy search",
     "enableAnimations": "Enable animations",
+    "showSyncToasts": "Show sync notifications",
     "deviceSpecificSettings": "Use device-specific settings",
     "globalShortcuts": "Use shortcuts from all pages",
     "showBookmarkStatus": "Show bookmark status (online/offline)",

@@ -56,6 +56,10 @@ class ConfigLanguage {
         elements.forEach(element => {
             const key = element.getAttribute('data-i18n');
             const translation = this.t(key);
+            if (translation === key) {
+                // Missing key: keep existing template text instead of showing raw i18n key.
+                return;
+            }
             if (element.hasAttribute('aria-label')) {
                 element.setAttribute('aria-label', translation);
             } else {
@@ -68,6 +72,9 @@ class ConfigLanguage {
         placeholderElements.forEach(element => {
             const key = element.getAttribute('data-i18n-placeholder');
             const translation = this.t(key);
+            if (translation === key) {
+                return;
+            }
             element.placeholder = translation;
         });
     }
