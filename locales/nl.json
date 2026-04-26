@@ -36,7 +36,7 @@
     "darkTheme": "Donker",
     "tipDisableTips": "Tip: zet deze tips uit via <code>configuratie</code> → algemeen → Zoeken & knoppen",
     "tipDisableTipsAlt": "Tip: schakel tip-rotatie uit in <code>configuratie</code> voor een rustiger footer",
-    "tipPackedColumns": "Tip: strakke kolommen uit via <code>configuratie</code> → algemeen (layout en kolommen)"
+    "tipPackedColumns": "Tip: strakke kolommen uit in <code>config</code> → algemeen"
   },
   "config": {
     "pageTitle": "Dashboard-configuratie",

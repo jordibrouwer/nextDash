@@ -36,7 +36,7 @@
     "darkTheme": "Dark",
     "tipDisableTips": "Tip: turn off tips in <code>config</code> → general → Search & Buttons",
     "tipDisableTipsAlt": "Tip: disable tip rotation in <code>config</code> if you want a cleaner footer",
-    "tipPackedColumns": "Tip: turn off tight column stack in <code>config</code> → general (layout & columns)"
+    "tipPackedColumns": "Tip: tight columns off in <code>config</code> → general"
 },
 "config": {
     "pageTitle": "Dashboard Configuration",
