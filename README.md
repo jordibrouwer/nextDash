@@ -53,6 +53,7 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Open in New Tab** - Option to open links in new or current tab
 - **Bookmark Metadata** - Extract title, description, and preview image from URLs
 - **Drag & Drop** - Easily reorder bookmarks within categories
+- **Category filter without losing edits** - Switching the bookmark list filter (e.g. **No category** or any category) writes visible row fields back into memory before re-render so name, URL, shortcuts, toggles, etc. are not reset
 - **Conflict Validation** - Duplicate URL/shortcut detection with inline conflict highlights before save
 - **Global Shortcut Uniqueness** - Bookmark shortcuts must be unique across all pages (enforced in UI and backend)
 - **Inline Edit Guardrails** - Dashboard inline edit prevents duplicate shortcuts before save
@@ -83,6 +84,7 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Background Dots** - Animated background dots (toggle on/off)
 - **Background Opacity** - Slider control for background transparency
 - **Layout Presets** - Default, Compact, Cards, and Terminal-ish layouts
+- **Tight column stack** - Round-robin columns on wide screens for less empty vertical space; **on by default** (new `settings.json` or missing `packedColumns` key). Off in **Config → General**; toggle **saves immediately** with a toast. Footer tips can point there when tips are on.
 - **First-Run Onboarding** - Guided 4-step quick tour shown on first launch
 
 ### Theme & Color Customization
@@ -150,7 +152,7 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Advanced Settings** - Animations, custom favicon, custom font
 - **Device-Specific Settings** - Save settings locally to device/browser
 - **Global Settings** - Save settings to server
-- **Manual Save Flow** - Use **Save Changes** to persist most configuration updates
+- **Manual Save Flow** - Use **Save Changes** to persist bookmarks, categories, pages, and most settings; **Tight column stack** is the exception and persists as soon as you toggle it
 - **Unsaved Changes Indicator** - Sticky unsaved badge and subtle save button pulse when config is dirty
 - **Integrated Undo/Discard Actions** - Undo and discard actions are integrated in the top config actions area (single save button flow)
 - **Undo Toasts** - Undo destructive actions (delete/reset) directly from notification toasts
@@ -223,7 +225,7 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 
 ### Onboarding & In-App Guidance
 - **First Launch Tour** - Welcome overlay introduces search, shortcuts, and config in 4 concise steps
-- **Priority Tip Rotation** - Rotating tips every 5-8 seconds with recurring high-priority shortcuts
+- **Priority Tip Rotation** - Rotating tips every 5-8 seconds with recurring high-priority shortcuts (includes a short hint for turning off tight columns when tips are enabled)
 - **Keyboard Escape Hatch** - `Esc` dismisses onboarding instantly
 
 ## 🚀 Quick Start
@@ -420,6 +422,7 @@ Switch languages in **Config → General Settings → Language**
 - Font Size (XS, S, SM, M, LG, L, XL)
 - Font Weight
 - Layout Preset
+- Tight column stack (layout density on large screens; saves immediately when changed)
 - Custom Font Upload
 - Custom Favicon Upload
 
