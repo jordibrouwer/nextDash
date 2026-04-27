@@ -82,7 +82,7 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Auto Dark Mode** - Automatically follow system dark mode preference
 - **Family-Aware Auto Dark Mode** - Keeps your selected family and swaps only variant (`[dark]`/`[light]`)
 - **Background Dots** - Animated background dots (toggle on/off)
-- **Background Opacity** - Slider control for background transparency
+- **Background Opacity** - Slider control for background transparency with improved contrast track, thumb ring, and clearer percentage badge so it stays visible across themes
 - **Layout Presets** - Default, Compact, Cards, and Terminal-ish layouts
 - **Tight column stack** - Round-robin columns on wide screens for less empty vertical space; **on by default** (new `settings.json` or missing `packedColumns` key). Off in **Config → General**; toggle **saves immediately** with a toast. Footer tips can point there when tips are on.
 - **First-Run Onboarding** - Guided 4-step quick tour shown on first launch
@@ -154,6 +154,7 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Global Settings** - Save settings to server
 - **Manual Save Flow** - Use **Save Changes** to persist bookmarks, categories, pages, and most settings; **Tight column stack** is the exception and persists as soon as you toggle it
 - **Unsaved Changes Indicator** - Sticky unsaved badge and subtle save button pulse when config is dirty
+- **Unsaved Navigation Guard** - Leaving config or colors via back links now prompts to **Save & leave**, **Leave without saving**, or **Stay**
 - **Integrated Undo/Discard Actions** - Undo and discard actions are integrated in the top config actions area (single save button flow)
 - **Undo Toasts** - Undo destructive actions (delete/reset) directly from notification toasts
 - **Settings Reset** - Reset all settings with confirmation
@@ -161,6 +162,7 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Save Blocking on Conflicts** - Save is blocked while duplicate bookmark URLs/shortcuts are present
 - **Auto Structure Sync** - Page/category create-rename-delete updates dashboard tabs and dependent config lists immediately
 - **Sync Notification Toggle** - Optional setting to disable sync toasts in Advanced settings
+- **Context Info Buttons** - Reusable `ℹ` help buttons explain key settings (search mode, fuzzy suggestions, finders in search, tight columns, tabs behavior, status checks, sync toasts, and more)
 
 ### UI Customization
 - **Toggle Config Button** - Show/hide config access
@@ -225,6 +227,7 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 
 ### Onboarding & In-App Guidance
 - **First Launch Tour** - Welcome overlay introduces search, shortcuts, and config in 4 concise steps
+- **Smart Tour Positioning** - On desktop, onboarding card repositions near highlighted targets (steps 2/3 avoid overlapping bottom action buttons); mobile keeps stable bottom layout
 - **Priority Tip Rotation** - Rotating tips every 5-8 seconds with recurring high-priority shortcuts (includes a short hint for turning off tight columns when tips are enabled)
 - **Keyboard Escape Hatch** - `Esc` dismisses onboarding instantly
 
