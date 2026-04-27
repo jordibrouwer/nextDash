@@ -26,16 +26,25 @@ class DragReorder {
         this.itemSelector = options.itemSelector || null;
         this.handleSelector = options.handleSelector || null;
         this.onReorder = options.onReorder || null;
+        this.longPressMs = Number.isFinite(Number(options.longPressMs)) ? Math.max(0, Number(options.longPressMs)) : 0;
         this.itemClass = 'reorder-item';
         this.selected = null;
         this.dragStartMeta = null;
         this.isTouch = 'ontouchstart' in window;
         this.placeholder = null;
+        this.mouseDownAt = new WeakMap();
+        this.touchPressTimer = null;
+        this.touchDragActive = false;
+        this.touchStartPoint = null;
+        this.touchSourceElement = null;
         
         // Bind handlers
         this.touchStartHandler = (e) => this.touchStart(e);
         this.touchMoveHandler = (e) => this.touchMove(e);
         this.touchEndHandler = (e) => this.touchEnd(e);
+        this.touchCancelHandler = () => this.cancelTouchPress();
+        this.mouseDownHandler = (e) => this.mouseDown(e);
+        this.mouseUpHandler = (e) => this.mouseUp(e);
         this.preventDrop = (e) => e.preventDefault();
         this.containerDragOverHandler = (e) => this.dragOverContainer(e);
         
@@ -71,10 +80,14 @@ class DragReorder {
                     element.addEventListener('touchstart', this.touchStartHandler, { passive: false });
                     element.addEventListener('touchmove', this.touchMoveHandler, { passive: false });
                     element.addEventListener('touchend', this.touchEndHandler);
+                    element.addEventListener('touchcancel', this.touchCancelHandler);
                 } else {
                     element.draggable = true;
                     element.ondragstart = (e) => this.dragStart(e);
                     element.ondragend = (e) => this.dragEnd(e);
+                    element.addEventListener('mousedown', this.mouseDownHandler);
+                    element.addEventListener('mouseup', this.mouseUpHandler);
+                    element.addEventListener('mouseleave', this.mouseUpHandler);
                 }
             }
             // Add dragover to item for mouse drag
@@ -89,6 +102,14 @@ class DragReorder {
     }
 
     dragStart(e) {
+        if (this.longPressMs > 0) {
+            const sourceEl = e.currentTarget || e.target;
+            const pressStartedAt = this.mouseDownAt.get(sourceEl) || 0;
+            if (!pressStartedAt || (Date.now() - pressStartedAt) < this.longPressMs) {
+                e.preventDefault();
+                return;
+            }
+        }
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', '');
         this.selected = e.target.closest(`.${this.itemClass}`);
@@ -168,17 +189,73 @@ class DragReorder {
         }
     }
 
-    touchStart(e) {
-        e.preventDefault();
-        this.selected = e.target.closest(`.${this.itemClass}`);
+    mouseDown(e) {
+        const sourceEl = e.currentTarget || e.target;
+        if (sourceEl) {
+            this.mouseDownAt.set(sourceEl, Date.now());
+        }
+    }
+
+    mouseUp(e) {
+        const sourceEl = e.currentTarget || e.target;
+        if (sourceEl && this.mouseDownAt.has(sourceEl)) {
+            this.mouseDownAt.delete(sourceEl);
+        }
+    }
+
+    startTouchDrag() {
+        this.selected = this.touchSourceElement ? this.touchSourceElement.closest(`.${this.itemClass}`) : null;
+        if (!this.selected) {
+            this.touchDragActive = false;
+            return;
+        }
         this.dragStartMeta = this.getItemMeta(this.selected);
         window.__dragReorderState.selected = this.selected;
         this.removeAllPlaceholders();
         this.selected.classList.remove('is-idle');
         this.selected.classList.add('is-draggable');
         this.disablePageScroll();
+        this.touchDragActive = true;
+    }
+
+    cancelTouchPress() {
+        if (this.touchPressTimer) {
+            clearTimeout(this.touchPressTimer);
+            this.touchPressTimer = null;
+        }
+        this.touchSourceElement = null;
+        this.touchStartPoint = null;
+    }
+
+    touchStart(e) {
+        const touch = e.touches && e.touches[0] ? e.touches[0] : null;
+        this.touchSourceElement = e.currentTarget || e.target;
+        this.touchStartPoint = touch ? { x: touch.clientX, y: touch.clientY } : null;
+        this.touchDragActive = false;
+        this.cancelTouchPress();
+        this.touchSourceElement = e.currentTarget || e.target;
+        this.touchStartPoint = touch ? { x: touch.clientX, y: touch.clientY } : null;
+        if (this.longPressMs > 0) {
+            this.touchPressTimer = setTimeout(() => {
+                this.touchPressTimer = null;
+                this.startTouchDrag();
+            }, this.longPressMs);
+            return;
+        }
+        this.startTouchDrag();
     }
     touchMove(e) {
+        if (!this.touchDragActive) {
+            const touch = e.touches && e.touches[0] ? e.touches[0] : null;
+            if (touch && this.touchStartPoint) {
+                const dx = Math.abs(touch.clientX - this.touchStartPoint.x);
+                const dy = Math.abs(touch.clientY - this.touchStartPoint.y);
+                if (dx > 8 || dy > 8) {
+                    this.cancelTouchPress();
+                }
+            }
+            return;
+        }
         e.preventDefault();
         const activeSelected = this.getSelectedItem();
         if (!activeSelected) return;
@@ -205,8 +282,13 @@ class DragReorder {
     }
 
     touchEnd(e) {
+        if (!this.touchDragActive) {
+            this.cancelTouchPress();
+            return;
+        }
         const activeSelected = this.getSelectedItem();
         if (!activeSelected) {
+            this.cancelTouchPress();
             return;
         }
 
@@ -225,6 +307,8 @@ class DragReorder {
         this.selected = null;
         window.__dragReorderState.selected = null;
         this.dragStartMeta = null;
+        this.touchDragActive = false;
+        this.cancelTouchPress();
         // Call the onReorder callback with the new order
         if (this.onReorder && typeof this.onReorder === 'function') {
             this.onReorder(this.getNewOrder(), reorderDetails);
@@ -332,10 +416,14 @@ class DragReorder {
                     element.removeEventListener('touchstart', this.touchStartHandler);
                     element.removeEventListener('touchmove', this.touchMoveHandler);
                     element.removeEventListener('touchend', this.touchEndHandler);
+                    element.removeEventListener('touchcancel', this.touchCancelHandler);
                 } else {
                     element.draggable = false;
                     element.ondragstart = null;
                     element.ondragend = null;
+                    element.removeEventListener('mousedown', this.mouseDownHandler);
+                    element.removeEventListener('mouseup', this.mouseUpHandler);
+                    element.removeEventListener('mouseleave', this.mouseUpHandler);
                 }
             }
             if (!this.isTouch) {

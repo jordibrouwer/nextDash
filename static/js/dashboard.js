@@ -1166,7 +1166,7 @@ class Dashboard {
             const reorderInstance = new DragReorder({
                 container: listElement,
                 itemSelector: '.bookmark-link',
-                handleSelector: '.bookmark-drag-handle',
+                longPressMs: 250,
                 onReorder: () => {
                     this.syncBookmarksFromDom();
                 }
@@ -1504,16 +1504,6 @@ class Dashboard {
         }
         row.setAttribute('data-category-id', categoryId);
 
-        const dragHandle = document.createElement('span');
-        dragHandle.className = 'bookmark-drag-handle';
-        dragHandle.textContent = '⠿';
-        dragHandle.setAttribute('title', 'Drag to reorder');
-        dragHandle.setAttribute('aria-hidden', 'true');
-        dragHandle.addEventListener('click', (e) => {
-            e.preventDefault();
-        });
-        row.appendChild(dragHandle);
-
         if (bookmark.icon && this.settings.showIcons) {
             const placeholder = document.createElement('span');
             placeholder.className = 'icon-placeholder';
@@ -1575,20 +1565,27 @@ class Dashboard {
 
         row.appendChild(openLink);
 
-        if (bookmark.shortcut && String(bookmark.shortcut).trim()) {
-            const shortcutSpan = document.createElement('span');
-            shortcutSpan.className = 'bookmark-shortcut';
-            shortcutSpan.textContent = String(bookmark.shortcut).toUpperCase();
-            row.appendChild(shortcutSpan);
+        const shortcutSpan = document.createElement('span');
+        shortcutSpan.className = 'bookmark-shortcut';
+        shortcutSpan.textContent = bookmark.shortcut && String(bookmark.shortcut).trim()
+            ? String(bookmark.shortcut).toUpperCase()
+            : '';
+        if (!shortcutSpan.textContent) {
+            shortcutSpan.classList.add('is-empty');
+            shortcutSpan.setAttribute('aria-hidden', 'true');
         }
+        row.appendChild(shortcutSpan);
 
+        const pinBadge = document.createElement('span');
+        pinBadge.className = 'bookmark-pin-badge';
+        pinBadge.textContent = bookmark.pinned ? '📌' : '';
         if (bookmark.pinned) {
-            const pinBadge = document.createElement('span');
-            pinBadge.className = 'bookmark-pin-badge';
-            pinBadge.textContent = 'pin';
             pinBadge.title = 'Pinned';
-            row.appendChild(pinBadge);
+        } else {
+            pinBadge.classList.add('is-empty');
+            pinBadge.setAttribute('aria-hidden', 'true');
         }
+        row.appendChild(pinBadge);
 
         if (allowInlineEdit && bookmarkIndex >= 0) {
             const editBtn = document.createElement('button');
