@@ -78,6 +78,19 @@ class ConfigSettings {
         return hasPair ? pairCandidate : normalized;
     }
 
+    bindInfoButton(buttonId, titleKey, messageKey) {
+        const btn = document.getElementById(buttonId);
+        if (!btn) return;
+        btn.addEventListener('click', () => {
+            if (!window.AppModal) return;
+            window.AppModal.alert({
+                title: this.t(titleKey),
+                htmlMessage: this.t(messageKey).replace(/\n/g, '<br>'),
+                confirmText: this.t('config.gotIt')
+            });
+        });
+    }
+
     formatPageIds(ids) {
         if (!Array.isArray(ids) || ids.length === 0) {
             return '';
@@ -318,12 +331,21 @@ class ConfigSettings {
         if (backgroundOpacityInput) {
             const initialOpacity = Number(settings.backgroundOpacity ?? 1);
             backgroundOpacityInput.value = String(initialOpacity);
+            const setOpacitySliderFill = (value) => {
+                const min = Number(backgroundOpacityInput.min || 0.65);
+                const max = Number(backgroundOpacityInput.max || 1);
+                const clamped = Math.min(max, Math.max(min, Number(value)));
+                const ratio = max > min ? ((clamped - min) / (max - min)) : 1;
+                backgroundOpacityInput.style.setProperty('--slider-fill', `${Math.round(ratio * 100)}%`);
+            };
+            setOpacitySliderFill(initialOpacity);
             if (backgroundOpacityValue) {
                 backgroundOpacityValue.textContent = `${Math.round(initialOpacity * 100)}%`;
             }
             backgroundOpacityInput.addEventListener('input', (e) => {
                 const value = Number(e.target.value);
                 settings.backgroundOpacity = value;
+                setOpacitySliderFill(value);
                 if (backgroundOpacityValue) {
                     backgroundOpacityValue.textContent = `${Math.round(value * 100)}%`;
                 }
@@ -405,61 +427,20 @@ class ConfigSettings {
             });
         }
 
-        // HyprMode info button
-        const hyprModeInfoBtn = document.getElementById('hypr-mode-info-btn');
-        if (hyprModeInfoBtn) {
-            hyprModeInfoBtn.addEventListener('click', () => {
-                if (window.AppModal) {
-                    window.AppModal.alert({
-                        title: this.t('config.hyprModeInfoTitle'),
-                        htmlMessage: this.t('config.hyprModeInfoMessage').replace(/\n/g, '<br>'),
-                        confirmText: this.t('config.gotIt')
-                    });
-                }
-            });
-        }
-
-        // Interleave mode info button
-        const interleaveModeInfoBtn = document.getElementById('interleave-mode-info-btn');
-        if (interleaveModeInfoBtn) {
-            interleaveModeInfoBtn.addEventListener('click', () => {
-                if (window.AppModal) {
-                    window.AppModal.alert({
-                        title: this.t('config.interleaveModeInfoTitle'),
-                        htmlMessage: this.t('config.interleaveModeInfoMessage').replace(/\n/g, '<br>'),
-                        confirmText: this.t('config.gotIt')
-                    });
-                }
-            });
-        }
-
-        // Fuzzy suggestions info button
-        const fuzzySuggestionsInfoBtn = document.getElementById('fuzzy-suggestions-info-btn');
-        if (fuzzySuggestionsInfoBtn) {
-            fuzzySuggestionsInfoBtn.addEventListener('click', () => {
-                if (window.AppModal) {
-                    window.AppModal.alert({
-                        title: this.t('config.fuzzySuggestionsInfoTitle'),
-                        htmlMessage: this.t('config.fuzzySuggestionsInfoMessage').replace(/\n/g, '<br>'),
-                        confirmText: this.t('config.gotIt')
-                    });
-                }
-            });
-        }
-
-        // Include finders in search info button
-        const includeFindersInSearchInfoBtn = document.getElementById('include-finders-in-search-info-btn');
-        if (includeFindersInSearchInfoBtn) {
-            includeFindersInSearchInfoBtn.addEventListener('click', () => {
-                if (window.AppModal) {
-                    window.AppModal.alert({
-                        title: this.t('config.includeFindersInSearchInfoTitle'),
-                        htmlMessage: this.t('config.includeFindersInSearchInfoMessage').replace(/\n/g, '<br>'),
-                        confirmText: this.t('config.gotIt')
-                    });
-                }
-            });
-        }
+        this.bindInfoButton('hypr-mode-info-btn', 'config.hyprModeInfoTitle', 'config.hyprModeInfoMessage');
+        this.bindInfoButton('interleave-mode-info-btn', 'config.interleaveModeInfoTitle', 'config.interleaveModeInfoMessage');
+        this.bindInfoButton('fuzzy-suggestions-info-btn', 'config.fuzzySuggestionsInfoTitle', 'config.fuzzySuggestionsInfoMessage');
+        this.bindInfoButton('include-finders-in-search-info-btn', 'config.includeFindersInSearchInfoTitle', 'config.includeFindersInSearchInfoMessage');
+        this.bindInfoButton('packed-columns-info-btn', 'config.packedColumnsInfoTitle', 'config.packedColumnsInfoMessage');
+        this.bindInfoButton('show-page-names-in-tabs-info-btn', 'config.showPageNamesInTabsInfoTitle', 'config.showPageNamesInTabsInfoMessage');
+        this.bindInfoButton('show-page-tabs-info-btn', 'config.showPageTabsInfoTitle', 'config.showPageTabsInfoMessage');
+        this.bindInfoButton('always-collapse-categories-info-btn', 'config.alwaysCollapseCategoriesInfoTitle', 'config.alwaysCollapseCategoriesInfoMessage');
+        this.bindInfoButton('global-shortcuts-info-btn', 'config.globalShortcutsInfoTitle', 'config.globalShortcutsInfoMessage');
+        this.bindInfoButton('show-tips-info-btn', 'config.showTipsInfoTitle', 'config.showTipsInfoMessage');
+        this.bindInfoButton('keep-search-open-when-empty-info-btn', 'config.keepSearchOpenWhenEmptyInfoTitle', 'config.keepSearchOpenWhenEmptyInfoMessage');
+        this.bindInfoButton('show-status-info-btn', 'config.showBookmarkStatusInfoTitle', 'config.showBookmarkStatusInfoMessage');
+        this.bindInfoButton('skip-fast-ping-info-btn', 'config.skipFastPingInfoTitle', 'config.skipFastPingInfoMessage');
+        this.bindInfoButton('show-sync-toasts-info-btn', 'config.showSyncToastsInfoTitle', 'config.showSyncToastsInfoMessage');
 
         // Show background dots checkbox
         const showBackgroundDotsCheckbox = document.getElementById('show-background-dots-checkbox');

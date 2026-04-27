@@ -81,6 +81,7 @@ class ConfigManager {
         this.undoSnapshot = null;
         this.savedSnapshot = null;
         this.suppressDirtyTracking = false;
+        this.isNavigatingAway = false;
         this.structureSyncEventKey = 'nextdash:config-structure-sync';
         this.settingsSyncEventKey = 'nextdash:config-settings-sync';
         this.tabId = `cfg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -435,6 +436,52 @@ class ConfigManager {
         if (resetBtn) resetBtn.addEventListener('click', () => this.resetToDefaults());
         this.setupStructureAutoSyncListeners();
         this.setupDirtyTracking();
+        this.setupNavigationGuards();
+    }
+
+    setupNavigationGuards() {
+        document.querySelectorAll('.nav-links .back-link').forEach((link) => {
+            link.addEventListener('click', async (event) => {
+                const href = link.getAttribute('href');
+                if (!href) {
+                    return;
+                }
+                if (!this.isDirty) {
+                    return;
+                }
+                event.preventDefault();
+                const shouldLeave = await this.confirmLeaveWithUnsavedChanges();
+                if (!shouldLeave) {
+                    return;
+                }
+                this.isNavigatingAway = true;
+                window.location.href = href;
+            });
+        });
+    }
+
+    async confirmLeaveWithUnsavedChanges() {
+        if (!window.AppModal) {
+            return window.confirm(this.language.t('config.unsavedChangesLeaveConfirm'));
+        }
+
+        const saveAndLeave = await window.AppModal.confirm({
+            title: this.language.t('config.unsavedChangesTitle'),
+            message: this.language.t('config.unsavedChangesSavePrompt'),
+            confirmText: this.language.t('config.unsavedChangesSaveAndLeave'),
+            cancelText: this.language.t('config.unsavedChangesMoreOptions')
+        });
+        if (saveAndLeave) {
+            await this.saveChanges();
+            return !this.isDirty;
+        }
+
+        return window.AppModal.danger({
+            title: this.language.t('config.unsavedChangesLeaveTitle'),
+            message: this.language.t('config.unsavedChangesLeaveMessage'),
+            confirmText: this.language.t('config.unsavedChangesLeaveWithoutSaving'),
+            cancelText: this.language.t('config.unsavedChangesStayHere')
+        });
     }
 
     setupStructureAutoSyncListeners() {
@@ -671,6 +718,7 @@ class ConfigManager {
             mark();
         });
         window.addEventListener('beforeunload', (event) => {
+            if (this.isNavigatingAway) return;
             if (!this.isDirty) return;
             event.preventDefault();
             event.returnValue = '';

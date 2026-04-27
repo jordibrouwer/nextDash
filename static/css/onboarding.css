@@ -9,12 +9,22 @@
     padding: 1rem;
 }
 
+.onboarding-overlay.onboarding-overlay-floating {
+    align-items: stretch;
+    justify-content: stretch;
+}
+
 .onboarding-card {
     width: min(640px, 96vw);
     border: 1px solid var(--border-primary);
     background: var(--background-modal);
     color: var(--text-primary);
     padding: 1rem;
+}
+
+.onboarding-overlay.onboarding-overlay-floating .onboarding-card {
+    position: fixed;
+    margin: 0;
 }
 
 .onboarding-progress {

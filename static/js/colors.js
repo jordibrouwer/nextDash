@@ -10,6 +10,16 @@ let customThemesManager = null; // Will be initialized in DOMContentLoaded
 let currentPreviewTheme = 'dark'; // Current theme being previewed
 let settings = {}; // To store settings data
 let language = null; // Language instance for translations
+let hasUnsavedColorChanges = false;
+let isNavigatingAway = false;
+
+function markColorsDirty() {
+    hasUnsavedColorChanges = true;
+}
+
+function clearColorsDirty() {
+    hasUnsavedColorChanges = false;
+}
 
 // Apply animations based on settings
 function applyAnimations() {
@@ -140,6 +150,7 @@ async function loadColors() {
         
         // Apply colors immediately to show current theme colors
         applyColorsToPreview();
+        clearColorsDirty();
     } catch (error) {
         console.error('Error loading colors:', error);
         showNotification(window.t('colors.errorLoadingColors'), 'error');
@@ -257,6 +268,7 @@ async function saveColors() {
         
         // Re-apply preview after saving to maintain current preview theme
         applyColorsToPreview();
+        clearColorsDirty();
     } catch (error) {
         console.error('Error saving colors:', error);
         showNotification(window.t('colors.errorSavingColors'), 'error');
@@ -278,6 +290,7 @@ async function autosaveThemeStructure() {
         if (!response.ok) {
             throw new Error('Failed to autosave theme structure');
         }
+        clearColorsDirty();
     } catch (error) {
         console.error('Error autosaving theme structure:', error);
         showNotification(window.t('colors.errorSavingColors'), 'error');
@@ -328,10 +341,63 @@ async function resetColors() {
         
         // Re-apply preview after resetting to maintain current preview theme
         applyColorsToPreview();
+        clearColorsDirty();
     } catch (error) {
         console.error('Error resetting colors:', error);
         showNotification(window.t('colors.errorResettingColors'), 'error');
     }
+}
+
+async function confirmLeaveColorsPage() {
+    if (!window.AppModal) {
+        return window.confirm(window.t('config.unsavedColorChangesLeaveConfirm'));
+    }
+
+    const saveAndLeave = await window.AppModal.confirm({
+        title: window.t('config.unsavedColorChangesTitle'),
+        message: window.t('config.unsavedColorChangesSavePrompt'),
+        confirmText: window.t('config.unsavedChangesSaveAndLeave'),
+        cancelText: window.t('config.unsavedChangesMoreOptions')
+    });
+    if (saveAndLeave) {
+        await saveColors();
+        return !hasUnsavedColorChanges;
+    }
+
+    return window.AppModal.danger({
+        title: window.t('config.unsavedChangesLeaveTitle'),
+        message: window.t('config.unsavedChangesLeaveMessage'),
+        confirmText: window.t('config.unsavedChangesLeaveWithoutSaving'),
+        cancelText: window.t('config.unsavedChangesStayHere')
+    });
+}
+
+function setupNavigationGuards() {
+    document.querySelectorAll('.nav-links .back-link').forEach((link) => {
+        link.addEventListener('click', async (event) => {
+            const href = link.getAttribute('href');
+            if (!href) {
+                return;
+            }
+            if (!hasUnsavedColorChanges) {
+                return;
+            }
+            event.preventDefault();
+            const shouldLeave = await confirmLeaveColorsPage();
+            if (!shouldLeave) {
+                return;
+            }
+            isNavigatingAway = true;
+            window.location.href = href;
+        });
+    });
+
+    window.addEventListener('beforeunload', (event) => {
+        if (isNavigatingAway) return;
+        if (!hasUnsavedColorChanges) return;
+        event.preventDefault();
+        event.returnValue = '';
+    });
 }
 
 // Switch to a specific theme for preview
@@ -505,6 +571,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             
             updateColorValue(theme, prop, value);
+            markColorsDirty();
         });
         
         // Also listen for change event
@@ -520,6 +587,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             
             updateColorValue(theme, prop, value);
+            markColorsDirty();
         });
     });
     
@@ -543,6 +611,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
                 
                 updateColorValue(theme, prop, value);
+                markColorsDirty();
             }
         };
         
@@ -567,6 +636,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const value = e.target.value;
             
             updateColorValue(theme, prop, value);
+            markColorsDirty();
         };
         
         input.addEventListener('input', handleFullTextInput);
@@ -581,4 +651,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
     });
+
+    setupNavigationGuards();
 });

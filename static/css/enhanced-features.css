@@ -329,11 +329,20 @@ kbd {
 
 .slider-input {
     flex: 1;
-    height: 6px;
-    background: var(--background-modal);
-    border-radius: 3px;
+    height: 8px;
+    border: 1px solid var(--border-primary);
+    border-radius: 999px;
+    background: linear-gradient(
+        to right,
+        var(--accent-success) 0%,
+        var(--accent-success) var(--slider-fill, 100%),
+        var(--background-secondary) var(--slider-fill, 100%),
+        var(--background-secondary) 100%
+    );
     outline: none;
     -webkit-appearance: none;
+    appearance: none;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
 .slider-input::-webkit-slider-thumb {
@@ -341,28 +350,56 @@ kbd {
     appearance: none;
     width: 18px;
     height: 18px;
-    background: var(--accent-primary);
+    background: var(--text-primary);
     cursor: pointer;
     border-radius: 50%;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    border: 2px solid var(--background-primary);
+    box-shadow:
+        0 0 0 2px color-mix(in srgb, var(--accent-success) 45%, transparent),
+        0 2px 4px rgba(0, 0, 0, 0.25);
 }
 
 .slider-input::-moz-range-thumb {
     width: 18px;
     height: 18px;
-    background: var(--accent-primary);
+    background: var(--text-primary);
     cursor: pointer;
     border-radius: 50%;
-    border: none;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    border: 2px solid var(--background-primary);
+    box-shadow:
+        0 0 0 2px color-mix(in srgb, var(--accent-success) 45%, transparent),
+        0 2px 4px rgba(0, 0, 0, 0.25);
+}
+
+.slider-input::-moz-range-track {
+    height: 8px;
+    border: 1px solid var(--border-primary);
+    border-radius: 999px;
+    background: var(--background-secondary);
+}
+
+.slider-input::-moz-range-progress {
+    height: 8px;
+    border-radius: 999px;
+    background: var(--accent-success);
+}
+
+.slider-input:hover,
+.slider-input:focus-visible {
+    border-color: var(--accent-success);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-success) 25%, transparent);
 }
 
 .slider-value {
     min-width: 50px;
     text-align: right;
     font-size: 13px;
-    color: var(--text-secondary);
-    font-weight: 500;
+    color: var(--text-primary);
+    font-weight: 600;
+    padding: 2px 8px;
+    border: 1px solid var(--border-primary);
+    background: var(--background-modal);
+    border-radius: 999px;
 }
 
 /* ===== Empty States ===== */
