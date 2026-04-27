@@ -590,12 +590,13 @@ class ConfigBookmarks {
      * @param {Array} bookmarks
      * @returns {Object} - The new bookmark
      */
-    add(bookmarks) {
+    add(bookmarks, options = {}) {
+        const preferredCategory = options.preferredCategory || '';
         const newBookmark = {
             name: `${this.t('config.newBookmarkPrefix')} ${bookmarks.length + 1}`,
             url: 'https://example.com',
             shortcut: '',
-            category: '',
+            category: preferredCategory,
             pinned: false,
             checkStatus: false
         };

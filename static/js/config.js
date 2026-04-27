@@ -1165,7 +1165,9 @@ class ConfigManager {
     }
 
     addBookmark() {
-        const newBookmark = this.bookmarks.add(this.bookmarksData);
+        const filterValue = this.currentBookmarksCategoryFilter || '__all__';
+        const preferredCategory = (filterValue !== '__all__' && filterValue !== '__none__') ? filterValue : '';
+        const newBookmark = this.bookmarks.add(this.bookmarksData, { preferredCategory });
         this.warnDuplicateUrl(newBookmark.url);
         this.refreshBookmarksList();
         this.markDirty();
