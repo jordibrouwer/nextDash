@@ -338,11 +338,6 @@ class ConfigBookmarks {
             <input type="text" id="bookmark-name-${fullIndex}" name="bookmark-name-${fullIndex}" value="${bookmark.name}" placeholder="${this.t('config.bookmarkNamePlaceholder')}" data-bookmark-key="${fullIndex}" data-field="name">
             <input type="url" id="bookmark-url-${fullIndex}" name="bookmark-url-${fullIndex}" value="${bookmark.url}" placeholder="${this.t('config.bookmarkUrlPlaceholder')}" data-bookmark-key="${fullIndex}" data-field="url">
             <input type="text" id="bookmark-shortcut-${fullIndex}" name="bookmark-shortcut-${fullIndex}" value="${bookmark.shortcut || ''}" placeholder="${this.t('config.bookmarkShortcutPlaceholder')}" maxlength="5" data-bookmark-key="${fullIndex}" data-field="shortcut">
-            <div class="bookmark-icon-upload">
-                <input type="file" id="bookmark-icon-${fullIndex}" name="bookmark-icon-${fullIndex}" accept="image/*" style="display: none;" data-bookmark-key="${fullIndex}">
-                <button type="button" class="btn btn-secondary btn-small ${bookmark.icon ? 'has-icon' : ''}" onclick="document.getElementById('bookmark-icon-${fullIndex}').click()" title="${this.t('config.uploadIconTooltip')}">↑</button>
-                ${bookmark.icon ? `<button type="button" class="btn btn-danger btn-small btn-clear-icon" onclick="window.configBookmarks.clearIcon(${fullIndex})" title="${this.t('config.clearIcon')}">×</button>` : ''}
-            </div>
             <select id="bookmark-category-${fullIndex}" name="bookmark-category-${fullIndex}" data-bookmark-key="${fullIndex}" data-field="category">
                 <option value="">${this.t('config.noCategory')}</option>
                 ${categoryOptions}
@@ -404,48 +399,6 @@ class ConfigBookmarks {
                     this.selectedBookmarkIndexes.delete(fullIndex);
                 }
                 this.updateBulkSelectionToolbar();
-            });
-        }
-
-        // Add event listener for icon upload
-        const iconInput = div.querySelector(`#bookmark-icon-${fullIndex}`);
-        const iconButton = div.querySelector('.bookmark-icon-upload button');
-        if (iconInput && iconButton) {
-            iconInput.addEventListener('change', async (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                    const formData = new FormData();
-                    formData.append('icon', file);
-
-                    try {
-                        const response = await fetch('/api/icon', {
-                            method: 'POST',
-                            body: formData
-                        });
-                        const result = await response.json();
-                        if (result.status === 'success') {
-                            bookmark.icon = result.icon;
-                            iconButton.classList.add('has-icon');
-                            
-                            // Add clear button if it doesn't exist
-                            let clearButton = div.querySelector('.btn-clear-icon');
-                            if (!clearButton) {
-                                clearButton = document.createElement('button');
-                                clearButton.type = 'button';
-                                clearButton.className = 'btn btn-danger btn-small btn-clear-icon';
-                                clearButton.onclick = () => window.configBookmarks.clearIcon(fullIndex);
-                                clearButton.title = window.configBookmarks ? window.configBookmarks.t('config.clearIcon') : 'Clear icon';
-                                clearButton.textContent = '×';
-                                iconButton.parentNode.appendChild(clearButton);
-                            }
-                        } else {
-                            alert('Error uploading icon');
-                        }
-                    } catch (error) {
-                        console.error('Error uploading icon:', error);
-                        alert('Error uploading icon');
-                    }
-                }
             });
         }
 

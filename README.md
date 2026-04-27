@@ -48,11 +48,11 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 ### Bookmark Management
 - **Create/Edit/Delete Bookmarks** - Full CRUD operations for bookmarks
 - **Move Bookmarks** - Drag bookmarks between pages or use move dialog
-- **Custom Icons** - Upload custom icons or auto-detect from website favicon
-- **Pin Bookmarks** - Pin important bookmarks to prioritize their position
+- **Custom Icons** - Display custom bookmark icons from imported/existing icon data
+- **Pin Bookmarks** - Pin important bookmarks to prioritize their position (compact pin icon in lists)
 - **Open in New Tab** - Option to open links in new or current tab
 - **Bookmark Metadata** - Extract title, description, and preview image from URLs
-- **Drag & Drop** - Easily reorder bookmarks within categories
+- **Drag & Drop** - Reorder bookmarks within categories with long-press drag on the dashboard
 - **Category filter without losing edits** - Switching the bookmark list filter (e.g. **No category** or any category) writes visible row fields back into memory before re-render so name, URL, shortcuts, toggles, etc. are not reset
 - **Conflict Validation** - Duplicate URL/shortcut detection with inline conflict highlights before save
 - **Global Shortcut Uniqueness** - Bookmark shortcuts must be unique across all pages (enforced in UI and backend)
@@ -217,10 +217,10 @@ A lightweight, self-hosted bookmark dashboard built with Go and vanilla JavaScri
 - **Default State** - Smart collections are disabled by default
 
 ### Sorting & Organization
-- **Manual Ordering** - Drag-and-drop to arrange bookmarks
+- **Manual Ordering** - Arrange bookmarks with drag-and-drop (long-press gesture on dashboard)
 - **Alphabetical Sorting** - Sort bookmarks A-Z
 - **Recently Used** - Sort by last opened time
-- **Pinned First** - Custom pinned priority sorting
+- **Pinned First** - Custom pinned priority sorting with icon marker
 - **Pinned Always Alphabetical** - Pinned bookmarks stay at top and are always sorted A-Z
 - **Undo Reorder** - Undo drag-drop changes
 - **Cross-Page Shortcut Validation** - Reorder/save respects global shortcut uniqueness checks
