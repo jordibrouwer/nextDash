@@ -67,8 +67,6 @@ class ConfigStats {
 
         const withUrl = bookmarks.filter((b) => String(b?.url || '').trim() !== '').length;
         const withShortcut = bookmarks.filter((b) => String(b?.shortcut || '').trim() !== '').length;
-        const withIcon = bookmarks.filter((b) => Boolean(b?.icon)).length;
-
         const categoryKeys = new Set();
         bookmarks.forEach((b) => {
             const pid = Number(b.pageId) || 0;
@@ -88,8 +86,6 @@ class ConfigStats {
         this.setText('stats-without-url', String(Math.max(0, bookmarks.length - withUrl)));
         this.setText('stats-with-shortcut', String(withShortcut));
         this.setText('stats-without-shortcut', String(Math.max(0, bookmarks.length - withShortcut)));
-        this.setText('stats-with-icon', String(withIcon));
-        this.setText('stats-without-icon', String(Math.max(0, bookmarks.length - withIcon)));
         this.setText('stats-never-opened', String(neverOpened));
 
         const top = [...bookmarks]
