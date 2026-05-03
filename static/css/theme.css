@@ -1,0 +1,22 @@
+/* Theme Variables - Simplified Color System */
+/* Colors are loaded dynamically from /api/theme.css */
+
+/* Background Patterns */
+html[data-theme] body {
+    background-color: var(--background-primary);
+    color: var(--text-primary);
+    background-image: radial-gradient(var(--background-dots) 1px, transparent 1px);
+    background-size: 15px 15px;
+}
+
+/* No Background Dots Option */
+body.no-background-dots {
+    background-image: none !important;
+}
+
+/* No Animations Option */
+body.no-animations * {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+}
