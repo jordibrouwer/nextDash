@@ -33,6 +33,7 @@ class SearchCommandsComponent {
             'density': this.handleDensityCommand.bind(this),
             'buttons': this.handleButtonsCommand.bind(this),
             'tips': this.handleTipsCommand.bind(this),
+            'packed': this.handlePackedColumnsCommand.bind(this),
             'goto': this.handleGotoCommand.bind(this),
             'stale': this.handleStaleCommand.bind(this),
             'duplicate': this.handleDuplicateCommand.bind(this),
@@ -391,6 +392,50 @@ class SearchCommandsComponent {
         }];
     }
 
+    handlePackedColumnsCommand(args, fullQuery) {
+        const dashboard = window.dashboardInstance;
+        if (!dashboard) {
+            return [];
+        }
+
+        const stateArg = (args[0] || '').toLowerCase();
+        const explicitState = stateArg === 'on' ? true : stateArg === 'off' ? false : null;
+        const enabled = dashboard.settings.packedColumns === true;
+
+        const actions = [];
+        if (!stateArg || 'on'.startsWith(stateArg)) {
+            actions.push({
+                name: `on (${enabled ? 'current' : 'off'})`,
+                shortcut: ':PACKED',
+                action: () => this.setPackedColumnsVisibility(dashboard, true),
+                type: 'command'
+            });
+        }
+        if (!stateArg || 'off'.startsWith(stateArg)) {
+            actions.push({
+                name: `off (${enabled ? 'on' : 'current'})`,
+                shortcut: ':PACKED',
+                action: () => this.setPackedColumnsVisibility(dashboard, false),
+                type: 'command'
+            });
+        }
+
+        if (actions.length > 0) {
+            return actions;
+        }
+
+        if (explicitState === null) {
+            return [];
+        }
+
+        return [{
+            name: explicitState ? 'Tight column stack on' : 'Tight column stack off',
+            shortcut: ':PACKED',
+            action: () => this.setPackedColumnsVisibility(dashboard, explicitState),
+            type: 'command'
+        }];
+    }
+
     applyLayoutPreset(dashboard, preset) {
         if (window.LayoutUtils) {
             window.LayoutUtils.applyLayoutPreset(dashboard.settings, preset, {
@@ -446,6 +491,25 @@ class SearchCommandsComponent {
         }
         if (typeof dashboard.saveSettings === 'function') {
             dashboard.saveSettings();
+        }
+        return false;
+    }
+
+    setPackedColumnsVisibility(dashboard, enabled) {
+        dashboard.settings.packedColumns = enabled;
+        if (typeof dashboard.setupDOM === 'function') {
+            dashboard.setupDOM();
+        }
+        if (typeof dashboard.renderDashboard === 'function') {
+            dashboard.renderDashboard();
+        }
+        if (typeof dashboard.saveSettings === 'function') {
+            dashboard.saveSettings();
+        }
+        if (typeof dashboard.showNotification === 'function') {
+            const onMsg = this.language ? this.language.t('config.packedColumnsSavedOn') : 'Tight columns on — saved.';
+            const offMsg = this.language ? this.language.t('config.packedColumnsSavedOff') : 'Tight columns off — saved.';
+            dashboard.showNotification(enabled ? onMsg : offMsg, 'success');
         }
         return false;
     }
