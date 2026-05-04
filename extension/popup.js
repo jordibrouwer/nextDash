@@ -20,6 +20,23 @@ function hideMessage() {
     document.getElementById('message').style.display = 'none';
 }
 
+function updateUrlGuard(url) {
+    const msg = document.getElementById('url-guard-msg');
+    const form = document.getElementById('save-form');
+    if (!msg || !form) return;
+    const ok = isBookmarkableUrl(url);
+    if (ok) {
+        msg.classList.add('hidden');
+        msg.textContent = '';
+        form.classList.remove('save-form-disabled');
+    } else {
+        msg.classList.remove('hidden');
+        msg.textContent =
+            'Only http(s) pages can be saved (not browser internals, extension pages, or file://).';
+        form.classList.add('save-form-disabled');
+    }
+}
+
 function showConfirmation(text, onYes) {
     document.getElementById('confirmation-text').innerHTML = text;
     document.getElementById('confirmation').classList.remove('hidden');
@@ -75,6 +92,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // Save form
     document.getElementById('save-form').addEventListener('submit', saveBookmark);
 
+    document.getElementById('bookmark-url').addEventListener('input', (e) => {
+        updateUrlGuard(e.target.value);
+    });
+
     // Page select change to load categories
     document.getElementById('page-select').addEventListener('change', async (event) => {
         const pageId = event.target.value;
@@ -124,12 +145,10 @@ async function loadSettings() {
 
 async function loadSaveTab() {
     try {
-        // Get current tab
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        document.getElementById('bookmark-name').value = tab.title;
-        document.getElementById('bookmark-url').value = tab.url;
-
-        // Load pages
+        document.getElementById('bookmark-name').value = tab.title || '';
+        document.getElementById('bookmark-url').value = tab.url || '';
+        updateUrlGuard(tab.url || '');
         await loadPages();
     } catch (error) {
         console.error('Error loading save tab:', error);
@@ -153,43 +172,55 @@ async function loadPages(providedServerUrl) {
         if (!response.ok) throw new Error('Failed to fetch pages');
 
         const pages = await response.json();
+        if (!pages.length) {
+            showMessage('No pages returned from server.', 'error');
+            return;
+        }
+
         const pageSelect = document.getElementById('page-select');
         const defaultPageSelect = document.getElementById('default-page');
 
-        // Clear existing options
         pageSelect.innerHTML = '';
         defaultPageSelect.innerHTML = '';
 
-        pages.forEach(page => {
-            const option1 = new Option(page.name, page.id);
-            const option2 = new Option(page.name, page.id);
-            pageSelect.appendChild(option1);
-            defaultPageSelect.appendChild(option2);
+        pages.forEach((page) => {
+            pageSelect.appendChild(new Option(page.name, page.id));
+            defaultPageSelect.appendChild(new Option(page.name, page.id));
         });
 
-        // Set default page
-        const defaultSettings = await chrome.storage.sync.get(['defaultPage']);
-        if (defaultSettings.defaultPage) {
-            pageSelect.value = defaultSettings.defaultPage;
+        const defaultSettings = await chrome.storage.sync.get(['defaultPage', 'defaultCategory']);
+        const localCtx = await chrome.storage.local.get('lastSaveContext');
+        const pageIds = new Set(pages.map((p) => String(p.id)));
+
+        const syncDefaults = {
+            defaultPage: defaultSettings.defaultPage,
+            defaultCategory: defaultSettings.defaultCategory || ''
+        };
+
+        const defPage =
+            defaultSettings.defaultPage != null && pageIds.has(String(defaultSettings.defaultPage))
+                ? String(defaultSettings.defaultPage)
+                : String(pages[0].id);
+        defaultPageSelect.value = defPage;
+
+        let savePageId = defPage;
+        let saveCategory = syncDefaults.defaultCategory || '';
+        try {
+            const r = await resolveSaveTarget(serverUrl, syncDefaults, localCtx.lastSaveContext || null);
+            savePageId = r.pageId;
+            saveCategory = r.category || '';
+        } catch (e) {
+            console.error('resolveSaveTarget:', e);
         }
 
-        // Load default page for settings
-        if (defaultSettings.defaultPage) {
-            defaultPageSelect.value = defaultSettings.defaultPage;
+        pageSelect.value = savePageId;
+        await loadCategories(savePageId);
+        const catSelect = document.getElementById('category-select');
+        if (saveCategory && [...catSelect.options].some((o) => o.value === saveCategory)) {
+            catSelect.value = saveCategory;
         }
-        
-        hideMessage(); // Hide any previous error message
-        
-        // Load categories for the default page
-        if (defaultSettings.defaultPage) {
-            await loadCategories(defaultSettings.defaultPage);
-            
-            // Set default category if available
-            const categorySettings = await chrome.storage.sync.get(['defaultCategory']);
-            if (categorySettings.defaultCategory) {
-                document.getElementById('category-select').value = categorySettings.defaultCategory;
-            }
-        }
+
+        hideMessage();
     } catch (error) {
         console.error('Error loading pages:', error);
         showMessage('Failed to load pages. Check your server URL.', 'error');
@@ -290,6 +321,11 @@ async function saveBookmark(event) {
     const pageId = document.getElementById('page-select').value;
     const category = document.getElementById('category-select').value;
 
+    if (!isBookmarkableUrl(url)) {
+        showMessage('This URL cannot be saved. Use a normal http(s) page.', 'error');
+        return;
+    }
+
     // Check for duplicate URL
     try {
         const bookmarksResponse = await fetch(new URL(`/api/bookmarks?page=${pageId}`, serverUrl));
@@ -330,25 +366,10 @@ async function saveSettings(event) {
 
 async function performSave(serverUrl, pageId, name, url, category) {
     try {
-        const response = await fetch(new URL('/api/bookmarks/add', serverUrl), {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                page: parseInt(pageId),
-                bookmark: {
-                    name: name,
-                    url: url,
-                    category: category,
-                    shortcut: '',
-                    checkStatus: false
-                }
-            })
-        });
-
+        const response = await postAddBookmark(serverUrl, pageId, name, url, category);
         if (!response.ok) throw new Error('Failed to save bookmark');
 
+        await persistLastSaveContext(serverUrl, pageId, category);
         showMessage('Bookmark saved successfully!', 'success');
         setTimeout(() => window.close(), 1000);
     } catch (error) {
@@ -358,8 +379,8 @@ async function performSave(serverUrl, pageId, name, url, category) {
 }
 
 async function resetSettings() {
-    // Clear all stored settings
     await chrome.storage.sync.clear();
+    await chrome.storage.local.remove('lastSaveContext');
     
     // Reset form fields
     document.getElementById('server-url').value = '';

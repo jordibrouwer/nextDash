@@ -21,12 +21,13 @@
         </div>
         <div id="save-tab" class="tab-content active">
             <h2>Save Bookmark</h2>
-            <form id="save-form">
+            <form id="save-form" class="save-form">
                 <label for="bookmark-name">Name:</label>
                 <input type="text" id="bookmark-name" required>
                 
                 <label for="bookmark-url">URL:</label>
-                <input type="url" id="bookmark-url" required>
+                <input type="text" id="bookmark-url" required autocomplete="off" spellcheck="false">
+                <p id="url-guard-msg" class="url-guard-msg hidden" role="status"></p>
                 
                 <label for="page-select">Page:</label>
                 <select id="page-select"></select>
@@ -59,6 +60,7 @@
         </div>
     </div>
     <div id="message" class="message"></div>
+    <script src="save-common.js"></script>
     <script src="popup.js"></script>
 </body>
 </html>
