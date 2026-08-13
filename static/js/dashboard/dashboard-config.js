@@ -4755,18 +4755,26 @@ class DashboardConfig {
                 this.handleBackupItem(btn.getAttribute('data-backup-item'), btn.getAttribute('data-backup-name'));
             });
         });
-        const bindFileInput = (id, handler) => {
+        const bindFileInput = (id, handler, allowedExtensions) => {
             const input = container.querySelector(id);
             if (!input) return;
             input.addEventListener('change', () => {
                 const file = input.files && input.files[0];
-                if (file) void handler.call(this, file);
+                if (!file) return;
+                if (allowedExtensions) {
+                    const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+                    if (!allowedExtensions.includes(ext)) {
+                        input.value = '';
+                        return;
+                    }
+                }
+                void handler.call(this, file);
                 input.value = '';
             });
         };
-        bindFileInput('#config-import-input', this.importBackup);
-        bindFileInput('#config-browser-import-input', this.importBrowserBookmarks);
-        bindFileInput('#config-settings-import-input', this.importSettings);
+        bindFileInput('#config-import-input', this.importBackup, ['.zip', '.json']);
+        bindFileInput('#config-browser-import-input', this.importBrowserBookmarks, ['.html', '.htm']);
+        bindFileInput('#config-settings-import-input', this.importSettings, ['.json']);
 
         container.querySelectorAll('[data-backup-toggle]').forEach((input) => {
             input.addEventListener('change', () => this.setBackupToggle(input.getAttribute('data-backup-toggle'), input.checked));
