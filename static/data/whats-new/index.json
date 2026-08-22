@@ -1,15 +1,81 @@
 [
   {
+    "id": "v1.3.2",
+    "tag": "v1.3.2",
+    "date": "21 August 2026",
+    "releasedAt": "2026-08-21"
+  },
+  {
+    "id": "v1.3.1",
+    "tag": "v1.3.1",
+    "date": "20 August 2026",
+    "releasedAt": "2026-08-20"
+  },
+  {
+    "id": "v1.3.0",
+    "tag": "v1.3.0",
+    "date": "19 August 2026",
+    "releasedAt": "2026-08-19"
+  },
+  {
+    "id": "v1.2.1",
+    "tag": "v1.2.1",
+    "date": "17 August 2026",
+    "releasedAt": "2026-08-17",
+    "hideFromModal": true
+  },
+  {
+    "id": "v1.2.0",
+    "tag": "v1.2.0",
+    "date": "16 August 2026",
+    "releasedAt": "2026-08-16"
+  },
+  {
+    "id": "v1.1.2",
+    "tag": "v1.1.2",
+    "date": "15 August 2026",
+    "releasedAt": "2026-08-15"
+  },
+  {
+    "id": "v1.1.1",
+    "tag": "v1.1.1",
+    "date": "15 August 2026",
+    "releasedAt": "2026-08-15"
+  },
+  {
+    "id": "v1.1.0",
+    "tag": "v1.1.0",
+    "date": "15 August 2026",
+    "releasedAt": "2026-08-15"
+  },
+  {
+    "id": "v1.0.4",
+    "tag": "v1.0.4",
+    "date": "15 August 2026",
+    "releasedAt": "2026-08-15"
+  },
+  {
+    "id": "v1.0.3",
+    "tag": "v1.0.3",
+    "date": "14 August 2026",
+    "releasedAt": "2026-08-14"
+  },
+  {
+    "id": "v1.0.2",
+    "tag": "v1.0.2",
+    "date": "14 August 2026",
+    "releasedAt": "2026-08-14"
+  },
+  {
     "id": "v1.0.1",
     "tag": "v1.0.1",
-    "date": "August 2026",
-    "releasedAt": "2026-08-13",
-    "hideFromModal": true
+    "date": "13 August 2026",
+    "releasedAt": "2026-08-13"
   },
   {
     "id": "v1.0.0",
     "tag": "v1.0.0",
-    "date": "August 2026",
+    "date": "13 August 2026",
     "releasedAt": "2026-08-13"
   },
   {

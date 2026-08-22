@@ -200,6 +200,10 @@ async function postAddBookmark(serverUrl, pageId, name, url, category, note, tag
     body: JSON.stringify({
       page: parseInt(pageId, 10),
       bookmark,
+      // The server refuses a second copy on the same page outright and asks
+      // about one on another page; this is the answer to the asking, and the
+      // popup only sets it after the message has been shown once.
+      allowDuplicate: extras.allowDuplicate === true,
     })
   });
 }
@@ -214,6 +218,10 @@ async function postInboxLink(serverUrl, url, options = {}) {
       title: options.title || '',
       note: options.note || '',
       source: options.source || 'extension',
+      // AddInboxItem has accepted tags since the extension could send them; this
+      // never did, so anything the caller knew about a link was dropped on the
+      // way in with no error to notice.
+      tags: Array.isArray(options.tags) ? options.tags : [],
     }),
   });
 }

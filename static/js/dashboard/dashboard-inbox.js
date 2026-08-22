@@ -4,6 +4,17 @@
 class DashboardInbox {
     static VIEW = 'inbox';
 
+    /**
+     * The one-time tour's tip id, repeated from inbox-tutorial.js.
+     *
+     * Health can leave this to its tutorial module because the health view and
+     * its tutorial load together. The inbox module loads during bootstrap so
+     * unread badges work without opening the view, so the tutorial is fetched
+     * separately — and the whole point of a seen-check here is to not fetch it
+     * at all once the tour is done. Both copies must stay in step.
+     */
+    static TUTORIAL_TIP_ID = 'inboxTutorialV1';
+
     constructor(dashboard) {
         this.dash = dashboard;
         this.items = [];
@@ -267,15 +278,24 @@ class DashboardInbox {
                     },
                 }),
             });
+            // A link already saved as a bookmark is not a failure of this
+            // promote — it is the reason the inbox entry can go. Counted apart
+            // from real errors below so the message can say which happened.
+            if (res.status === 409) {
+                await this.completePromote(item.id);
+                return { id: item.id, duplicate: true };
+            }
             if (!res.ok) throw new Error(`promote HTTP ${res.status}`);
             // Only clear the inbox entry once its bookmark exists, so a failure
             // leaves the link here to try again rather than losing it.
             await this.completePromote(item.id);
-            return item.id;
+            return { id: item.id, duplicate: false };
         }));
 
-        const promoted = results.filter((r) => r.status === 'fulfilled').length;
-        const failed = results.length - promoted;
+        const settled = results.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+        const duplicates = settled.filter((r) => r?.duplicate).length;
+        const promoted = settled.length - duplicates;
+        const failed = results.length - settled.length;
         this.clearChecked();
         if (this.isActiveView()) {
             await this.loadAndRender({ refresh: true });
@@ -288,6 +308,14 @@ class DashboardInbox {
                 this.t('dashboard.inboxPromotedCount', 'Promoted {count} links', { count: promoted }),
                 'success',
                 { duration: 3000 }
+            );
+        }
+        if (duplicates) {
+            this.dash.showNotification?.(
+                this.t('dashboard.inboxPromoteDuplicate', '{count} were already saved as bookmarks',
+                    { count: duplicates }),
+                'info',
+                { duration: 4000 }
             );
         }
         if (failed) {
@@ -914,17 +942,21 @@ class DashboardInbox {
      * is being hidden. Health counts its pills the same way.
      */
     filterCount(filter) {
+        // Through the same site, tag and search narrowing the list itself goes
+        // through, so a pill never promises rows the view will not show: with a
+        // search on it used to read "All 12" above a single matching row.
+        const narrow = (list) => this.narrowItems(list).length;
         if (filter === 'snoozed') {
-            return this.snoozedCount();
+            return narrow((this.items || []).filter((item) => this.isSnoozed(item)));
         }
         const active = this.activeItems();
         if (filter === 'unread') {
-            return active.filter((item) => !item.readAt).length;
+            return narrow(active.filter((item) => !item.readAt));
         }
         if (filter === 'noted') {
-            return active.filter((item) => String(item.note || '').trim()).length;
+            return narrow(active.filter((item) => String(item.note || '').trim()));
         }
-        return active.length;
+        return narrow(active);
     }
 
     /**
@@ -1285,6 +1317,49 @@ class DashboardInbox {
     }
 
     /**
+     * Put a link back to unread.
+     *
+     * The server has always accepted it — PatchInboxItem clamps a readAt of 0 or
+     * less back to 0 — and no client route ever sent it. Unread is the whole
+     * notion of "not dealt with yet" in the inbox, and it was the one state that
+     * only went one way: snoozing, notes, tags and deletes are all reversible.
+     * The only escape was Clear read, which removes the link.
+     */
+    async markUnread(id) {
+        const fetcher = typeof nextDashFetch === 'function' ? nextDashFetch : fetch;
+        const res = await fetcher('/api/inbox', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id, readAt: 0 }),
+        });
+        if (!res.ok) {
+            throw new Error(`inbox mark unread HTTP ${res.status}`);
+        }
+        const item = this.items.find((entry) => entry.id === id);
+        if (item) {
+            item.readAt = 0;
+        }
+        this.dash.pageNav?.updateInboxTabBadge?.();
+    }
+
+    /** markUnread with the row repaint and the error toast the row paths need. */
+    async markUnreadFromRow(item) {
+        if (!item?.id || !item.readAt) return;
+        this._trackAction('mark-unread');
+        try {
+            await this.markUnread(item.id);
+            if (this.isActiveView()) {
+                this.render();
+            }
+        } catch (_error) {
+            this.dash.showNotification?.(
+                this.t('dashboard.inboxMarkUnreadFailed', 'Could not mark it unread'),
+                'error'
+            );
+        }
+    }
+
+    /**
      * markRead plus the single-item error toast, for the paths that act on one
      * row and have nobody else to report for them. Returns whether it landed,
      * so a caller only updates the row when the write actually happened.
@@ -1360,7 +1435,72 @@ class DashboardInbox {
         await this.loadAndRender();
         this.restoreInboxHash();
         this.syncUrlState();
+        // A link shared from the phone lands here through /share, which can only
+        // answer with a redirect — so the outcome travels in the URL and is
+        // reported once, on arrival.
+        this.reportCaptureOutcome();
+        // Not awaited: the view is already usable, and a slow script fetch must
+        // not hold up the navigation that asked for it.
+        void this.maybeShowTutorial();
         return true;
+    }
+
+    /**
+     * Say what happened to a shared link, then take the marker out of the URL.
+     *
+     * Removed after reporting so a reload — or a bookmark of this address — does
+     * not claim a save that happened once, minutes ago.
+     */
+    reportCaptureOutcome() {
+        let outcome = '';
+        try {
+            outcome = new URL(window.location.href).searchParams.get('captured') || '';
+        } catch {
+            return;
+        }
+        if (!outcome) return;
+
+        const messages = {
+            ok: [this.t('dashboard.inboxCapturedOk', 'Saved to your inbox'), 'success'],
+            duplicate: [this.t('dashboard.inboxCapturedDuplicate', 'That link was already in your inbox'), 'info'],
+            nourl: [this.t('dashboard.inboxCapturedNoUrl', 'No web address was found in what was shared'), 'warning'],
+            full: [this.t('dashboard.inboxCapturedFull', 'Your inbox is full — clear some links first'), 'warning'],
+            denied: [this.t('dashboard.inboxCapturedDenied', 'This nextDash needs a capture token to accept shared links'), 'error'],
+            error: [this.t('dashboard.inboxCapturedError', 'That link could not be saved'), 'error'],
+        };
+        const [message, tone] = messages[outcome] || messages.error;
+        this.dash.showNotification?.(message, tone, { duration: 4000 });
+
+        try {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('captured');
+            history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`);
+        } catch {
+            // A URL we cannot rewrite is not worth failing the view over.
+        }
+    }
+
+    /**
+     * Fetch and run the one-time tour, the first time someone lands here.
+     *
+     * The cheap guards are repeated before the fetch so a session that has
+     * already seen it, or has session tips off, never asks for the script at
+     * all. Everything else — an open modal, active search, mobile — is left to
+     * the module, which re-checks the tip id too.
+     */
+    async maybeShowTutorial() {
+        if (window.DiscoverabilityState?.hasSeenTip?.(DashboardInbox.TUTORIAL_TIP_ID)) return;
+        if (this.dash.settings?.enableSessionTips === false) return;
+        if (typeof window.InboxTutorial === 'undefined') {
+            try {
+                await window.LazyScript.loadScriptOnce('js/inbox-tutorial.js', 'inboxTutorialModule',
+                    () => typeof window.InboxTutorial !== 'undefined');
+            } catch {
+                // A tour that cannot be fetched is not worth an error toast.
+                return;
+            }
+        }
+        window.InboxTutorial?.maybeShow?.();
     }
 
     async leaveInboxView(pageId) {
@@ -2127,7 +2267,7 @@ class DashboardInbox {
         const sameDay = wake.getFullYear() === now.getFullYear()
             && wake.getMonth() === now.getMonth()
             && wake.getDate() === now.getDate();
-        const time = wake.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+        const time = wake.toLocaleTimeString(this.localeTag(), { hour: '2-digit', minute: '2-digit' });
         if (sameDay) {
             return this.t('dashboard.inboxSnoozeWakeToday', 'today {time}', { time });
         }
@@ -2138,7 +2278,7 @@ class DashboardInbox {
         if (isTomorrow) {
             return this.t('dashboard.inboxSnoozeWakeTomorrow', 'tomorrow {time}', { time });
         }
-        const day = wake.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+        const day = wake.toLocaleDateString(this.localeTag(), { weekday: 'short', day: 'numeric', month: 'short' });
         return `${day} ${time}`;
     }
 
@@ -2197,7 +2337,9 @@ class DashboardInbox {
      * surprise an Undo should not have to be the answer to.
      */
     async clearReadItems() {
-        const targets = this.activeItems().filter((item) => item.readAt);
+        // The rows on screen, not every awake read row: deleting past the edge of
+        // a search or a site filter is not what the button in that view offers.
+        const targets = this.getFilteredItems().filter((item) => item.readAt);
         if (!targets.length) {
             return;
         }
@@ -2282,7 +2424,14 @@ class DashboardInbox {
         list.forEach((card) => {
             const selected = card.dataset.inboxId === this.selectedItemId;
             card.classList.toggle('keyboard-selected', selected);
-            card.setAttribute('aria-selected', selected ? 'true' : 'false');
+            // aria-current, not aria-selected: an <article> has no selected
+            // state in ARIA, so the attribute was dropped and the row a screen
+            // reader was sitting on read no differently from the rest.
+            if (selected) {
+                card.setAttribute('aria-current', 'true');
+            } else {
+                card.removeAttribute('aria-current');
+            }
             if (selected) {
                 card.scrollIntoView({
                     block: 'nearest',
@@ -2307,7 +2456,7 @@ class DashboardInbox {
         }
         document.querySelectorAll('.inbox-item.keyboard-selected').forEach((card) => {
             card.classList.remove('keyboard-selected');
-            card.setAttribute('aria-selected', 'false');
+            card.removeAttribute('aria-current');
         });
     }
 
@@ -2414,17 +2563,21 @@ class DashboardInbox {
         const triaged = promoted + deleted;
         const promoteRate = triaged ? Math.round((promoted / triaged) * 100) : null;
 
+        // The hint is read, not hovered. As a title it was unreachable from the
+        // keyboard and on touch, which is where "Promote rate 55%" beside
+        // "Added 19" is at its most misleading — the rate is not 6 of 19.
         const stat = (label, value, hint = '') => `
-            <div class="inbox-stat"${hint ? ` title="${this.escape(hint)}"` : ''}>
+            <div class="inbox-stat">
                 <span class="inbox-stat-label">${this.escape(label)}</span>
                 <span class="inbox-stat-value">${this.escape(String(value))}</span>
+                ${hint ? `<span class="inbox-stat-hint">${this.escape(hint)}</span>` : ''}
             </div>`;
 
         const since = Number(s.firstEventAt) || 0;
         const sinceLine = since
             ? `<p class="inbox-stats-since">${this.escape(
                 this.t('dashboard.inboxStatsSince', 'Since {date}', {
-                    date: new Date(since).toLocaleDateString(),
+                    date: new Date(since).toLocaleDateString(this.localeTag()),
                 })
             )}</p>`
             : '';
@@ -2539,7 +2692,10 @@ class DashboardInbox {
      */
     weekAddedCount() {
         const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
-        return this.activeItems().filter((item) => Number(item.addedAt || 0) >= cutoff).length;
+        // Narrowed like the tiles beside it: four numbers in one row that answer
+        // to different sets of rows is what makes a summary unreadable.
+        return this.narrowItems(this.activeItems())
+            .filter((item) => Number(item.addedAt || 0) >= cutoff).length;
     }
 
     /**
@@ -2557,26 +2713,46 @@ class DashboardInbox {
         if (date.getFullYear() !== new Date().getFullYear()) {
             opts.year = 'numeric';
         }
-        return date.toLocaleDateString(undefined, opts);
+        return date.toLocaleDateString(this.localeTag(), opts);
     }
 
-    getFilteredItems() {
-        let list = Array.isArray(this.items) ? this.items.slice() : [];
+    /**
+     * What the active pill selects, before the site, tag and search controls
+     * narrow it any further.
+     *
+     * Split out of getFilteredItems so the domain picker and the pill counts can
+     * ask the same question without repeating the rule — the picker used to read
+     * this.items directly, which is how a site whose only link was asleep stayed
+     * on offer and then answered with "no matching links".
+     */
+    filterBaseItems() {
+        const list = Array.isArray(this.items) ? this.items.slice() : [];
         if (this.filter === 'snoozed') {
             // Snoozed view: only sleeping items, soonest to wake first.
-            list = list
+            return list
                 .filter((item) => this.isSnoozed(item))
                 .sort((a, b) => Number(a.snoozedUntil || 0) - Number(b.snoozedUntil || 0));
-        } else {
-            // All / Unread hide anything still snoozed; an elapsed snooze reappears.
-            list = list.filter((item) => !this.isSnoozed(item));
-            if (this.filter === 'unread') {
-                list = list.filter((item) => !item.readAt);
-            } else if (this.filter === 'noted') {
-                list = list.filter((item) => String(item.note || '').trim());
-            }
         }
-        const domainWant = String(this.domainFilter || '').trim().toLowerCase();
+        // All / Unread hide anything still snoozed; an elapsed snooze reappears.
+        const awake = list.filter((item) => !this.isSnoozed(item));
+        if (this.filter === 'unread') {
+            return awake.filter((item) => !item.readAt);
+        }
+        if (this.filter === 'noted') {
+            return awake.filter((item) => String(item.note || '').trim());
+        }
+        return awake;
+    }
+
+    /**
+     * Apply the site, tag and search controls to a list.
+     *
+     * `skip` leaves one of them out, which is what lets the site picker count
+     * what each option would yield without counting itself away to one.
+     */
+    narrowItems(items, skip = '') {
+        let list = items;
+        const domainWant = skip === 'domain' ? '' : String(this.domainFilter || '').trim().toLowerCase();
         if (domainWant) {
             list = list.filter((item) => this.itemDomain(item) === domainWant);
         }
@@ -2592,6 +2768,11 @@ class DashboardInbox {
                     item.url,
                     item.title,
                     item.previewTitle,
+                    // The fetched summary, under the name the API actually
+                    // sends: this read item.previewDescription for a day, a key
+                    // that is never on the object, so the one consumer of the
+                    // summary matched nothing at all.
+                    item.previewDesc,
                     item.domain,
                     item.note,
                     // Tags were stored and never searched, so a link findable by
@@ -2601,11 +2782,66 @@ class DashboardInbox {
                 return haystack.includes(query);
             });
         }
-        return this.sortItems(list);
+        return list;
     }
 
-    /** Distinct site hosts currently in the inbox, for the domain filter control. */
+    getFilteredItems() {
+        return this.sortItems(this.narrowItems(this.filterBaseItems()));
+    }
+
+    /** Whether a site, tag or search control is currently holding rows back. */
+    isNarrowed() {
+        return Boolean(String(this.domainFilter || '').trim()
+            || String(this.tagFilter || '').trim()
+            || String(this.searchQuery || '').trim());
+    }
+
+    /**
+     * The locale the app is set to, for the date and time formatters.
+     *
+     * Left to the browser they answered in whatever language the browser is in,
+     * so a Dutch dashboard printed English month names. Same source the clock in
+     * the header reads.
+     */
+    localeTag() {
+        const d = this.dash;
+        return String(d?.settings?.language
+            || document.documentElement.getAttribute('data-lang')
+            || 'en');
+    }
+
+    /**
+     * Distinct site hosts on offer in the domain filter, with how many rows each
+     * one would leave — the site list is scoped to the active pill, so it never
+     * offers a site the pill itself has already filtered away.
+     */
+    domainOptions() {
+        const scope = this.narrowItems(this.filterBaseItems(), 'domain');
+        const counts = new Map();
+        scope.forEach((item) => {
+            const host = this.itemDomain(item);
+            if (host) {
+                counts.set(host, (counts.get(host) || 0) + 1);
+            }
+        });
+        // A site chosen earlier stays listed even when the search has narrowed it
+        // to nothing, or picking it would remove the control that undoes it.
+        const chosen = String(this.domainFilter || '').trim().toLowerCase();
+        if (chosen && !counts.has(chosen)) {
+            counts.set(chosen, 0);
+        }
+        return [...counts.entries()]
+            .sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }))
+            .map(([host, count]) => ({ host, count }));
+    }
+
+    /** Just the hosts on offer, for the code that only needs to know what exists. */
     uniqueDomains() {
+        return this.domainOptions().map((entry) => entry.host);
+    }
+
+    /** Every host stored in the inbox, asleep or awake. */
+    allDomains() {
         const hosts = new Set();
         (this.items || []).forEach((item) => {
             const host = this.itemDomain(item);
@@ -2613,7 +2849,7 @@ class DashboardInbox {
                 hosts.add(host);
             }
         });
-        return [...hosts].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+        return [...hosts];
     }
 
     /**
@@ -2638,7 +2874,10 @@ class DashboardInbox {
         if (this.loading || !this._itemsLoaded) {
             return false;
         }
-        if (this.uniqueDomains().includes(want)) {
+        // Against every stored host rather than the ones the active pill shows:
+        // a site whose links are all asleep is still a site in the inbox, and
+        // clearing the filter under the user would be the wrong answer to it.
+        if (this.allDomains().includes(want)) {
             return false;
         }
         this.domainFilter = '';
@@ -2993,6 +3232,9 @@ class DashboardInbox {
                 this._teardownLoadMoreObserver();
                 return;
             }
+            // A feed says when it is loading; without it the rows simply appear
+            // and a screen reader has nothing to relate them to.
+            document.querySelector('.inbox-feed')?.setAttribute('aria-busy', 'true');
             this.visibleLimit = Math.min(total, this.visibleLimit + 50);
             this.render();
         }, { root: null, rootMargin: '320px 0px' });
@@ -3090,22 +3332,22 @@ class DashboardInbox {
         container.className = 'inbox-layout';
         container.removeAttribute('aria-colcount');
         container.removeAttribute('aria-rowcount');
-        container.setAttribute('role', 'feed');
-        container.setAttribute(
-            'aria-label',
-            this.t('dashboard.inboxPageTitle', 'Inbox')
-        );
+        // Not a feed: this element holds the heading, the tiles, the toolbar and
+        // the legend as well as the rows, and a feed whose children are anything
+        // but articles is read out as one. The role goes on the list itself.
+        container.removeAttribute('role');
+        container.removeAttribute('aria-label');
         container.removeAttribute('data-i18n-aria');
 
         const title = this.t('dashboard.inboxPageTitle', 'Inbox');
         const subtitle = this.t('dashboard.inboxPageSubtitle', 'Links saved to read or review later');
         const trail = this.headerBreadcrumb();
         const showTrail = trail.includes(' › ');
-        // What the "all" filter shows, which is what the badge and Total tile lead
-        // to — the raw item count includes snoozed rows the feed will not render.
-        const count = this.filterCount('all');
-        const unread = this.unreadCount();
         const filtered = this.getFilteredItems();
+        // The badge counts the rows the reader is looking at, which under a search
+        // or a site filter is not the same as everything the "all" pill holds.
+        const count = filtered.length;
+        const unread = filtered.filter((item) => !item.readAt).length;
 
         const header = document.createElement('div');
         header.className = 'inbox-header';
@@ -3123,13 +3365,18 @@ class DashboardInbox {
         container.appendChild(header);
 
         // "Clear read" only ever removes awake rows, so a snoozed read item must
-        // not be what makes the button appear.
-        const readCount = this.activeItems().filter((entry) => entry.readAt).length;
+        // not be what makes the button appear. Counted over the rows on screen,
+        // which is the set the button acts on.
+        const readCount = filtered.filter((entry) => entry.readAt).length;
         const snoozedCount = this.snoozedCount();
 
         // Summary tiles, mirroring the health view. The first three double as
-        // filters (Total → all, Unread → unread, Snoozed → snoozed); "This week"
+        // filters (Active → all, Unread → unread, Snoozed → snoozed); "This week"
         // is a plain readout with no matching filter, so it renders as a <div>.
+        //
+        // "Active", not "Total": what this counts is everything the list can show
+        // right now, and a sleeping link is deliberately not part of that. Under
+        // the old label the tile read 4 with five links in the inbox.
         const weekCount = this.weekAddedCount();
         const tiles = document.createElement('div');
         tiles.className = 'inbox-tiles';
@@ -3144,9 +3391,9 @@ class DashboardInbox {
             return `<div class="inbox-tile${mod}${zero}">${body}</div>`;
         };
         tiles.innerHTML = [
-            tile(this.t('dashboard.inboxTileTotal', 'Total'), count, { filter: 'all' }),
-            tile(this.t('dashboard.inboxTileUnread', 'Unread'), unread, { filter: 'unread', mod: 'unread' }),
-            tile(this.t('dashboard.inboxTileSnoozed', 'Snoozed'), snoozedCount, { filter: 'snoozed' }),
+            tile(this.t('dashboard.inboxTileActive', 'Active'), this.filterCount('all'), { filter: 'all' }),
+            tile(this.t('dashboard.inboxTileUnread', 'Unread'), this.filterCount('unread'), { filter: 'unread', mod: 'unread' }),
+            tile(this.t('dashboard.inboxTileSnoozed', 'Snoozed'), this.filterCount('snoozed'), { filter: 'snoozed' }),
             tile(this.t('dashboard.inboxTileThisWeek', 'This week'), weekCount),
         ].join('');
         tiles.querySelectorAll('[data-inbox-tile]').forEach((btn) => {
@@ -3169,8 +3416,8 @@ class DashboardInbox {
         const showSnoozePill = snoozedCount > 0 || this.filter === 'snoozed';
         const notedCount = this.filterCount('noted');
         const showNotedPill = notedCount > 0 || this.filter === 'noted';
-        const domains = this.uniqueDomains();
-        const showDomainSelect = domains.length > 0;
+        const domainEntries = this.domainOptions();
+        const showDomainSelect = domainEntries.length > 0;
 
         const sortOptions = [
             ['newest', this.t('dashboard.inboxSortNewest', 'newest first')],
@@ -3181,10 +3428,12 @@ class DashboardInbox {
             `<option value="${value}"${this.sort === value ? ' selected' : ''}>${this.escape(label)}</option>`
         ).join('');
 
+        // Each option says how many rows it would leave, so the choice is made
+        // before the click rather than found out after it.
         const domainOptions = [
             `<option value="">${this.escape(this.t('dashboard.inboxDomainAll', 'All sites'))}</option>`,
-            ...domains.map((host) =>
-                `<option value="${this.escape(host)}"${this.domainFilter === host ? ' selected' : ''}>${this.escape(host)}</option>`
+            ...domainEntries.map(({ host, count }) =>
+                `<option value="${this.escape(host)}"${this.domainFilter === host ? ' selected' : ''}>${this.escape(`${host} (${count})`)}</option>`
             ),
         ].join('');
 
@@ -3202,15 +3451,26 @@ class DashboardInbox {
             return `<button type="button" class="inbox-filter-btn${active ? ' is-active' : ''}" role="tab" aria-selected="${active}" tabindex="${active ? 0 : -1}" data-inbox-filter="${key}">${this.escape(label)}<span class="inbox-filter-count">${this.filterCount(key)}</span></button>`;
         }).join('');
 
+        // "Mark all read" acts on the rows the filters leave, which under a search
+        // or a site filter is not all of them — so the label stops saying "all".
+        const narrowed = this.isNarrowed();
+        const markReadLabel = narrowed
+            ? this.t('dashboard.inboxMarkShownRead', 'Mark shown read')
+            : this.t('dashboard.inboxMarkAllRead', 'Mark all read');
+        const markReadHint = narrowed
+            ? this.t('dashboard.inboxMarkShownReadHint', 'Marks the {count} links this view shows, not the whole inbox', { count: unread })
+            : this.t('dashboard.inboxMarkAllReadHint', 'Marks every unread link in the inbox');
+
         toolbar.innerHTML = `
             <div class="inbox-filter-group" role="tablist" aria-label="${this.escape(this.t('dashboard.inboxFilterLabel', 'Filter inbox'))}">${pills}</div>
-            ${showDomainSelect ? `<select class="inbox-domain-select" aria-label="${this.escape(this.t('dashboard.inboxDomainFilterLabel', 'Filter by site'))}">${domainOptions}</select>` : ''}
-            <input type="search" class="inbox-search-input" value="${this.escape(this.searchQuery)}" placeholder="${this.escape(this.t('dashboard.inboxSearchPlaceholder', 'Search inbox…'))}" autocomplete="off" spellcheck="false" aria-label="${this.escape(this.t('dashboard.inboxSearchPlaceholder', 'Search inbox…'))}">
-            ${this.filter === 'snoozed' ? '' : `<select class="inbox-sort-select" aria-label="${this.escape(this.t('dashboard.inboxSortLabel', 'Sort inbox'))}">${sortOptions}</select>`}
-            ${unread > 0 ? `<button type="button" class="inbox-bulk-btn" data-inbox-bulk="read">${this.escape(this.t('dashboard.inboxMarkAllRead', 'Mark all read'))}</button>` : ''}
-            ${readCount > 0 ? `<button type="button" class="inbox-bulk-btn" data-inbox-bulk="clear-read">${this.escape(this.t('dashboard.inboxClearRead', 'Clear read'))}</button>` : ''}
+            ${showDomainSelect ? `<select class="inbox-domain-select" data-inbox-domain-filter aria-label="${this.escape(this.t('dashboard.inboxDomainFilterLabel', 'Filter by site'))}">${domainOptions}</select>` : ''}
+            <input type="search" class="inbox-search-input" data-inbox-search value="${this.escape(this.searchQuery)}" placeholder="${this.escape(this.t('dashboard.inboxSearchPlaceholder', 'Search inbox…'))}" autocomplete="off" spellcheck="false" aria-label="${this.escape(this.t('dashboard.inboxSearchPlaceholder', 'Search inbox…'))}">
+            ${this.filter === 'snoozed' ? '' : `<select class="inbox-sort-select" data-inbox-sort aria-label="${this.escape(this.t('dashboard.inboxSortLabel', 'Sort inbox'))}">${sortOptions}</select>`}
+            ${unread > 0 ? `<button type="button" class="inbox-bulk-btn" data-inbox-bulk="read" title="${this.escape(markReadHint)}">${this.escape(markReadLabel)}</button>` : ''}
+            ${readCount > 0 ? `<button type="button" class="inbox-bulk-btn" data-inbox-bulk="clear-read">${this.escape(narrowed ? this.t('dashboard.inboxClearReadShown', 'Clear read here') : this.t('dashboard.inboxClearRead', 'Clear read'))}</button>` : ''}
             <button type="button" class="inbox-bulk-btn" data-inbox-export="csv" title="${this.escape(this.t('dashboard.inboxExportCsvHint', 'Download filtered list as CSV'))}">${this.escape(this.t('dashboard.inboxExportCsv', 'CSV'))}</button>
             <button type="button" class="inbox-bulk-btn" data-inbox-export="json" title="${this.escape(this.t('dashboard.inboxExportJsonHint', 'Download filtered list as JSON'))}">${this.escape(this.t('dashboard.inboxExportJson', 'JSON'))}</button>
+            <button type="button" class="inbox-bulk-btn" data-inbox-import title="${this.escape(this.t('dashboard.inboxImportHint', 'Read a JSON file exported from an inbox back in'))}">${this.escape(this.t('dashboard.inboxImport', 'Import'))}</button>
             <button type="button" class="inbox-bulk-btn" data-inbox-stats aria-expanded="${this.statsOpen ? 'true' : 'false'}" aria-controls="inbox-stats-panel" title="${this.escape(this.t('dashboard.inboxStatsHint', 'How much of this inbox you actually turn into bookmarks'))}">${this.escape(this.t('dashboard.inboxStats', 'Stats'))}</button>
             <button type="button" class="inbox-triage-btn">${this.escape(this.t('dashboard.inboxTriage', 'Triage'))}<kbd>t</kbd></button>
             <button type="button" class="view-help-btn inbox-help-btn" data-inbox-help
@@ -3325,6 +3585,9 @@ class DashboardInbox {
         toolbar.querySelector('[data-inbox-export="json"]')?.addEventListener('click', () => {
             this.exportFilteredJson();
         });
+        toolbar.querySelector('[data-inbox-import]')?.addEventListener('click', () => {
+            this.openImportPicker();
+        });
         container.appendChild(toolbar);
 
         // What the active filter selects, in a sentence. Rendered before the
@@ -3387,6 +3650,10 @@ class DashboardInbox {
 
         if (!filtered.length) {
             container.appendChild(this.renderEmptyState());
+            // The empty view is where a sleeping link is most confusing: the row
+            // the reader is looking for exists, and nothing here says where.
+            const sleepingHere = this.renderSnoozedFooter();
+            if (sleepingHere) container.appendChild(sleepingHere);
             // Announced here as well as at the end: a filter or search that
             // matches nothing returns early, and "no results" is precisely the
             // outcome a screen-reader user most needs told.
@@ -3398,10 +3665,19 @@ class DashboardInbox {
         const visible = filtered.slice(0, this.visibleLimit);
         const groups = this.groupFilteredItems(visible);
         const list = document.createElement('div');
-        list.className = 'inbox-feed';
+        list.className = 'feed-list inbox-feed';
+        // The feed is the list of rows and nothing else. The date groups between
+        // it and the articles are there for the eye — made presentational so the
+        // articles read as the feed's own children, which is what lets a screen
+        // reader say "3 of 120" while the rest is still behind the sentinel.
+        list.setAttribute('role', 'feed');
+        list.setAttribute('aria-label', this.t('dashboard.inboxPageTitle', 'Inbox'));
+        list.setAttribute('aria-busy', 'false');
+        let position = 0;
         groups.forEach((group) => {
             const section = document.createElement('section');
             section.className = 'inbox-date-group';
+            section.setAttribute('role', 'presentation');
             // A flat sort has no heading; an empty <h3> would leave its margin
             // behind as a gap above the first row.
             section.innerHTML = group.label
@@ -3409,8 +3685,13 @@ class DashboardInbox {
                 : '';
             const groupList = document.createElement('div');
             groupList.className = 'inbox-date-group-items';
+            groupList.setAttribute('role', 'presentation');
             group.items.forEach((item) => {
-                groupList.appendChild(this.createItemElement(item));
+                position += 1;
+                const card = this.createItemElement(item);
+                card.setAttribute('aria-posinset', String(position));
+                card.setAttribute('aria-setsize', String(filtered.length));
+                groupList.appendChild(card);
             });
             section.appendChild(groupList);
             list.appendChild(section);
@@ -3429,6 +3710,9 @@ class DashboardInbox {
             }
         }
 
+        const sleeping = this.renderSnoozedFooter();
+        if (sleeping) container.appendChild(sleeping);
+
         container.appendChild(this.renderLegend());
         this.renderBulkBar();
 
@@ -3441,6 +3725,51 @@ class DashboardInbox {
         this.applyPendingItemFocus();
         this.announceListState(filtered.length);
         this.finishInboxRenderFocus(container, preserveSearch, searchCaret);
+    }
+
+    /**
+     * A line under the list for the links that are asleep.
+     *
+     * Outside its own tile a snoozed link is invisible: it is in no count, no
+     * filter and no export, so "I saved that" and "it is not here" were both
+     * true with nothing on screen to reconcile them. Says how many and when the
+     * first one is due, and hands over to the Snoozed filter.
+     */
+    renderSnoozedFooter() {
+        if (this.filter === 'snoozed') return null;
+        const sleeping = (this.items || []).filter((item) => this.isSnoozed(item));
+        if (!sleeping.length) return null;
+        const next = sleeping
+            .map((item) => Number(item.snoozedUntil || 0))
+            .filter((ts) => ts > 0)
+            .sort((a, b) => a - b)[0];
+
+        const note = document.createElement('p');
+        note.className = 'inbox-snoozed-note';
+        const text = document.createElement('span');
+        text.textContent = next
+            ? this.t('dashboard.inboxSnoozedFooter', '{count} links are asleep, the first until {time}', {
+                count: sleeping.length,
+                time: this.formatSnoozeWake(next),
+            })
+            : this.t('dashboard.inboxSnoozedFooterPlain', '{count} links are asleep', { count: sleeping.length });
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'inbox-snoozed-note-btn';
+        btn.dataset.inboxSnoozedNote = '';
+        btn.textContent = this.t('dashboard.inboxSnoozedFooterShow', 'Show them');
+        btn.addEventListener('click', () => {
+            this.filter = 'snoozed';
+            this._trackAction('filter', { filter: 'snoozed', via: 'footer' });
+            this.visibleLimit = 50;
+            this.checkedIds.clear();
+            this.focusItemId = null;
+            this.persistViewState();
+            this.syncUrlState();
+            this.render();
+        });
+        note.append(text, btn);
+        return note;
     }
 
     /**
@@ -3476,12 +3805,13 @@ class DashboardInbox {
     createItemElement(item) {
         const d = this.dash;
         const card = document.createElement('article');
-        card.className = 'inbox-item' + (item.readAt ? ' is-read' : ' is-unread');
+        // feed-row is the shared card; the unread edge is the shared modifier.
+        card.className = 'feed-row inbox-item'
+            + (item.readAt ? ' is-read' : ' is-unread feed-row--edge-accent');
         card.dataset.inboxId = item.id;
         card.dataset.bookmarkUrl = item.url || '';
         card.dataset.inboxShareName = item.previewTitle || item.title || item.domain || '';
         card.tabIndex = -1;
-        card.setAttribute('aria-selected', 'false');
 
         const title = item.previewTitle || item.title || item.domain || item.url;
         const domain = item.domain || this.formatUrlDisplay(item.url);
@@ -3522,6 +3852,10 @@ class DashboardInbox {
         if (checked) {
             card.classList.add('is-checked');
         }
+        // An article in a feed is announced by its own name; without one the row
+        // is read as an unlabelled group and the title arrives a beat later.
+        const titleId = `inbox-item-title-${item.id}`;
+        card.setAttribute('aria-labelledby', titleId);
         card.innerHTML = `
             <label class="inbox-item-check">
                 <input type="checkbox" class="inbox-item-check-input"${checked ? ' checked' : ''}
@@ -3529,16 +3863,17 @@ class DashboardInbox {
             </label>
             ${thumb}
             <div class="inbox-item-body">
-                <h3 class="inbox-item-title">${this.escape(title)}</h3>
+                <h3 class="inbox-item-title" id="${this.escape(titleId)}">${this.escape(title)}</h3>
                 <p class="inbox-item-meta">
                     <button type="button" class="inbox-item-domain inbox-item-domain-btn" data-inbox-domain="${this.escape(this.itemDomain(item))}">${this.escape(domain)}</button>
                     ${addedLabel ? `<span class="inbox-item-date" title="${this.escape(this.t('dashboard.inboxAddedOn', 'Added on {date}', { date: addedLabel }))}">${this.escape(addedLabel)}</span>` : ''}
                     ${timeLabel ? `<span class="inbox-item-time">${this.escape(timeLabel)}</span>` : ''}
                     ${wakeLabel}
                 </p>
+                ${item.previewDesc ? `<p class="inbox-item-desc">${this.escape(item.previewDesc)}</p>` : ''}
                 ${item.note ? `<p class="inbox-item-note">${this.escape(item.note)}</p>` : ''}
                 ${this.renderItemTags(item)}
-                <div class="inbox-item-actions">
+                <div class="feed-row-actions inbox-item-actions">
                     <div class="inbox-item-actions-inner">
                         <button type="button" class="inbox-action-btn" data-inbox-action="open">${this.escape(this.t('dashboard.inboxOpen', 'Open'))}</button>
                         <button type="button" class="inbox-action-btn" data-inbox-action="promote">${this.escape(this.t('dashboard.inboxPromote', 'Promote'))}<kbd>p</kbd></button>
@@ -3908,6 +4243,30 @@ class DashboardInbox {
         });
     }
 
+    /**
+     * Name the download after everything that decided its contents.
+     *
+     * The filter and the site were in the name and the search term was not, so
+     * two exports of two different lists — a search and the same view without it
+     * — landed in the downloads folder under one name, the second as "(1)".
+     */
+    exportFileName(ext) {
+        const slug = (value) => String(value || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .slice(0, 24);
+        const parts = ['nextdash-inbox', this.filter];
+        const domain = slug(this.domainFilter);
+        if (domain) parts.push(domain);
+        const tag = slug(this.tagFilter);
+        if (tag) parts.push(`tag-${tag}`);
+        const query = slug(this.searchQuery);
+        if (query) parts.push(`q-${query}`);
+        parts.push(new Date().toISOString().slice(0, 10));
+        return `${parts.filter(Boolean).join('-')}.${ext}`;
+    }
+
     csvField(value) {
         let text = String(value ?? '');
         if (/^[=+\-@\t\r]/.test(text)) {
@@ -3949,6 +4308,7 @@ class DashboardInbox {
             this.t('dashboard.inboxExportColTitle', 'Title'),
             this.t('dashboard.inboxExportColUrl', 'URL'),
             this.t('dashboard.inboxExportColDomain', 'Domain'),
+            this.t('dashboard.inboxExportColDescription', 'Description'),
             this.t('dashboard.inboxExportColNote', 'Note'),
             this.t('dashboard.inboxExportColTags', 'Tags'),
             this.t('dashboard.inboxExportColAdded', 'Added'),
@@ -3960,6 +4320,7 @@ class DashboardInbox {
             item.previewTitle || item.title || '',
             item.url || '',
             this.itemDomain(item),
+            item.previewDesc || '',
             item.note || '',
             (Array.isArray(item.tags) ? item.tags : []).join(' '),
             item.addedAt ? new Date(item.addedAt).toISOString() : '',
@@ -3970,9 +4331,7 @@ class DashboardInbox {
         const csv = '﻿' + [header, ...rows]
             .map((row) => row.map((cell) => this.csvField(cell)).join(','))
             .join('\r\n');
-        const stamp = new Date().toISOString().slice(0, 10);
-        const suffix = this.domainFilter ? `-${this.domainFilter}` : '';
-        this.downloadExportFile(`nextdash-inbox-${this.filter}${suffix}-${stamp}.csv`, csv, 'text/csv;charset=utf-8');
+        this.downloadExportFile(this.exportFileName('csv'), csv, 'text/csv;charset=utf-8');
         this._trackAction('export-csv', { size: this._countBucket(items.length) });
     }
 
@@ -3991,6 +4350,7 @@ class DashboardInbox {
             title: item.title || '',
             previewTitle: item.previewTitle || '',
             domain: this.itemDomain(item),
+            previewDesc: item.previewDesc || '',
             note: item.note || '',
             tags: Array.isArray(item.tags) ? item.tags : [],
             addedAt: item.addedAt || 0,
@@ -3998,14 +4358,133 @@ class DashboardInbox {
             snoozedUntil: item.snoozedUntil || 0,
             source: item.source || '',
         }));
-        const stamp = new Date().toISOString().slice(0, 10);
-        const suffix = this.domainFilter ? `-${this.domainFilter}` : '';
         this.downloadExportFile(
-            `nextdash-inbox-${this.filter}${suffix}-${stamp}.json`,
+            this.exportFileName('json'),
             `${JSON.stringify(payload, null, 2)}\n`,
             'application/json;charset=utf-8'
         );
         this._trackAction('export-json', { size: this._countBucket(items.length) });
+    }
+
+    /**
+     * Open a file picker and read an exported inbox back in.
+     *
+     * The export was one-way: a list could leave as JSON and had no way back, so
+     * moving an inbox between installs, or restoring one without a full backup,
+     * was not possible. Accepts what exportFilteredJson writes, and a bare array
+     * of {url, title, …} with it, since that is what a hand-written list is.
+     */
+    openImportPicker() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'application/json,.json';
+        input.style.display = 'none';
+        input.addEventListener('change', () => {
+            const file = input.files?.[0];
+            input.remove();
+            if (file) void this.importFromFile(file);
+        });
+        document.body.appendChild(input);
+        input.click();
+    }
+
+    /** Rows out of an import file, or null when the file is not one. */
+    parseImportPayload(text) {
+        let data;
+        try {
+            data = JSON.parse(text);
+        } catch {
+            return null;
+        }
+        const rows = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : null);
+        if (!rows) return null;
+        return rows
+            .map((row) => ({
+                url: String(row?.url || '').trim(),
+                title: String(row?.title || row?.previewTitle || '').trim(),
+                note: String(row?.note || '').trim(),
+                tags: Array.isArray(row?.tags) ? row.tags.map((tag) => String(tag)) : [],
+                source: 'import',
+            }))
+            .filter((row) => row.url);
+    }
+
+    async importFromFile(file) {
+        const text = await file.text().catch(() => '');
+        const rows = this.parseImportPayload(text);
+        if (!rows) {
+            this.dash.showNotification?.(
+                this.t('dashboard.inboxImportInvalid', 'That file is not an inbox export.'),
+                'error'
+            );
+            return;
+        }
+        if (!rows.length) {
+            this.dash.showNotification?.(
+                this.t('dashboard.inboxImportEmpty', 'No links in that file.'),
+                'info'
+            );
+            return;
+        }
+        const confirmed = await this.confirm(
+            this.t('dashboard.inboxImport', 'Import'),
+            this.t('dashboard.inboxImportConfirm', 'Add {count} links from {name} to the inbox?', {
+                count: rows.length,
+                name: file.name,
+            })
+        );
+        if (!confirmed) return;
+
+        this._trackAction('import', { size: this._countBucket(rows.length) });
+        const fetcher = typeof nextDashFetch === 'function' ? nextDashFetch : fetch;
+        let added = 0;
+        let duplicates = 0;
+        let failed = 0;
+        let full = false;
+        for (const row of rows) {
+            // One at a time and in order: there is no bulk endpoint, and the
+            // capacity cap means a later row can be the one that is refused.
+            try {
+                const res = await fetcher('/api/inbox', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(row),
+                });
+                if (res.ok) {
+                    added += 1;
+                    continue;
+                }
+                const body = await res.json().catch(() => ({}));
+                if (body?.error === 'duplicate_url') {
+                    duplicates += 1;
+                } else if (body?.error === 'at_capacity') {
+                    // Every row after this one would be refused too.
+                    full = true;
+                    break;
+                } else {
+                    failed += 1;
+                }
+            } catch {
+                failed += 1;
+            }
+        }
+
+        await this.loadAndRender({ refresh: true });
+        this.dash.pageNav?.updateInboxTabBadge?.();
+
+        // One line that accounts for every row in the file, rather than a bare
+        // "done" over an import that skipped half of it.
+        const parts = [this.t('dashboard.inboxImportAdded', '{count} added', { count: added })];
+        if (duplicates) {
+            parts.push(this.t('dashboard.inboxImportDuplicates', '{count} already here', { count: duplicates }));
+        }
+        if (failed) {
+            parts.push(this.t('dashboard.inboxImportFailed', '{count} failed', { count: failed }));
+        }
+        if (full) {
+            parts.push(this.t('dashboard.inboxImportFull', 'inbox full — the rest was left out'));
+        }
+        this.dash.showNotification?.(parts.join(' · '), full || failed ? 'warning' : 'success');
     }
 
     highlightItem(id) {
@@ -4013,8 +4492,8 @@ class DashboardInbox {
         if (!card) {
             return;
         }
-        card.classList.add('inbox-item--highlight');
+        card.classList.add('inbox-item--highlight', 'feed-row--highlight');
         card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-        setTimeout(() => card.classList.remove('inbox-item--highlight'), 1800);
+        setTimeout(() => card.classList.remove('inbox-item--highlight', 'feed-row--highlight'), 1800);
     }
 }

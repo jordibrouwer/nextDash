@@ -20,12 +20,24 @@ class DashboardNotifications {
 
 
     showGroupedNotification(key, count, buildMessage, type = 'success', options = {}) {
-        const d = this.dash;
         if (!window.AppNotification?.showGrouped) {
             this.showNotification(buildMessage(count), type, options);
             return;
         }
-        window.AppNotification.showGrouped(key, buildMessage, { count, type, options });
+        // AppNotification understands onAction/actionLabel; undoCallback is this
+        // layer's word for it, and showNotification has always translated it.
+        // The grouped path did not, so every caller that passed an undo with a
+        // grouped toast — bulk delete among them — rendered a toast with the
+        // button hidden and the callback unreachable. Same translation here.
+        const d = this.dash;
+        const { undoCallback = null, onAction = null, actionLabel = null, ...rest } = options || {};
+        const undo = undoCallback || onAction;
+        const opts = { ...rest };
+        if (undo) {
+            opts.onAction = undo;
+            opts.actionLabel = actionLabel || (d.language ? d.language.t('dashboard.undo') : 'Undo');
+        }
+        window.AppNotification.showGrouped(key, buildMessage, { count, type, options: opts });
     }
 
 
@@ -62,7 +74,6 @@ class DashboardNotifications {
 
 
     notifyDashboard(key, fallback, type = 'success', options = {}) {
-        const d = this.dash;
         const message = this.tDashboard(key, fallback);
         if (type === 'error') {
             this.showErrorNotification(message, options);
@@ -73,7 +84,6 @@ class DashboardNotifications {
 
 
     notifyConfig(key, fallback, type = 'success', options = {}) {
-        const d = this.dash;
         const message = this.tConfig(key, fallback);
         if (type === 'error') {
             this.showErrorNotification(message, options);

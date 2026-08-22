@@ -32,10 +32,46 @@ class DashboardConfig {
         'data-backups',
         'stats',
         'help',
+        'about',
     ];
 
     /** Device-local last config section (and sub-tab) for Shift+S / `<` return visits. */
+    /**
+     * Where this release's new setting lives, and the only place that is
+     * written down.
+     *
+     * The twinkle is drawn three times — on the section in the rail, on the
+     * sub-tab, and on the panel — and the three used to be three separate
+     * literals scattered through the render methods. Moving the mark then meant
+     * finding all of them, and a half-moved trail points at nothing.
+     *
+     * Cleared (set to `{}`) once the setting is no longer new — which is where
+     * it stands: the trail pointed at Appearance → Layout for the categories
+     * -across-columns setting of v1.3.0, two releases ago, and a mark that
+     * outlives its release trains people to ignore the mark.
+     */
+    static NEW_THIS_RELEASE = {};
+
     static CONFIG_LAST_KEY = 'nextdash:config-last-location-v1';
+
+    /**
+     * How long the remembered config location survives.
+     *
+     * Returning to config a moment later is a continuation — you left to check
+     * something and came back — and dropping you on Overview each time makes
+     * you re-navigate. Coming back much later is a new task, and the tab you
+     * happened to be on last time is no longer where you meant to be. Five
+     * minutes is the line between the two.
+     *
+     * Measured from the moment config stopped being on screen, not from the
+     * last click inside it: setActiveView stamps it on the way out, so sitting
+     * on one section for an hour and stepping away for ten seconds still comes
+     * back where you were.
+     *
+     * Mirrored in dashboard-config-loader.js, which reads the same entry on a
+     * cold load before this module exists. Both must agree.
+     */
+    static CONFIG_LAST_TTL_MS = 5 * 60 * 1000;
 
     /**
      * The activity chart's range, remembered per browser.
@@ -92,8 +128,11 @@ class DashboardConfig {
         // Empty means the list is unfiltered by it.
         this.bmCleanupFilter = '';
         this.bmTagFilter = [];
-        this.bmSort = 'page';
-        this.bmVisibleLimit = DashboardConfig.BM_PAGE_SIZE;
+        // null until the list is first rendered, when it takes the stored
+        // preference. Health and Inbox both remember their sort; this list was
+        // the only one that reset to page order on every visit.
+        this.bmSort = null;
+        this.bmVisibleLimit = this.bmPageSize();
         this.bmEditing = null;
         this.bmDirty = false;
         this.bmSelected = new Set();
@@ -108,8 +147,18 @@ class DashboardConfig {
         this.statsRange = DashboardConfig.readStoredStatsRange();
         // Statistics sub-tab.
         this.statsTab = 'overview';
+        // Which page the figures describe; '' is the whole library. Deliberately
+        // not persisted, unlike the activity range: a range reframes the numbers
+        // while this one hides most of them, and a filter still in force from
+        // last week would read as a shrunken library rather than as a choice.
+        this.statsPageFilter = '';
+        // Narrows the controls on the config tab you are looking at. Not
+        // persisted: a filter still in force on the next visit reads as a
+        // section that has lost most of its settings.
+        this.settingsFilter = '';
         // Data & backups sub-tab.
         this.dbTab = 'backups';
+        this.bmTab = 'list';
         // Server log viewer. Refresh is off by default: an idle config page
         // should not poll, and the tab is usually opened to read one thing.
         this.logRefreshSeconds = 0;
@@ -207,8 +256,11 @@ class DashboardConfig {
         if (raw === 'config/behavior/layout') return 'appearance';
         if (raw === 'config/behavior/display') return 'appearance';
         if (raw === 'config') return 'overview';
-        // A trailing /<tab> is optional and handled by subTabFromHash.
-        const match = raw.match(/^config\/([a-z-]+)(?:\/([a-z-]+))?$/);
+        // Branding stopped being a tab; its panel is the tail of Display.
+        if (raw === 'config/appearance/branding') return 'appearance';
+        // A trailing /<tab> is optional and handled by subTabFromHash; help
+        // adds a third segment naming one panel, which neither of them reads.
+        const match = raw.match(/^config\/([a-z-]+)(?:\/([a-z0-9-]+))?(?:\/([a-z0-9-]+))?$/);
         if (!match) return null;
         return DashboardConfig.SECTIONS.includes(match[1]) ? match[1] : 'overview';
     }
@@ -225,7 +277,10 @@ class DashboardConfig {
         const raw = hash.replace(/^#/, '');
         if (raw === 'config/behavior/layout') return 'layout';
         if (raw === 'config/behavior/display') return 'display';
-        const match = raw.match(/^config\/([a-z-]+)\/([a-z-]+)$/);
+        if (raw === 'config/appearance/branding') return 'display';
+        // The optional third segment is a help panel, which this ignores — it
+        // must not stop the tab in front of it from being read.
+        const match = raw.match(/^config\/([a-z-]+)\/([a-z-]+)(?:\/[a-z0-9-]+)?$/);
         if (!match || match[1] === 'bookmarks') return null;
         const tabs = DashboardConfig.SUB_TABS[match[1]];
         return tabs && tabs.includes(match[2]) ? match[2] : null;
@@ -234,7 +289,9 @@ class DashboardConfig {
     /** Page filter encoded as `#config/bookmarks/<pageId>`. */
     static bookmarksPageFromHash(hash) {
         if (typeof hash !== 'string') return null;
-        const match = hash.replace(/^#/, '').match(/^config\/bookmarks\/([^/]+)$/);
+        // The filters ride in a query string after the path, so the page id
+        // stops at the first `?` as well as at the end.
+        const match = hash.replace(/^#/, '').match(/^config\/bookmarks\/([^/?]+)/);
         return match ? decodeURIComponent(match[1]) : null;
     }
 
@@ -267,6 +324,7 @@ class DashboardConfig {
             stats: DashboardConfig.STATS_TABS,
             'data-backups': DashboardConfig.DB_TABS,
             help: DashboardConfig.HELP_TABS,
+            bookmarks: DashboardConfig.BM_TABS,
         };
     }
 
@@ -278,6 +336,7 @@ class DashboardConfig {
         stats: 'statsTab',
         'data-backups': 'dbTab',
         help: 'helpTab',
+        bookmarks: 'bmTab',
     };
 
     /**
@@ -293,6 +352,7 @@ class DashboardConfig {
         'data-stats-tab': 'stats',
         'data-db-tab': 'data-backups',
         'data-help-tab': 'help',
+        'data-bm-tab': 'bookmarks',
     };
 
     /** data-* attribute on each section's sub-tab strip buttons. */
@@ -303,6 +363,7 @@ class DashboardConfig {
         stats: 'data-stats-tab',
         'data-backups': 'data-db-tab',
         help: 'data-help-tab',
+        bookmarks: 'data-bm-tab',
     };
 
     /** Apply a sub-tab from the hash, if the section has one. */
@@ -333,10 +394,70 @@ class DashboardConfig {
         return true;
     }
 
+    /**
+     * What the bookmark list is currently narrowed to, as a query string.
+     *
+     * The list could be filtered five ways and the address bar said only which
+     * page — so "the 41 untagged on Work" was a thing you could see and not
+     * hand to anyone, and a reload threw it away. Only what is actually set is
+     * written, so an unfiltered list keeps the short hash it always had.
+     */
+    bookmarksFilterQuery() {
+        const params = [];
+        const add = (key, value) => {
+            const v = String(value ?? '').trim();
+            if (v) params.push(`${key}=${encodeURIComponent(v)}`);
+        };
+        add('q', this.bmQuery);
+        add('cat', this.bmCategoryFilter);
+        add('filter', this.bmCleanupFilter);
+        const tags = this.bookmarkTagFilters();
+        if (tags.length) add('tag', tags.join(','));
+        const sort = this.bmSort ?? this.defaultBookmarksSort();
+        if (sort && sort !== this.defaultBookmarksSort()) add('sort', sort);
+        return params.length ? `?${params.join('&')}` : '';
+    }
+
+    /**
+     * Read those filters back off a hash, and say whether anything moved.
+     *
+     * Absent keys clear rather than keep: a link to "everything on Work" must
+     * not inherit the tag filter the reader happened to have on, or it would
+     * describe a different list for every person who clicked it.
+     */
+    applyBookmarksFiltersFromHash(hash) {
+        if (typeof hash !== 'string') return false;
+        const raw = hash.replace(/^#/, '');
+        if (!raw.startsWith('config/bookmarks')) return false;
+        const at = raw.indexOf('?');
+        const params = new URLSearchParams(at < 0 ? '' : raw.slice(at + 1));
+        const before = JSON.stringify([this.bmQuery, this.bmCategoryFilter,
+            this.bmCleanupFilter, this.bookmarkTagFilters(), this.bmSort]);
+
+        this.bmQuery = params.get('q') || '';
+        this.bmCategoryFilter = params.get('cat') || '';
+        const filter = params.get('filter') || '';
+        this.bmCleanupFilter = DashboardConfig.CLEANUP_FILTERS[filter] ? filter : '';
+        const tags = (params.get('tag') || '').split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
+        this.bmTagFilter = tags;
+        const sort = params.get('sort') || '';
+        if (sort) this.bmSort = sort;
+
+        const after = JSON.stringify([this.bmQuery, this.bmCategoryFilter,
+            this.bmCleanupFilter, this.bookmarkTagFilters(), this.bmSort]);
+        if (before === after) return false;
+        this._bmDuplicateUrls = null;
+        this.resetBookmarkVisibleLimit();
+        this.invalidateVisibleBookmarks();
+        return true;
+    }
+
     hashForSection(section) {
         if (!section || section === 'overview') return 'config';
-        if (section === 'bookmarks' && this.bmPageFilter) {
-            return `config/bookmarks/${encodeURIComponent(this.bmPageFilter)}`;
+        if (section === 'bookmarks') {
+            const page = this.bmPageFilter ? `/${encodeURIComponent(this.bmPageFilter)}` : '';
+            const query = this.bookmarksFilterQuery();
+            if (page || query) return `config/bookmarks${page}${query}`;
         }
         // Keep the sub-tab in the URL so the address bar is a link you can
         // actually hand to someone.
@@ -350,7 +471,13 @@ class DashboardConfig {
     }
 
     restoreConfigHash() {
-        const wanted = `#${this.hashForSection(this.section)}`;
+        // A help link names a panel in a third segment. Rewriting the hash from
+        // the section and tab alone would drop it the moment anything called
+        // this — which is every move inside config, including the render that
+        // has not scrolled to the panel yet.
+        const panel = DashboardConfig.helpPanelFromHash(window.location.hash);
+        const base = this.hashForSection(this.section);
+        const wanted = `#${panel && this.section === 'help' ? `${base}/${panel}` : base}`;
         if (window.location.hash !== wanted) {
             history.replaceState(
                 history.state,
@@ -358,14 +485,31 @@ class DashboardConfig {
                 `${window.location.pathname}${window.location.search}${wanted}`
             );
         }
+        // Every move inside config comes through here — it is what writes the
+        // section and sub-tab into the address bar — so this is also where the
+        // location is remembered. It used to be saved only on the ways out that
+        // config itself knows about (Esc, `<`, its own shortcuts), which left
+        // out every route that simply switches view around it: the health,
+        // inbox and page buttons in the header. Those changed what was on
+        // screen without config ever hearing about it, so the memory kept an
+        // older tab.
+        this.saveLastConfigLocation();
     }
 
-    /** Read the last config section/sub-tab saved when leaving via Shift+H or Shift+I. */
+    /**
+     * Read the config section/sub-tab you were last on, if it is still fresh.
+     *
+     * An entry with no `savedAt` was written before the location expired at
+     * all, and there is no way to tell whether it is a minute or a month old —
+     * so it is treated as stale, and that browser starts on Overview once.
+     */
     loadLastConfigLocation() {
         try {
             const raw = localStorage.getItem(DashboardConfig.CONFIG_LAST_KEY);
             if (!raw) return null;
             const data = JSON.parse(raw);
+            const savedAt = Number(data?.savedAt) || 0;
+            if (!savedAt || Date.now() - savedAt > DashboardConfig.CONFIG_LAST_TTL_MS) return null;
             const section = data?.section;
             if (!section || !DashboardConfig.SECTIONS.includes(section)) return null;
             let subTab = data?.subTab ?? null;
@@ -391,10 +535,69 @@ class DashboardConfig {
      * was missing from three of them and so was fetched eagerly on every visit
      * instead; keeping the rule in one place is what stops that recurring.
      */
-    loadStatsTabData(tab) {
-        if (tab === 'inbox' && this._statsInboxItems === undefined) void this.loadStatsInbox();
-        if (tab === 'activity' && this._statsFinders === undefined) void this.loadStatsFinders();
-        if (tab === 'health' && this._statsHealth === undefined) void this.loadStatsHealth();
+    /**
+     * The figures a tab needs from the server.
+     *
+     * `all` loads every tab's, which is what the section wants on the way in:
+     * Health and Inbox are two of the five tabs, and until they had been
+     * *visited* they contributed nothing to the export and nothing to the
+     * summary — a difference in where a number comes from, leaking out as a
+     * difference in what the reader gets.
+     */
+    /**
+     * The daily points, without the report they usually ride with.
+     *
+     * Statistics showed every figure as a number and none as a direction, and
+     * the history that answers "is this going up" was already on disk — it just
+     * arrived attached to a full health report, which is far too much to build
+     * on the way into a section. This is a file read of a few dozen points.
+     */
+    async loadStatsTrend() {
+        if (this._statsTrend !== undefined) return this._statsTrend;
+        this._statsTrend = null;
+        try {
+            const fetcher = typeof nextDashFetch === 'function' ? nextDashFetch : fetch;
+            const res = await fetcher('/api/health/trend');
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            this._statsTrend = Array.isArray(data?.points) ? data.points : [];
+        } catch {
+            // No history is not an error: a fresh install has none, and a
+            // section that cannot say which way a number moved still says what
+            // the number is.
+            this._statsTrend = [];
+        }
+        if (this.isActiveView() && this.section === 'stats') this.repaintStatsBody();
+        return this._statsTrend;
+    }
+
+    /**
+     * The point from about `days` ago, or null when history does not reach back
+     * that far. Nearest match rather than exact: a day with no report recorded
+     * no point, and the answer to "roughly a week ago" is the nearest day there
+     * is, not nothing.
+     */
+    statsTrendPointDaysAgo(days) {
+        const points = Array.isArray(this._statsTrend) ? this._statsTrend : [];
+        if (points.length < 2) return null;
+        const target = Date.now() - days * 86400000;
+        // Anything more recent than half the window is "now", not "then".
+        const cutoff = Date.now() - (days / 2) * 86400000;
+        let best = null;
+        for (const p of points) {
+            const t = Number(p?.t) || 0;
+            if (!t || t > cutoff) continue;
+            if (!best || Math.abs(t - target) < Math.abs((Number(best.t) || 0) - target)) best = p;
+        }
+        return best;
+    }
+
+    loadStatsTabData(tab, { all = false } = {}) {
+        // History is cheap and every tab can use it, so it is not gated on one.
+        if (this._statsTrend === undefined) void this.loadStatsTrend();
+        if ((all || tab === 'inbox') && this._statsInboxItems === undefined) void this.loadStatsInbox();
+        if ((all || tab === 'activity') && this._statsFinders === undefined) void this.loadStatsFinders();
+        if ((all || tab === 'health') && this._statsHealth === undefined) void this.loadStatsHealth();
     }
 
     /**
@@ -421,7 +624,14 @@ class DashboardConfig {
         }
     }
 
-    /** Remember where the user left config — only when exiting via Shift+H or Shift+I. */
+    /**
+     * Remember where the user left config, on every way out.
+     *
+     * The timestamp is what makes that safe: without an expiry, remembering
+     * every exit would mean a tab you opened once, weeks ago, greeting you
+     * forever. It is stamped on the way out rather than on the way in, so the
+     * fifteen minutes count from when you last had config open.
+     */
     saveLastConfigLocation() {
         try {
             const section = this.section;
@@ -431,16 +641,8 @@ class DashboardConfig {
             localStorage.setItem(DashboardConfig.CONFIG_LAST_KEY, JSON.stringify({
                 section,
                 subTab: subTab || null,
+                savedAt: Date.now(),
             }));
-        } catch {
-            // localStorage unavailable — skip silently
-        }
-    }
-
-    /** Drop stored config location so the next visit starts on Overview. */
-    clearLastConfigLocation() {
-        try {
-            localStorage.removeItem(DashboardConfig.CONFIG_LAST_KEY);
         } catch {
             // localStorage unavailable — skip silently
         }
@@ -458,23 +660,22 @@ class DashboardConfig {
      * Section (and optional sub-tab) when opening config without an explicit
      * target or `#config/…` hash — e.g. Shift+S from the bookmark grid.
      *
-     * Saved location (Shift+H / Shift+I) applies when returning from health
-     * or inbox via Shift+S. Cold load to bare `#config` is handled in
-     * dashboard-data.js before the lazy module loads. Opening config from
-     * bookmarks with a page hash (#1) always lands on Overview.
+     * The saved location applies wherever you are coming from — the grid, the
+     * inbox, health — as long as it is still inside the fifteen-minute window;
+     * loadLastConfigLocation answers with nothing once it is not. It used to
+     * apply only when returning from health or inbox, which meant the far more
+     * common route, Shift+S from the grid, always landed on Overview.
+     *
+     * An explicit section and a `#config/…` hash both still win: those name a
+     * destination, and the memory is only for when nothing else does.
+     * Cold load to bare `#config` is handled in dashboard-data.js before the
+     * lazy module loads.
      */
     resolveConfigOpenTarget(explicitSection) {
         const hash = window.location.hash;
         const hashIsGeneric = DashboardConfig.isGenericConfigHash(hash);
         const hashSection = hashIsGeneric ? null : DashboardConfig.sectionFromHash(hash);
-        const saved = (!explicitSection && !hashSection) ? this.loadLastConfigLocation() : null;
-        let stored = null;
-        if (saved?.section) {
-            const fromView = this.dash.activeView;
-            if (fromView === 'health' || fromView === 'inbox') {
-                stored = saved;
-            }
-        }
+        const stored = (!explicitSection && !hashSection) ? this.loadLastConfigLocation() : null;
         const targetSection = explicitSection || hashSection || stored?.section || 'overview';
 
         if (!hashIsGeneric && hashSection === targetSection) {
@@ -513,7 +714,8 @@ class DashboardConfig {
         }
         const section = DashboardConfig.sectionFromHash(hash);
         const tabChanged = this.applySubTabFromHash(window.location.hash);
-        const pageChanged = this.applyBookmarksPageFromHash(hash);
+        const pageChanged = this.applyBookmarksPageFromHash(hash)
+            | this.applyBookmarksFiltersFromHash(hash);
         if (section && section !== this.section) {
             this.section = section;
             this.render();
@@ -552,7 +754,14 @@ class DashboardConfig {
         this.clearListKeyboardSelection();
         this.clearBookmarkKeyboardSelection();
         this.section = targetSection;
+        // Started here and awaited at the render, not before it: the section's
+        // own data load runs in the meantime, and awaiting up here delayed it
+        // enough that a refresh could land after the first paint.
+        void this.ensureBookmarkRenderers();
         this.applyBookmarksPageFromHash(window.location.hash);
+        // A shared link carries the filters as well as the page, so opening
+        // config from one lands on the list that link describes.
+        this.applyBookmarksFiltersFromHash(window.location.hash);
         d.setActiveView(DashboardConfig.VIEW);
         window.nextdashTrack?.('view:config');
         d.pageNav?.setActiveConfigTab?.();
@@ -569,8 +778,10 @@ class DashboardConfig {
         if (d.activeView !== DashboardConfig.VIEW) {
             return false;
         }
-        // Escape and other non–Shift+H/I exits start fresh on Overview next time.
-        this.clearLastConfigLocation();
+        // Every way out remembers where you were, not just Shift+H and Shift+I.
+        // The five-minute expiry in loadLastConfigLocation is what keeps that
+        // from turning into a tab that greets you forever.
+        this.saveLastConfigLocation();
         // The save indicator lives on <body>, so leaving the view has to take it
         // down; otherwise a "Saved" would linger over the dashboard.
         clearTimeout(this._saveStateTimer);
@@ -596,6 +807,14 @@ class DashboardConfig {
     }
 
     async loadAndRender() {
+        // The bookmark list's renderers arrive on demand, and waiting for them
+        // is better than drawing a placeholder and repainting over it — the
+        // second paint tears down whatever the reader had already reached for.
+        // The fetch was started when config opened, so this is normally already
+        // resolved.
+        if (this.section === 'bookmarks' && typeof this.renderBookmarksList !== 'function') {
+            await this.ensureBookmarkRenderers();
+        }
         // Phase 1 has no async data of its own yet; kept async so later phases can
         // fetch settings/stats here without touching the shell wiring.
         this.render();
@@ -616,6 +835,31 @@ class DashboardConfig {
             // they were. Health and inbox already guard the same way.
             if (window.DashboardTagCloud?.modalOpen) return;
             if (d.isModalOpen()) return;
+            // An open inline field owns Escape: it means "put the old value
+            // back", and the field is the only thing that knows what that was.
+            // Checked here rather than by the INPUT guard further down, which
+            // sits behind branches that stop the event — so Escape reached the
+            // field only when none of them happened to be armed, and otherwise
+            // the field was torn down by something else and its blur saved the
+            // half-typed value.
+            if (document.activeElement?.classList?.contains('config-bm-inline-input')) return;
+            // The row's right-click menu is layered over the view and owns
+            // Escape while it is up, the same as the theme picker below. This
+            // handler is on document in the capture phase and registers first,
+            // so without this the menu never saw the key and config closed
+            // underneath it.
+            // The menu decides what Escape means — from its check-mode submenu
+            // it walks back to the parent rather than closing, the way a native
+            // submenu does. Asked explicitly rather than by letting the event
+            // travel on: this handler is registered before the menu's own, and
+            // relying on which capture listener runs first is the kind of
+            // ordering that breaks the next time one is added.
+            if (this._bmContextMenu?.isOpen?.()) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                this._bmContextMenu.handleEscape();
+                return;
+            }
             if (window.ConfigSettingPromo?.dismissActive?.({ persist: true })) {
                 e.preventDefault();
                 e.stopImmediatePropagation();
@@ -713,19 +957,30 @@ class DashboardConfig {
      * wide screen the rail is a column that does not scroll and this is a
      * no-op, so it is not worth a width check of its own.
      *
-     * `nearest` rather than `center`: it only scrolls when the button is
-     * actually out of view, which leaves the strip alone in the common case.
+     * It only scrolls when the button is actually out of view, which leaves the
+     * strip alone in the common case — and it scrolls the strip itself rather
+     * than asking scrollIntoView to find a scrollport, which could move the
+     * panel behind it instead.
+     *
+     * Aligned to the start, not to whatever is nearest: the strip carries
+     * `scroll-snap-type: x proximity` with `scroll-snap-align: start` on each
+     * button, so a nearest-fit scroll is re-snapped to the closest button
+     * boundary afterwards and can leave the target hanging over the edge. That
+     * is what happened to Help — eighth of nine, and left 36px past the right
+     * edge with 112px of scroll still available.
      */
     scrollActiveNavIntoView() {
         const nav = document.querySelector('.config-nav');
         const btn = nav?.querySelector('.config-nav-item.is-active');
         if (!nav || !btn) return;
-        // Nothing to scroll on the desktop column, and calling this there would
-        // scroll the panel behind it instead.
+        // Nothing to scroll on the desktop column.
         if (nav.scrollWidth <= nav.clientWidth) return;
-        btn.scrollIntoView({
-            block: 'nearest',
-            inline: 'nearest',
+        const navRect = nav.getBoundingClientRect();
+        const btnRect = btn.getBoundingClientRect();
+        if (btnRect.left >= navRect.left - 1 && btnRect.right <= navRect.right + 1) return;
+        const target = Math.max(0, nav.scrollLeft + (btnRect.left - navRect.left));
+        nav.scrollTo({
+            left: target,
             behavior: document.body?.classList.contains('no-animations') ? 'instant' : 'smooth',
         });
     }
@@ -890,8 +1145,8 @@ class DashboardConfig {
 
     /**
      * Page tabs (1–9) and Inbox (0) work from config too — same as on the
-     * bookmark grid — so you can leave without Esc first. Unlike Shift+H/I,
-     * these do not remember where you were in config.
+     * bookmark grid — so you can leave without Esc first. These remember where
+     * you were, the same as every other way out.
      */
     handleShellViewShortcut(e) {
         if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return false;
@@ -903,7 +1158,7 @@ class DashboardConfig {
             if (d.inbox?.isEnabled?.() && d.settings?.inboxShowInPageTabs !== false) {
                 e.preventDefault();
                 e.stopImmediatePropagation();
-                this.clearLastConfigLocation();
+                this.saveLastConfigLocation();
                 void d.inbox.openInboxView();
                 return true;
             }
@@ -915,7 +1170,7 @@ class DashboardConfig {
             if (pageIndex >= d.pages.length) return false;
             e.preventDefault();
             e.stopImmediatePropagation();
-            this.clearLastConfigLocation();
+            this.saveLastConfigLocation();
             void d.requestPageNavigation(d.pages[pageIndex].id);
             return true;
         }
@@ -1065,9 +1320,16 @@ class DashboardConfig {
                 // Some sections repaint through render(), which replaces the
                 // strip wholesale and drops the focus set above. Re-focus the
                 // rebuilt button so a second arrow press still works.
-                if (!target.isConnected) {
-                    document.querySelector(`[${attr}="${CSS.escape(tab)}"]`)?.focus();
-                }
+                //
+                // Unconditionally and on the next frame: testing isConnected
+                // right here ran before Appearance had repainted, so the node
+                // still looked attached, the branch was skipped, and focus
+                // landed on <body> once the replacement arrived — leaving the
+                // strip dead to every further arrow press.
+                requestAnimationFrame(() => {
+                    const live = document.querySelector(`[${attr}="${CSS.escape(tab)}"]`);
+                    if (live && live !== document.activeElement) live.focus();
+                });
             });
         });
     }
@@ -1091,6 +1353,7 @@ class DashboardConfig {
             'data-backups': ['config.sectionDataBackups', 'Data & backups'],
             stats: ['config.sectionStats', 'Statistics'],
             help: ['config.sectionHelp', 'Help'],
+            about: ['config.sectionAbout', 'About'],
         };
         const [key, fallback] = map[section] || [section, section];
         return this.t(key, fallback);
@@ -1150,7 +1413,44 @@ class DashboardConfig {
         if (!container) return;
         container.classList.remove('inbox-layout', 'health-layout', 'tag-filter-layout');
         container.classList.add('config-layout', 'page-transition');
+        // Only the parts that changed. The rail, the search button and the panel
+        // frame are the same markup on every render — rebuilding them threw away
+        // the scroll position and cost a layout pass per section switch, on a
+        // view whose whole job is switching sections.
+        if (this.reuseShell(container)) {
+            this.afterRender(container);
+            return;
+        }
         container.innerHTML = this.renderShell();
+        this.afterRender(container);
+    }
+
+    /**
+     * Redraw the section without rebuilding the shell around it.
+     *
+     * Returns false when there is no shell yet — the first render, or a return
+     * from another view — in which case the caller builds one.
+     */
+    reuseShell(container) {
+        const panel = container.querySelector('#config-view-body');
+        const title = container.querySelector('.config-view-section-title');
+        if (!panel || !title) return false;
+        const esc = (v) => this.dash.escapeHtml(v);
+        title.textContent = this.sectionLabel(this.section);
+        const crumb = container.querySelector('.config-view-head-breadcrumb');
+        if (crumb) {
+            const text = this.headerBreadcrumb();
+            crumb.textContent = text;
+            crumb.hidden = !text.includes(' › ');
+        }
+        const main = container.querySelector('.config-view-main');
+        if (main) main.setAttribute('aria-labelledby', `config-section-${esc(this.section)}`);
+        panel.innerHTML = this.renderSection();
+        return true;
+    }
+
+    /** Everything both render paths do once the markup is in place. */
+    afterRender(container) {
         // Created up front, not on first save: a live region has to be in the
         // document before its text changes, or the change is not announced.
         this.ensureSaveStateHost();
@@ -1184,6 +1484,9 @@ class DashboardConfig {
             this.bindPagesTags(container);
         } else if (this.section === 'bookmarks') {
             this.bindBookmarksSection(container);
+            // The section carries schema panels of its own now, which bind the
+            // same way the Behavior ones do.
+            this.bindControlPanels(container, 'behavior');
             void this.prefetchAllBookmarkCategories();
         } else if (this.section === 'stats') {
             this.bindStats(container);
@@ -1192,6 +1495,13 @@ class DashboardConfig {
             this.loadStatsTabData(this.statsTab);
         } else if (this.section === 'help') {
             this.bindHelp(container);
+            // The body is in the DOM by now, which is what scrolling to a
+            // linked panel needs.
+            this.openHelpPanelFromHash();
+        } else if (this.section === 'about') {
+            // The panels moved out of Help but kept their buttons — What's new,
+            // and the Ko-fi block's own links — so the same wiring runs here.
+            this.bindHelpActions(container);
         }
         window.ConfigSettingPromo?.scheduleForSection?.(this.section, { config: this });
         this.bindFormKeyboard(container);
@@ -1599,6 +1909,11 @@ class DashboardConfig {
     }
 
     moveBookmarkKeyboardSelection(delta, rows) {
+        // With the list windowed, the DOM holds a screenful and walking it would
+        // wrap at the edge of the window rather than carrying on down the list.
+        // So when a window is in force the movement is over the data, and the
+        // window is dragged to wherever the selection lands.
+        if (this.moveBookmarkKeyboardSelectionWindowed(delta)) return;
         const list = Array.isArray(rows) && rows.length ? rows : this.getBookmarkKeyboardRows();
         if (!list.length) return;
         let index = this._bmKeyboardKey
@@ -1613,6 +1928,65 @@ class DashboardConfig {
         }
         this._bmKeyboardKey = this.bookmarkRowKey(list[index]);
         this.applyBookmarkKeyboardSelection(list);
+    }
+
+    /**
+     * Move the keyboard selection through the loaded rows, window or no window.
+     *
+     * Returns false when there is no window, so the DOM walk above stays the
+     * path for a short list — it is the one that knows about rows the data does
+     * not, such as a row mid-animation.
+     */
+    moveBookmarkKeyboardSelectionWindowed(delta) {
+        const all = this.visibleBookmarks();
+        const shown = this.bookmarkVisibleLimit(all.length);
+        if (!this.bookmarkRowWindow(shown)) return false;
+
+        const rows = all.slice(0, shown);
+        if (!rows.length) return false;
+        const keys = rows.map((b) => this.bookmarkKey(b));
+        let index = this._bmKeyboardKey ? keys.indexOf(this._bmKeyboardKey) : -1;
+        if (index < 0) index = delta > 0 ? 0 : keys.length - 1;
+        else {
+            index += delta;
+            if (index < 0) index = keys.length - 1;
+            else if (index >= keys.length) index = 0;
+        }
+        this._bmKeyboardKey = keys[index];
+        this.scrollBookmarkRowIntoWindow(index, keys.length);
+        this.applyBookmarkKeyboardSelection(this.getBookmarkKeyboardRows());
+        return true;
+    }
+
+    /**
+     * Put row `index` on screen, drawing the window around it if it is outside.
+     *
+     * A third of the way down rather than at the very edge: landing a selection
+     * on the last visible pixel is the reason "the next one" feels like a jump.
+     */
+    scrollBookmarkRowIntoWindow(index, total) {
+        const list = document.getElementById('config-bm-list');
+        if (!list) return;
+        const host = this.bookmarkListScrollHost();
+        const rowHeight = this.bookmarkRowHeight();
+        const box = list.getBoundingClientRect();
+        const viewport = host ? host.clientHeight : window.innerHeight;
+        const listTop = host
+            ? host.scrollTop + (box.top - host.getBoundingClientRect().top)
+            : window.scrollY + box.top;
+        const rowTop = listTop + index * rowHeight;
+        const current = host ? host.scrollTop : window.scrollY;
+        const above = rowTop < current + rowHeight;
+        const below = rowTop > current + viewport - rowHeight * 2;
+        if (!above && !below) return;
+        const target = Math.max(0, Math.round(rowTop - viewport / 3));
+        if (host) host.scrollTop = target;
+        else window.scrollTo(0, target);
+        // The scroll listener repaints on the next frame; the selection has to
+        // land on rows that exist now, so the window is drawn here as well.
+        const next = this.bookmarkRowWindow(total);
+        this._bmWindowKey = next ? `${next.start}-${next.end}` : 'all';
+        this.repaintBookmarkRowsOnly();
     }
 
     focusBookmarkEditor() {
@@ -1647,6 +2021,13 @@ class DashboardConfig {
         const bookmark = this.findBookmarkByKey(key);
         if (!bookmark?.url) return;
         const href = this.dash.safeBookmarkOpenHref?.(bookmark.url) || bookmark.url;
+        // Honour the openInNewTab preference, which the dashboard grid already
+        // respects: opening from Config used to force a new tab whatever it
+        // said, so the setting only half applied.
+        if (this.dash?.settings?.openInNewTab === false) {
+            window.location.href = href;
+            return;
+        }
         window.open(href, '_blank', 'noopener,noreferrer');
         this.dash.recordBookmarkOpened?.(bookmark, undefined, 'config');
         this.refreshBookmarkUsageLine(key, bookmark);
@@ -1829,11 +2210,18 @@ class DashboardConfig {
         { tab: 'search', titleKey: 'config.helpCommandsTitle', fallback: 'Commands' },
         { tab: 'search', titleKey: 'config.helpKeyboardTitle', fallback: 'Keyboard' },
         { tab: 'health', titleKey: 'config.helpHealthTitle', fallback: 'Availability & health' },
-        { tab: 'health', titleKey: 'config.helpInboxTitle', fallback: 'Inbox' },
-        { tab: 'health', titleKey: 'config.helpInboxWorkTitle', fallback: 'Working through the inbox' },
+        { tab: 'monitoring', titleKey: 'config.helpHealthStatsTitle', fallback: 'Uptime, trends & statistics' },
+        { tab: 'monitoring', titleKey: 'config.helpNotificationsTitle', fallback: 'Alerts & notifications' },
+        // These three render on the Inbox tab, not on Health — jumping to one
+        // used to land a tab away from the thing it named.
+        { tab: 'inbox', titleKey: 'config.helpInboxTitle', fallback: 'Inbox' },
+        { tab: 'inbox', titleKey: 'config.helpInboxWorkTitle', fallback: 'Working through the inbox' },
+        { tab: 'inbox', titleKey: 'config.helpInboxTourTitle', fallback: 'The one-time tour' },
         { tab: 'data', titleKey: 'config.helpDataTitle', fallback: 'Backups, import & export' },
         { tab: 'data', titleKey: 'config.helpSelfHostingTitle', fallback: 'Self-hosting' },
-        { tab: 'about', titleKey: 'config.helpAboutTitle', fallback: 'About nextDash' },
+        // About is a section now, not a help tab, so it carries its own target
+        // rather than a `tab` the help view would fail to open.
+        { section: 'about', titleKey: 'config.helpAboutTitle', fallback: 'About nextDash' },
     ];
 
     subTabLabel(section, tab) {
@@ -1843,6 +2231,7 @@ class DashboardConfig {
             case 'appearance': return this.appearanceTabLabel(tab);
             case 'stats': return this.statsTabLabel(tab);
             case 'data-backups': return this.dbTabLabel(tab);
+            case 'bookmarks': return this.bmTabLabel(tab);
             case 'help': return this.helpTabLabel(tab);
             default: return tab;
         }
@@ -1879,13 +2268,13 @@ class DashboardConfig {
         { field: 'backgroundOpacity', labelKey: 'backgroundOpacityLabel', fallback: 'Opacity', section: 'appearance', subTab: 'general' },
         { field: 'showBackgroundDots', labelKey: 'showBackgroundDots', fallback: 'Show background dots', section: 'appearance', subTab: 'general' },
         { field: 'layoutVersion', labelKey: 'appearanceLayoutVersion', fallback: 'Layout', section: 'appearance', subTab: 'layout' },
-        { field: 'buttonBarPosition', labelKey: 'buttonBarPositionLabel', fallback: 'Button bar position', section: 'appearance', subTab: 'layout' },
+        { field: 'buttonBarPosition', labelKey: 'buttonBarPositionLabel', fallback: 'Button bar position', section: 'appearance', subTab: 'buttonbar' },
         { field: 'showIcons', labelKey: 'showIcons', fallback: 'Show bookmark icons', section: 'appearance', subTab: 'display' },
         { field: 'colorizeStatus', labelKey: 'colorizeStatus', fallback: 'Colour status on bookmark rows', section: 'appearance', subTab: 'display' },
         { field: 'animationsEnabled', labelKey: 'enableAnimations', fallback: 'Enable animations', section: 'appearance', subTab: 'display' },
-        { field: 'enableCustomTitle', labelKey: 'enableCustomTitle', fallback: 'Use a custom page title', section: 'appearance', subTab: 'branding' },
-        { field: 'customTitle', labelKey: 'customTitleLabel', fallback: 'Title', section: 'appearance', subTab: 'branding' },
-        { field: 'enableCustomFavicon', labelKey: 'uploadFaviconLabel', fallback: 'Custom favicon', section: 'appearance', subTab: 'branding' },
+        { field: 'enableCustomTitle', labelKey: 'enableCustomTitle', fallback: 'Use a custom page title', section: 'appearance', subTab: 'display' },
+        { field: 'customTitle', labelKey: 'customTitleLabel', fallback: 'Title', section: 'appearance', subTab: 'display' },
+        { field: 'enableCustomFavicon', labelKey: 'uploadFaviconLabel', fallback: 'Custom favicon', section: 'appearance', subTab: 'display' },
         { field: 'faviconRefreshPolicy', labelKey: 'faviconRefreshPolicyLabel', fallback: 'Refresh favicons', section: 'data-backups', subTab: 'icons' },
         { field: 'autoBackupEnabled', labelKey: 'autoBackupLabel', fallback: 'Automatic backups', section: 'data-backups', subTab: 'backups' },
     ];
@@ -1909,6 +2298,7 @@ class DashboardConfig {
         pushNotifyBackup: ['push', 'notification', 'backup'],
         pushNotifySubject: ['push', 'vapid', 'contact', 'email'],
         healthAutoRecheckEnabled: ['uptime', 'monitor', 'health', 'background', 'server'],
+        feedsEnabled: ['feed', 'rss', 'atom', 'fresh', 'new', 'blog'],
         healthAutoRecheckIntervalHours: ['uptime', 'monitor', 'health', 'interval', 'recheck'],
         statusRecheckIntervalMinutes: ['status', 'check', 'interval', 'ping', 'uptime'],
         statusOfflineRetries: ['offline', 'retry', 'retries', 'status'],
@@ -1919,11 +2309,13 @@ class DashboardConfig {
         updateCheckEnabled: ['update', 'github', 'release', 'version'],
         language: ['language', 'locale', 'translation', 'nederlands', 'deutsch', 'français'],
         deviceSpecificSettings: ['device', 'sync', 'local'],
-        showSyncToasts: ['sync', 'toast', 'notification'],
         inboxEnabled: ['inbox', 'triage', 'later'],
+        detectSoftNotFound: ['404', 'not found', 'rot', 'gone', 'dead'],
         pasteDestination: ['paste', 'clipboard', 'inbox'],
         pasteUrlQuickAdd: ['paste', 'clipboard', 'quick add'],
         columnsPerRow: ['columns', 'grid', 'layout'],
+        defaultCategorySpread: ['spread', 'width', 'columns', 'category', 'wide'],
+        categorySpreadResetScope: ['spread', 'reset', 'columns', 'category'],
         densityMode: ['density', 'spacing', 'compact'],
         categorySpacing: ['spacing', 'gap', 'density'],
         sideMargin: ['margin', 'padding', 'width'],
@@ -1949,6 +2341,7 @@ class DashboardConfig {
         openInNewTab: ['tab', 'window', 'target'],
         globalShortcuts: ['keyboard', 'shortcut', 'hotkey'],
         enableFuzzySuggestions: ['fuzzy', 'search', 'suggestion'],
+        shortcutOpenMode: ['shortcut', 'enter', 'open', 'typing', 'instant'],
         hyprMode: ['hypr', 'hyprland', 'wayland', 'linux'],
         allowLocalBookmarks: ['local', 'localhost', 'intranet', 'http'],
         enableCustomTitle: ['title', 'branding', 'name'],
@@ -2028,16 +2421,36 @@ class DashboardConfig {
                 });
             }
         });
+        // The Tips tab's panels are the catalogue's own groups, so they are read
+        // from it rather than listed a second time here — a hardcoded entry
+        // would name a heading the tab does not have the moment a group is
+        // renamed.
+        (window.ConfigHelpTips?.TIP_GROUPS || []).forEach((group, i) => {
+            const title = this.t(`config.${group.titleKey}`, group.titleFallback);
+            entries.push({
+                id: `help:tips:${i}`,
+                kind: 'help',
+                title,
+                subtitle: `${this.sectionLabel('help')} › ${this.helpTabLabel('tips')}`,
+                section: 'help',
+                subTab: 'tips',
+                helpTitle: title,
+                focusSelector: null,
+            });
+        });
         if (DashboardConfig.HELP_JUMP_PANELS?.length) {
             DashboardConfig.HELP_JUMP_PANELS.forEach((panel, i) => {
                 const title = this.t(panel.titleKey, panel.fallback);
+                const section = panel.section || 'help';
                 entries.push({
-                    id: `help:${panel.tab}:${i}`,
+                    id: `help:${panel.section || panel.tab}:${i}`,
                     kind: 'help',
                     title,
-                    subtitle: `${this.sectionLabel('help')} › ${this.helpTabLabel(panel.tab)}`,
-                    section: 'help',
-                    subTab: panel.tab,
+                    subtitle: panel.section
+                        ? this.sectionLabel(section)
+                        : `${this.sectionLabel('help')} › ${this.helpTabLabel(panel.tab)}`,
+                    section,
+                    subTab: panel.tab || null,
                     helpTitle: title,
                     focusSelector: null,
                 });
@@ -2046,9 +2459,44 @@ class DashboardConfig {
         return entries;
     }
 
+    /**
+     * Give every settings control an accessible name.
+     *
+     * The schema renders its labels as `<span class="config-field-label">`, not
+     * `<label for=…>`, so a screen reader in forms mode announced "combo box,
+     * 30" with nothing saying which setting that was — across all of Behavior
+     * and much of Appearance. Checkboxes were always fine; they wrap their input
+     * in a real `<label>`.
+     *
+     * Done here rather than at the ~30 render sites: the markup is generated in
+     * many places but always with the same shape, so one pass over the rendered
+     * panel names them all and cannot fall out of step with a new field.
+     */
+    labelSettingsControls(root) {
+        const panel = root || document.getElementById('config-section-panel');
+        if (!panel) return;
+        panel.querySelectorAll('.config-field').forEach((field) => {
+            const labelEl = field.querySelector('.config-field-label');
+            const name = labelEl?.textContent?.trim();
+            if (!name) return;
+            field.querySelectorAll('input:not([type="hidden"]), select, textarea').forEach((control) => {
+                // Never override a name the markup states for itself.
+                if (control.getAttribute('aria-label') || control.getAttribute('aria-labelledby')) return;
+                control.setAttribute('aria-label', name);
+                // A range reads out its raw number ("0.85") while the UI shows
+                // "85%", so give it the text the user can see.
+                if (control.type === 'range' && !control.getAttribute('aria-valuetext')) {
+                    const shown = field.querySelector('.config-range-value, output')?.textContent?.trim();
+                    if (shown) control.setAttribute('aria-valuetext', shown);
+                }
+            });
+        });
+    }
+
     cacheSettingsJumpFields() {
         const panel = document.getElementById('config-section-panel');
         if (!panel) return;
+        this.labelSettingsControls(panel);
         const section = this.section;
         const subTab = DashboardConfig.SUB_TAB_STATE[section] ? this[DashboardConfig.SUB_TAB_STATE[section]] : null;
         const subtitle = this.settingsJumpSubtitle(section, subTab);
@@ -2109,13 +2557,40 @@ class DashboardConfig {
         return [...byId.values()];
     }
 
+    /**
+     * What a field is currently set to, as text — for the search, and as the
+     * line under its title in the results.
+     *
+     * Searching only names and keywords answers "where is the check timeout"
+     * and not "which setting is on 8099" or "what did I set to Monitor", which
+     * is the question you have when something behaves unexpectedly and you do
+     * not know what it is called.
+     */
+    settingsJumpValueText(field) {
+        if (!field) return '';
+        const value = this.dash?.settings?.[field];
+        if (value === undefined || value === null || value === '') return '';
+        if (typeof value === 'boolean') {
+            return value ? this.t('config.on', 'On') : this.t('config.off', 'Off');
+        }
+        if (typeof value === 'number') return String(value);
+        if (typeof value === 'string') return value.length > 60 ? `${value.slice(0, 57)}…` : value;
+        return '';
+    }
+
     filterSettingsJumpEntries(query) {
         const q = String(query || '').trim().toLowerCase();
-        const all = this.getSettingsJumpEntries();
+        const all = this.getSettingsJumpEntries().map((entry) => {
+            const value = entry.kind === 'field' ? this.settingsJumpValueText(entry.field) : '';
+            return value ? { ...entry, value } : entry;
+        });
         if (!q) return all;
         // Keywords are matched but never shown, so a setting is reachable by
-        // the word people look for as well as the one it is labelled with.
-        return all.filter((e) => `${e.title} ${e.subtitle} ${e.keywords || ''}`.toLowerCase().includes(q));
+        // the word people look for as well as the one it is labelled with. The
+        // value is matched *and* shown: finding a setting by what it says is
+        // only useful if the result then confirms it.
+        return all.filter((e) => `${e.title} ${e.subtitle} ${e.keywords || ''} ${e.value || ''}`
+            .toLowerCase().includes(q));
     }
 
     isSettingsJumpOpen() {
@@ -2141,7 +2616,9 @@ class DashboardConfig {
                     role="option" aria-selected="${i === this._settingsJumpSelected ? 'true' : 'false'}"
                     data-settings-jump-index="${i}">
                     <span class="config-settings-jump-result-title">${esc(entry.title)}</span>
-                    <span class="config-settings-jump-result-sub">${esc(entry.subtitle)}</span>
+                    <span class="config-settings-jump-result-sub">${esc(entry.subtitle)}${entry.value
+                        ? ` · ${esc(entry.value)}`
+                        : ''}</span>
                 </li>`).join('')}
         </ul>`;
     }
@@ -2384,14 +2861,22 @@ class DashboardConfig {
         const activeNavId = `config-section-${this.section}`;
         const nav = DashboardConfig.SECTIONS.map((section) => {
             const active = section === this.section;
+            // The twinkle marks the way to this release's new setting: the
+            // section, then the sub-tab inside it, then the panel itself. Each
+            // step only has to get you to the next one, which is why the
+            // section carries it as well as the panel — the panel is three
+            // clicks deep and nobody goes looking for a setting they have not
+            // heard of.
+            const isNew = section === DashboardConfig.NEW_THIS_RELEASE.section;
+            const stars = isNew ? this.renderNewFeaturesPanelStars() : '';
             return `
-                <button type="button" class="config-nav-item${active ? ' is-active' : ''}"
+                <button type="button" class="config-nav-item${active ? ' is-active' : ''}${isNew ? ' config-nav-item--animated' : ''}"
                         role="tab" aria-selected="${active ? 'true' : 'false'}"
                         tabindex="${active ? '0' : '-1'}"
                         id="config-section-${esc(section)}"
                         aria-controls="${panelId}"
                         data-config-section="${esc(section)}">
-                    ${esc(this.sectionLabel(section))}
+                    ${esc(this.sectionLabel(section))}${stars}
                 </button>`;
         }).join('');
         const searchLabel = this.t('config.settingsSearchLabel', 'Find settings');
@@ -2456,6 +2941,9 @@ class DashboardConfig {
         }
         if (this.section === 'help') {
             return this.renderHelp();
+        }
+        if (this.section === 'about') {
+            return this.renderAbout();
         }
         // Other sections are rewritten in later phases; a placeholder keeps the
         // view navigable meanwhile.
@@ -2628,6 +3116,16 @@ class DashboardConfig {
         if (desc.tone === 'warn' && this._updateStatus?.latest && !this._updateStatusChecking) {
             statusMessage = this.t('config.updateCheckModalAvailable', '{latest} is available on GitHub.')
                 .replace(/\{latest\}/g, this._updateStatus.latest);
+        }
+        // When the check ran. The server caches its answer for 24 hours and
+        // ships checkedAt on every response, but nothing read it — so pressing
+        // "Check for updates" re-rendered the same sentence and the button read
+        // as broken, while the answer could be a day old.
+        const checkedAt = Number(this._updateStatus?.checkedAt) || 0;
+        if (statusMessage && checkedAt && !this._updateStatusChecking) {
+            const ago = this.formatRelative(checkedAt);
+            statusMessage = `${statusMessage} ${this.t('config.updateCheckedAt', '(checked {when})')
+                .replace('{when}', ago)}`;
         }
         const statusHidden = !statusMessage && !this._updateStatusChecking;
 
@@ -2811,413 +3309,47 @@ class DashboardConfig {
         return `<span class="config-new-features-panel-stars" aria-hidden="true">${'<span class="config-new-features-panel-star"></span>'.repeat(8)}</span>`;
     }
 
-    /** Catalog of feature spotlights shown on the overview. */
+    /**
+     * Catalog of feature spotlights shown on the overview.
+     *
+     * The entries live in static/data/overview-features.json: 42 of them, five
+     * strings each, and every one of those strings also exists in the locale
+     * files — so as code they were 48 KB of the config module that every visit
+     * downloaded to draw a panel most of them never scroll. Fetched once, on the
+     * first Overview render, and the panel simply does not appear until it is
+     * there; it is context, not work.
+     */
     overviewNewFeatures() {
-        return [
-            {
-                titleKey: 'config.overviewNewFeatureInboxTagsTitle',
-                titleFallback: 'Tags on inbox links, at last',
-                whatKey: 'config.overviewNewFeatureInboxTagsWhat',
-                whatFallback: 'Links saved with tags — from the browser extension, or captured with a tag already on them — kept those tags and showed you none of them. You could not see them, change them, or search for them.',
-                howKey: 'config.overviewNewFeatureInboxTagsHow',
-                howFallback: 'Tags now sit on the row. Click one to see only that tag, and click it again to go back. Right-click a link and choose Tags to edit them, search matches them along with the title and note, and both the CSV and JSON exports carry them.',
-                enableKey: 'config.overviewNewFeatureInboxTagsEnable',
-                enableFallback: 'Nothing to switch on. Any link that already had tags shows them from now on.',
-                ctaKey: 'config.overviewNewFeatureInboxTagsCta',
-                ctaFallback: 'Open the Inbox →',
-                go: { view: 'inbox' },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureInboxStatsTitle',
-                titleFallback: 'How much of the Inbox you actually use',
-                whatKey: 'config.overviewNewFeatureInboxStatsWhat',
-                whatFallback: 'An inbox is easy to fill and easy to stop emptying. Whether the links you save become bookmarks or quietly pile up was not something the view could tell you.',
-                howKey: 'config.overviewNewFeatureInboxStatsHow',
-                howFallback: 'The Stats button in the Inbox toolbar shows how many links you have added, promoted and deleted, what share of the ones you decided on became bookmarks, and how long a link sits there before you deal with it.',
-                enableKey: 'config.overviewNewFeatureInboxStatsEnable',
-                enableFallback: 'Nothing to switch on. The figures cover the whole life of your inbox.',
-                ctaKey: 'config.overviewNewFeatureInboxStatsCta',
-                ctaFallback: 'Open the Inbox →',
-                go: { view: 'inbox' },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureMonitoringTitle',
-                titleFallback: 'Watch a bookmark, not just check it',
-                whatKey: 'config.overviewNewFeatureMonitoringWhat',
-                whatFallback: 'A status check told you a link was broken the next time you happened to look. It could not tell you a site had been down all night, how often it goes down, or that its certificate expires on Friday.',
-                howKey: 'config.overviewNewFeatureMonitoringHow',
-                howFallback: 'Press c on a row in Health and choose Monitor. The server then checks it on its own interval, whether or not you have the dashboard open, and the row grows a heartbeat, an uptime percentage and an outage history. Say what "up" means for that page with a keyword or specific status codes, watch for it quietly turning into a different page, and get an alert on Slack, Telegram, Pushover and others when it goes down.',
-                enableKey: 'config.overviewNewFeatureMonitoringEnable',
-                enableFallback: 'Per bookmark, from the Health view. Alerts, check cadence and maintenance windows live on this tab.',
-                ctaKey: 'config.overviewNewFeatureMonitoringCta',
-                ctaFallback: 'Open Status & health →',
-                go: { section: 'behavior', behaviorTab: 'status' },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureWorkThroughTitle',
-                titleFallback: 'Clear the Health list one bookmark at a time',
-                whatKey: 'config.overviewNewFeatureWorkThroughWhat',
-                whatFallback: 'Filtering to Broken tells you what is wrong and then leaves every fix costing the same three moves: find the row again after the list redraws, aim at its action, decide.',
-                howKey: 'config.overviewNewFeatureWorkThroughHow',
-                howFallback: 'Open Health and press f, or use the Work through button. One bookmark fills the screen with its actions large — re-check, open, delete, skip — and j and k move between them. Esc leaves you on the row you had reached, so dipping in for three fixes and back out is not a mode switch.',
-                enableKey: 'config.overviewNewFeatureWorkThroughEnable',
-                enableFallback: 'Nothing to switch on. It works on whatever the current filter shows.',
-                ctaKey: 'config.overviewNewFeatureWorkThroughCta',
-                ctaFallback: 'Open Health →',
-                go: { view: 'health' },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureThemePreviewTitle',
-                titleFallback: 'Try a theme on before you keep it',
-                whatKey: 'config.overviewNewFeatureThemePreviewWhat',
-                whatFallback: 'Finding out what a theme looked like meant switching to it, then switching back if you did not like it — and doing that again for the next one.',
-                howKey: 'config.overviewNewFeatureThemePreviewHow',
-                howFallback: 'Open the Theme list under Appearance and move through it: the dashboard behind takes on each theme as you go. Press Esc or click away and you are back where you started. There are 23 new themes to look through as well.',
-                enableKey: 'config.overviewNewFeatureThemePreviewEnable',
-                enableFallback: 'Nothing to switch on. Your choice is only saved once you pick one.',
-                ctaKey: 'config.overviewNewFeatureThemePreviewCta',
-                ctaFallback: 'Open Appearance →',
-                go: { section: 'appearance', appearanceTab: 'general' },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureServerLogTitle',
-                titleFallback: 'Read the server log without leaving nextDash',
-                whatKey: 'config.overviewNewFeatureServerLogWhat',
-                whatFallback: 'When something went wrong there was nothing to look at. Finding out why an import failed or a link check never ran meant reaching the machine nextDash runs on.',
-                howKey: 'config.overviewNewFeatureServerLogHow',
-                howFallback: 'Data & backups › Server log lists what the server has been doing, keeps itself up to date every few seconds if you want, and colours warnings and errors so they are easy to spot. Search looks through everything kept.',
-                enableKey: 'config.overviewNewFeatureServerLogEnable',
-                enableFallback: 'Nothing to switch on. Limit it by age or by number of entries, and clear the whole lot whenever you like.',
-                ctaKey: 'config.overviewNewFeatureServerLogCta',
-                ctaFallback: 'Open Server log →',
-                go: { section: 'data-backups', dbTab: 'logs' },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureSettingsSearchTitle',
-                titleFallback: 'Search finds every setting, not just the ones you have seen',
-                whatKey: 'config.overviewNewFeatureSettingsSearchWhat',
-                whatFallback: 'Looking for “webhook” found nothing at all unless you happened to have opened that tab before, which is the opposite of what a search is for.',
-                howKey: 'config.overviewNewFeatureSettingsSearchHow',
-                howFallback: 'Every setting is searchable the moment you open Config, and settings answer to more than their exact label — “uptime”, “wallpaper” and “hotkey” each find the right one even though those words are nowhere on screen.',
-                enableKey: 'config.overviewNewFeatureSettingsSearchEnable',
-                enableFallback: 'Nothing to switch on. Press Ctrl/Cmd + Shift + K anywhere in Config, or use Find settings under the section list.',
-                ctaKey: 'config.overviewNewFeatureSettingsSearchCta',
-                ctaFallback: 'Find a setting →',
-                go: { section: 'help', helpTab: 'config' },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureChangedSettingsTitle',
-                titleFallback: 'See what you have changed from the standard',
-                whatKey: 'config.overviewNewFeatureChangedSettingsWhat',
-                whatFallback: 'Working out why your dashboard behaves differently from the guide meant opening every tab and looking for a ↺ beside each setting.',
-                howKey: 'config.overviewNewFeatureChangedSettingsHow',
-                howFallback: 'At a glance now says how many settings differ from the standard and takes you to them. Each tab of settings gained Only changed, and each group a Reset panel that puts the whole lot back at once.',
-                enableKey: 'config.overviewNewFeatureChangedSettingsEnable',
-                enableFallback: 'Nothing to switch on. The line stays out of the way while everything is still standard.',
-                ctaKey: 'config.overviewNewFeatureChangedSettingsCta',
-                ctaFallback: 'Open Behavior →',
-                go: { section: 'behavior', behaviorTab: 'general' },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureToolbarGroupsTitle',
-                titleFallback: 'Toolbar & tabs is three groups, not one long list',
-                whatKey: 'config.overviewNewFeatureToolbarGroupsWhat',
-                whatFallback: 'Thirteen near-identical “Show the … button” tick boxes in a row, with no way to tell which meant the strip at the top and which the bar at the bottom.',
-                howKey: 'config.overviewNewFeatureToolbarGroupsHow',
-                howFallback: 'They are split into the header and the two halves of the button bar, so the group a setting sits in tells you where to look for it on screen. Each group has Show all and Hide all with a count of what is showing.',
-                enableKey: 'config.overviewNewFeatureToolbarGroupsEnable',
-                enableFallback: 'Nothing to switch on — the settings themselves are unchanged, only how they are arranged.',
-                ctaKey: 'config.overviewNewFeatureToolbarGroupsCta',
-                ctaFallback: 'Open Toolbar & tabs →',
-                go: { section: 'appearance', appearanceTab: 'toolbar' },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureInboxExplainTitle',
-                titleFallback: 'The inbox explains itself, and its numbers add up',
-                whatKey: 'config.overviewNewFeatureInboxExplainWhat',
-                whatFallback: 'A snoozed link is hidden from the list but was still counted above it, so a tile reading 12 could open a list of 9 with nothing explaining the gap.',
-                howKey: 'config.overviewNewFeatureInboxExplainHow',
-                howFallback: 'Every count now means what you can act on right now, every pill carries its own, and a sentence under the toolbar says what the active filter selects. The ℹ beside Triage covers snoozing, promoting and the rest.',
-                enableKey: 'config.overviewNewFeatureInboxExplainEnable',
-                enableFallback: 'Nothing to switch on. An empty list now says which kind of empty it is, and long inboxes load as you scroll rather than a page per click.',
-                ctaKey: 'config.overviewNewFeatureInboxExplainCta',
-                ctaFallback: 'Open the inbox →',
-                go: { view: 'inbox' },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureHealthStatsTitle',
-                titleFallback: 'See how the whole collection is doing',
-                whatKey: 'config.overviewNewFeatureHealthStatsWhat',
-                whatFallback: 'The health view could describe one bookmark in detail and the whole set barely at all: twenty monitors meant twenty heartbeats and no answer to how the week went.',
-                howKey: 'config.overviewNewFeatureHealthStatsHow',
-                howFallback: 'The Monitored filter now opens with pooled uptime across every monitor, the least available ones, anything slower than last week, and every outage. The header draws the share of healthy bookmarks over the last 90 days.',
-                enableKey: 'config.overviewNewFeatureHealthStatsEnable',
-                enableFallback: 'Nothing to switch on, though the panel needs something monitored to describe. The trend line starts once you have opened the health view on two separate days.',
-                ctaKey: 'config.overviewNewFeatureHealthStatsCta',
-                ctaFallback: 'Open Health →',
-                go: { view: 'health', filter: 'monitored' },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureSpacingTitle',
-                titleFallback: 'Decide how much room the grid gives away',
-                whatKey: 'config.overviewNewFeatureSpacingWhat',
-                whatFallback: 'The gap between category rows and the empty band down both edges were both fixed, and on a wide screen they added up to a lot of nothing.',
-                howKey: 'config.overviewNewFeatureSpacingHow',
-                howFallback: 'Config → Appearance → Layout now has Category spacing and Page margins, each with Snug, Balanced and Airy.',
-                enableKey: 'config.overviewNewFeatureSpacingEnable',
-                enableFallback: 'Page margins start exactly where they always were. Category spacing is a little tighter than before — pick Airy for the old gap.',
-                ctaKey: 'config.overviewNewFeatureSpacingCta',
-                ctaFallback: 'Open Layout →',
-                go: { section: 'appearance', appearanceTab: 'layout' },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureStructureTrashTitle',
-                titleFallback: 'Deleted pages and categories come back',
-                whatKey: 'config.overviewNewFeatureStructureTrashWhat',
-                whatFallback: 'Deleting a page took its bookmarks with it and kept nothing anywhere, so the more one click destroyed, the less you could recover.',
-                howKey: 'config.overviewNewFeatureStructureTrashHow',
-                howFallback: 'Both now go to the trash for 30 days. A page is one entry — listed as “Page · 12 bookmarks” — and restoring brings the page, its categories and its bookmarks back in a single action.',
-                enableKey: 'config.overviewNewFeatureStructureTrashEnable',
-                enableFallback: 'Nothing to switch on. The delete toast also offers Undo for eight seconds, and a page returns to its original slot rather than as a copy nothing points at.',
-                ctaKey: 'config.overviewNewFeatureStructureTrashCta',
-                ctaFallback: 'Open the trash →',
-                go: { section: 'data-backups', dbTab: 'trash' },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureCategoryGridTitle',
-                titleFallback: 'Add a category from the grid itself',
-                whatKey: 'config.overviewNewFeatureCategoryGridWhat',
-                whatFallback: 'Making a category meant going into Config or through the bookmark form — both things you did on the way to something else.',
-                howKey: 'config.overviewNewFeatureCategoryGridHow',
-                howFallback: 'A + sits beside the A–Z / Rec chips in a category header, and holding c does the same from the keyboard. Both act on the page on screen, so neither asks which page you meant.',
-                enableKey: 'config.overviewNewFeatureCategoryGridEnable',
-                enableFallback: 'Nothing to switch on. Right-click a category header to rename or delete it, and a category you just made stays visible even with “hide empty categories” on.',
-                ctaKey: 'config.overviewNewFeatureCategoryGridCta',
-                ctaFallback: 'Try it on the dashboard →',
-                go: { closeConfig: true },
-            },
-            {
-                titleKey: 'config.overviewNewFeaturePageOverviewTitle',
-                titleFallback: 'Make a page from the pages overview',
-                whatKey: 'config.overviewNewFeaturePageOverviewWhat',
-                whatFallback: 'Adding a page lived in Config, away from the list of pages you were already looking at.',
-                howKey: 'config.overviewNewFeaturePageOverviewHow',
-                howFallback: 'Press , for the overview and use the New page row under the list — by click, by n, or by arrowing one stop past the last page.',
-                enableKey: 'config.overviewNewFeaturePageOverviewEnable',
-                enableFallback: 'Nothing to switch on. Creating takes you straight to the new page, which is where its first category gets added anyway.',
-                ctaKey: 'config.overviewNewFeaturePageOverviewCta',
-                ctaFallback: 'Try it on the dashboard →',
-                go: { closeConfig: true },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureHealthBulkTitle',
-                titleFallback: 'Fix a whole list of broken links at once',
-                whatKey: 'config.overviewNewFeatureHealthBulkWhat',
-                whatFallback: 'Health lists exactly what a clear-out starts from — broken, duplicate, stale — and then made you repair them one row at a time.',
-                howKey: 'config.overviewNewFeatureHealthBulkHow',
-                howFallback: 'Tick the box on any row, or press x to tick the one under the cursor and move on, X for everything the filter shows. A bar appears above the list with Set checking, Re-check, Open, Copy links and Delete.',
-                enableKey: 'config.overviewNewFeatureHealthBulkEnable',
-                enableFallback: 'Nothing to switch on. Deletes go to the trash, and a row that changed since the report was built is skipped rather than deleted.',
-                ctaKey: 'config.overviewNewFeatureHealthBulkCta',
-                ctaFallback: 'Open Health →',
-                go: { view: 'health' },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureBulkTagsTitle',
-                titleFallback: 'Tag several bookmarks at once',
-                whatKey: 'config.overviewNewFeatureBulkTagsWhat',
-                whatFallback: 'Tagging worked one bookmark at a time, so putting the same tag on eight rows meant eight rounds.',
-                howKey: 'config.overviewNewFeatureBulkTagsHow',
-                howFallback: 'Select some rows and press the toolbar’s Tags button. Every tag you already use is listed, with a tick when the whole selection has it and “on 2 of 3” when only some do.',
-                enableKey: 'config.overviewNewFeatureBulkTagsEnable',
-                enableFallback: 'Nothing to switch on. Clicking a tag the whole selection already has takes it off instead; setting a category lives in the Move button beside it.',
-                ctaKey: 'config.overviewNewFeatureBulkTagsCta',
-                ctaFallback: 'Try it on the dashboard →',
-                go: { closeConfig: true },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureFormCreateTitle',
-                titleFallback: 'Make a page or category while adding a bookmark',
-                whatKey: 'config.overviewNewFeatureFormCreateWhat',
-                whatFallback: 'Filing a bookmark somewhere that did not exist yet meant leaving the half-filled form, making the page or category in Config, and starting over.',
-                howKey: 'config.overviewNewFeatureFormCreateHow',
-                howFallback: 'Both dropdowns in the bookmark form lead with ➕ New page… and ➕ New category…. Picking one swaps the dropdown for a name box, and the new page or category is selected when you come back.',
-                enableKey: 'config.overviewNewFeatureFormCreateEnable',
-                enableFallback: 'Nothing to switch on. A category is made on whichever page the form is pointing at, including one you created moments earlier.',
-                ctaKey: 'config.overviewNewFeatureFormCreateCta',
-                ctaFallback: 'Add a bookmark →',
-                go: { openBookmarkForm: true },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureMultiSelectTitle',
-                titleFallback: 'Select several bookmarks with x and X',
-                whatKey: 'config.overviewNewFeatureMultiSelectWhat',
-                whatFallback: 'Bulk move and bulk delete used to live in the tag filter, so acting on several bookmarks meant they had to share a tag. Any rows will do now — x ticks one, X takes a whole category.',
-                howKey: 'config.overviewNewFeatureMultiSelectHow',
-                howFallback: 'Press x to tick the row under the cursor, X for the whole category, Shift+↑/↓ for a range, Ctrl/Cmd+A for everything on screen — or Ctrl+click and Shift+click with the mouse. Select is in the right-click menu too.',
-                enableKey: 'config.overviewNewFeatureMultiSelectEnable',
-                enableFallback: 'Nothing to switch on. A toolbar appears with Move, Open, Copy links and Delete; Escape clears the selection.',
-                ctaKey: 'config.overviewNewFeatureMultiSelectCta',
-                ctaFallback: 'Try it on the dashboard →',
-                go: { closeConfig: true },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureTrashTitle',
-                titleFallback: 'Deleted bookmarks are recoverable',
-                whatKey: 'config.overviewNewFeatureTrashWhat',
-                whatFallback: 'Deleting a bookmark used to be final. It now goes to a trash and stays there for 30 days before going for good.',
-                howKey: 'config.overviewNewFeatureTrashHow',
-                howFallback: 'Restore puts a bookmark back on its own page at its old position. Delete forever and Empty trash clear it early.',
-                enableKey: 'config.overviewNewFeatureTrashEnable',
-                enableFallback: 'On by default, and it covers every delete — including a bulk delete of twenty rows at once. Under Config → Data & backups → Trash.',
-                ctaKey: 'config.overviewNewFeatureTrashCta',
-                ctaFallback: 'Open the trash →',
-                go: { section: 'data-backups', dbTab: 'trash' },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureHealthContextMenuTitle',
-                titleFallback: 'Right-click a health row',
-                whatKey: 'config.overviewNewFeatureHealthContextMenuWhat',
-                whatFallback: 'The nine actions behind a health row’s More button were reachable only by hovering the row and finding the button.',
-                howKey: 'config.overviewNewFeatureHealthContextMenuHow',
-                howFallback: 'Right-click any row in the Health view to open that same menu at the cursor, the way a bookmark on the dashboard already did. Shift and right-click still gives you the browser’s own menu.',
-                enableKey: 'config.overviewNewFeatureHealthContextMenuEnable',
-                enableFallback: 'Nothing to switch on — it is simply there. The ⋯ button and the m key keep working as before.',
-                ctaKey: 'config.overviewNewFeatureHealthContextMenuCta',
-                ctaFallback: 'Open Health →',
-                go: { view: 'health' },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureMonitorEmphasisTitle',
-                titleFallback: 'Monitored bookmarks stand out',
-                whatKey: 'config.overviewNewFeatureMonitorEmphasisWhat',
-                whatFallback: 'A bookmark set to Monitor now shows its status on the dashboard, the way a Periodic one always did — and you can say how much it should stand out.',
-                howKey: 'config.overviewNewFeatureMonitorEmphasisHow',
-                howFallback: 'Right-click a bookmark and pick Show in Health to jump straight to its row, from the dashboard or from Config → Bookmarks.',
-                enableKey: 'config.overviewNewFeatureMonitorEmphasisEnable',
-                enableFallback: 'Set to draw the eye only when something is down. Choose Always or Never under Config → Behavior → Status & health.',
-                ctaKey: 'config.overviewNewFeatureMonitorEmphasisCta',
-                ctaFallback: 'Open Status & health →',
-                go: { section: 'behavior', behaviorTab: 'status' },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureSideRailTitle',
-                titleFallback: 'Button bar position',
-                whatKey: 'config.overviewNewFeatureSideRailWhat',
-                whatFallback: 'The add, search, commands, and finders buttons can float center-bottom, dock into either bottom corner, or stand as a vertical rail down the left edge.',
-                howKey: 'config.overviewNewFeatureSideRailHow',
-                howFallback: 'Pick a position under Config → Appearance → Layout, or run :buttonbar from the command palette. The bar moves as you choose — no reload.',
-                enableKey: 'config.overviewNewFeatureSideRailEnable',
-                enableFallback: 'The side rail keeps the space under your bookmarks clear, which pays off on wide screens.',
-                ctaKey: 'config.overviewNewFeatureSideRailCta',
-                ctaFallback: 'Open Layout →',
-                go: { section: 'appearance', appearanceTab: 'layout' },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureBookmarkFormTitle',
-                titleFallback: 'Shared bookmark form',
-                whatKey: 'config.overviewNewFeatureBookmarkFormWhat',
-                whatFallback: 'Add and edit bookmarks in one centered modal — from the dashboard, Health, Inbox, Config, and search.',
-                howKey: 'config.overviewNewFeatureBookmarkFormHow',
-                howFallback: 'Press +, Shift+B, or Ctrl+Shift+A to open the form. Use Create + New to save and immediately add another; the grid updates behind the modal.',
-                enableKey: 'config.overviewNewFeatureBookmarkFormEnable',
-                enableFallback: 'Press ! for the full cheat sheet. Edit a row with ; or from Health and Inbox action bars.',
-                ctaKey: 'config.overviewNewFeatureBookmarkFormCta',
-                ctaFallback: 'Add a bookmark →',
-                go: { openBookmarkForm: true },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureUpdateCheckTitle',
-                titleFallback: 'GitHub update check',
-                whatKey: 'config.overviewNewFeatureUpdateCheckWhat',
-                whatFallback: 'nextDash can compare your running version with GitHub once a day — a dot on ★, a toast while you are actively using the app, and a manual check in the ★ modal and Config → Overview.',
-                howKey: 'config.overviewNewFeatureUpdateCheckHow',
-                howFallback: 'Press Check for updates in the ★ modal header or on Config → Overview. When a newer release exists, open GitHub from the notice or dismiss it until the next version.',
-                enableKey: 'config.overviewNewFeatureUpdateCheckEnable',
-                enableFallback: 'On by default under Config → Behavior → Privacy. Turn off Check GitHub for new releases if you prefer no outbound request.',
-                ctaKey: 'config.overviewNewFeatureUpdateCheckCta',
-                ctaFallback: 'Open Privacy →',
-                go: { section: 'behavior' },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureBookmarksFiltersTitle',
-                titleFallback: 'Bookmarks filters & search',
-                whatKey: 'config.overviewNewFeatureBookmarksFiltersWhat',
-                whatFallback: 'Search, filter, and sort the full bookmark library from one list — with chips that show what is active and summary tiles that follow your filters.',
-                howKey: 'config.overviewNewFeatureBookmarksFiltersHow',
-                howFallback: 'Type in the search box (shortcuts match too), pick page or category from the dropdowns, or click a page, category, or tag on a row. Sort by last opened, most opened, or pinned first. Tick rows for bulk favicon refresh or CSV export.',
-                enableKey: 'config.overviewNewFeatureBookmarksFiltersEnable',
-                enableFallback: 'Open Config → Bookmarks. Scroll to load more rows; press o or double-click a row to open its URL.',
-                ctaKey: 'config.overviewNewFeatureBookmarksFiltersCta',
-                ctaFallback: 'Open Bookmarks →',
-                go: { section: 'bookmarks' },
-            },
-            {
-                titleKey: 'config.overviewNewFeaturePagesTagsTabsTitle',
-                titleFallback: 'Categories & tags first',
-                whatKey: 'config.overviewNewFeaturePagesTagsTabsWhat',
-                whatFallback: 'Pages & tags now opens on Categories, with Tags right beside it — the two lists you reach for most often.',
-                howKey: 'config.overviewNewFeaturePagesTagsTabsHow',
-                howFallback: 'Use [ and ] to cycle sub-tabs from anywhere in config, or click Categories or Tags in the strip. Pages, Finders, and Collections follow after.',
-                enableKey: 'config.overviewNewFeaturePagesTagsTabsEnable',
-                enableFallback: 'Open Config → Pages & tags — Categories is selected by default.',
-                ctaKey: 'config.overviewNewFeaturePagesTagsTabsCta',
-                ctaFallback: 'Open Pages & tags →',
-                go: { section: 'pages-tags' },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureKeyboardTitle',
-                titleFallback: 'Config keyboard navigation',
-                whatKey: 'config.overviewNewFeatureKeyboardWhat',
-                whatFallback: 'Move through every config section, sub-tab, and list from the keyboard — no mouse required.',
-                howKey: 'config.overviewNewFeatureKeyboardHow',
-                howFallback: 'Use j/k or arrow keys on the section rail, [ and ] for sub-tabs, and list keys on Pages & tags and Bookmarks. Ctrl/Cmd+Shift+K opens Find settings.',
-                enableKey: 'config.overviewNewFeatureKeyboardEnable',
-                enableFallback: 'Press ! for the full cheat sheet, or open Help → Config navigation.',
-                ctaKey: 'config.overviewNewFeatureKeyboardCta',
-                ctaFallback: 'Open Help →',
-                go: { section: 'help', helpTab: 'config' },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureFindSettingsTitle',
-                titleFallback: 'Find settings',
-                whatKey: 'config.overviewNewFeatureFindSettingsWhat',
-                whatFallback: 'Jump straight to any config section, sub-tab, help topic, or field you have visited.',
-                howKey: 'config.overviewNewFeatureFindSettingsHow',
-                howFallback: 'Press Ctrl/Cmd+Shift+K anywhere in config, or click Find settings below Help in the left nav. Type to filter, then Enter to go.',
-                enableKey: 'config.overviewNewFeatureFindSettingsEnable',
-                enableFallback: 'The shortcut works on every config section; the nav button is always below Help.',
-                ctaKey: 'config.overviewNewFeatureFindSettingsCta',
-                ctaFallback: 'Try Find settings →',
-                go: { section: 'overview' },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureBookmarkPagesTitle',
-                titleFallback: 'Page-scoped bookmark categories',
-                whatKey: 'config.overviewNewFeatureBookmarkPagesWhat',
-                whatFallback: 'Each page keeps its own category list. The Bookmarks filter shows only categories for the page you pick.',
-                howKey: 'config.overviewNewFeatureBookmarkPagesHow',
-                howFallback: 'Choose a page in the filter dropdown to scope categories and deep-link with #config/bookmarks/<pageId>. With All pages, categories show as Page · Category.',
-                enableKey: 'config.overviewNewFeatureBookmarkPagesEnable',
-                enableFallback: 'Open Config → Bookmarks and use the page filter at the top of the list.',
-                ctaKey: 'config.overviewNewFeatureBookmarkPagesCta',
-                ctaFallback: 'Open Bookmarks →',
-                go: { section: 'bookmarks' },
-            },
-            {
-                titleKey: 'config.overviewNewFeatureRandomThemeTitle',
-                titleFallback: 'Random theme',
-                whatKey: 'config.overviewNewFeatureRandomThemeWhat',
-                whatFallback: 'Let nextDash pick a different built-in theme from the pool instead of always showing your saved choice. Your saved theme remains the default whenever random is off.',
-                howKey: 'config.overviewNewFeatureRandomThemeHow',
-                howFallback: 'Choose Off (always your saved theme), On page refresh (new pick on each reload), or On view change (new pick when switching between bookmarks, config, inbox, health, or dashboard pages). With auto dark mode, only matching light or dark variants are eligible. While random is on, a Currently showing hint names the active theme.',
-                enableKey: 'config.overviewNewFeatureRandomThemeEnable',
-                enableFallback: 'Open Config → Appearance → Theme and set Random theme to the mode you want.',
-                ctaKey: 'config.overviewNewFeatureRandomThemeCta',
-                ctaFallback: 'Open Appearance →',
-                go: { section: 'appearance', appearanceTab: 'general' },
-            },
-        ];
+        if (Array.isArray(this._overviewFeatures)) return this._overviewFeatures;
+        void this.loadOverviewFeatures();
+        return [];
+    }
+
+    /** Fetch the catalog once and repaint the panel when it lands. */
+    loadOverviewFeatures() {
+        if (this._overviewFeaturesPromise) return this._overviewFeaturesPromise;
+        // Versioned by the app fingerprint rather than a content hash: the asset
+        // hasher covers .js and .css only, and this is data — the same route the
+        // what's-new files take.
+        const version = document.querySelector('meta[name="nextdash-app-version"]')?.content || '';
+        const url = version
+            ? `/static/data/overview-features.json?v=${encodeURIComponent(version)}`
+            : '/static/data/overview-features.json';
+        this._overviewFeaturesPromise = fetch(url)
+            .then((res) => (res.ok ? res.json() : null))
+            .then((doc) => {
+                const list = Array.isArray(doc?.features) ? doc.features : [];
+                this._overviewFeatures = list;
+                if (list.length) this.repaintOverviewNewFeatures();
+                return list;
+            })
+            .catch(() => {
+                // An empty catalog renders no panel, which is what an install
+                // with nothing to announce looks like anyway.
+                this._overviewFeatures = [];
+                return [];
+            });
+        return this._overviewFeaturesPromise;
     }
 
     /** A few headline numbers, with the full report a click away. */
@@ -3553,6 +3685,23 @@ class DashboardConfig {
                     return;
                 }
             }
+            // Pages & tags has its own strip too, and was the one section a
+            // spotlight could name a tab for and not reach it.
+            if (target.ptTab && target.section === 'pages-tags') {
+                this.ptTab = target.ptTab;
+                if (this.section === 'pages-tags') {
+                    this.render();
+                    return;
+                }
+            }
+            // Bookmarks has a strip too, now that its settings live on one.
+            if (target.bmTab && target.section === 'bookmarks') {
+                this.bmTab = target.bmTab;
+                if (this.section === 'bookmarks') {
+                    this.render();
+                    return;
+                }
+            }
             // Data & backups has its own strip, same as Behavior: set the field
             // the strip reads before the section renders.
             if (target.dbTab && target.section === 'data-backups') {
@@ -3595,11 +3744,28 @@ class DashboardConfig {
         this.stopServerLogTimer();
         this.section = section;
         this._trackAction('section', { section, via });
+        // The bookmark list's renderers arrive on demand. Waiting for them is
+        // better than drawing a placeholder and repainting over it: the second
+        // paint would tear down whatever the reader had already reached for.
+        // Normally they are here already — the fetch starts when config opens.
+        if (section === 'bookmarks' && typeof this.renderBookmarksList !== 'function') {
+            void this.ensureBookmarkRenderers().then(() => {
+                if (this.section !== 'bookmarks') return;
+                this.render();
+                this.restoreConfigHash();
+            });
+            return;
+        }
         this.render();
         this.restoreConfigHash();
     }
 
     bindSectionNav(container) {
+        // The rail survives a section switch now, so binding it again would add
+        // a second handler to the same buttons on every render.
+        const nav = container.querySelector('.config-nav-column') || container;
+        if (nav.dataset.navBound === 'true') return;
+        nav.dataset.navBound = 'true';
         const buttons = [...container.querySelectorAll('[data-config-section]')];
         const searchBtn = container.querySelector('[data-config-action="settings-jump"]');
         const focusables = searchBtn ? [...buttons, searchBtn] : buttons;
@@ -3730,10 +3896,22 @@ class DashboardConfig {
         return `${(n / (1024 * 1024)).toFixed(1)} MB`;
     }
 
-    formatRelative(iso) {
-        const then = Date.parse(iso);
+    /**
+     * A moment, relative to now, in either direction.
+     *
+     * It spoke only the past: everything went through `now - then` and came back
+     * as "…ago", so the next scheduled backup — six days off — reported as "just
+     * now", the negative difference falling straight into the under-a-minute
+     * branch. Accepts a timestamp as well as a string, because the one caller
+     * that needed the future was already handing it a parsed number and got an
+     * empty string back for its trouble.
+     */
+    formatRelative(when) {
+        const then = typeof when === 'number' ? when : Date.parse(when);
         if (!Number.isFinite(then)) return '';
-        const mins = Math.round((Date.now() - then) / 60000);
+        const diffMins = Math.round((Date.now() - then) / 60000);
+        if (diffMins < 0) return this.formatRelativeAhead(-diffMins);
+        const mins = diffMins;
         if (mins < 1) return this.t('config.backupJustNow', 'just now');
         if (mins < 60) return this.t('config.backupMinutesAgo', '{n} min ago').replace('{n}', String(mins));
         const hours = Math.round(mins / 60);
@@ -3742,21 +3920,46 @@ class DashboardConfig {
         return this.t('config.backupDaysAgo', '{n}d ago').replace('{n}', String(days));
     }
 
+    /** The future half of formatRelative, in the same steps. */
+    formatRelativeAhead(mins) {
+        if (mins < 1) return this.t('config.backupInAMoment', 'in a moment');
+        if (mins < 60) return this.t('config.backupInMinutes', 'in {n} min').replace('{n}', String(mins));
+        const hours = Math.round(mins / 60);
+        if (hours < 24) return this.t('config.backupInHours', 'in {n}h').replace('{n}', String(hours));
+        const days = Math.round(hours / 24);
+        return this.t('config.backupInDays', 'in {n}d').replace('{n}', String(days));
+    }
+
     dataBackupsTiles() {
         const data = this._backupData;
         const backups = Array.isArray(data?.backups) ? data.backups : [];
         const enabled = Boolean(data?.enabled);
         const newest = backups[0];
 
+        // The outcome of the last scheduled attempt, which is not the same as the
+        // newest file: a run that failed leaves the old file exactly where it
+        // was, so the tile went on reading "3 days ago · Next in 4 days" while
+        // nothing had been written for a month.
+        const lastError = String(data?.lastRunError || '').trim();
+
         return [
             {
                 key: 'last-backup',
-                tone: newest ? 'good' : 'warn',
+                tone: lastError ? 'bad' : (newest ? 'good' : 'warn'),
                 label: this.t('config.tileLastBackup', 'Last backup'),
                 value: newest ? this.formatRelative(newest.createdAt) : this.t('config.backupNone', 'none'),
-                detail: enabled
-                    ? this.t('config.backupAutoOn', 'Auto-backup on')
-                    : this.t('config.backupAutoOff', 'Auto-backup off'),
+                // The server computes nextBackupAt and shipped it unread, so the
+                // tile could only restate that the feature is on. When the next
+                // one runs is the thing worth knowing.
+                detail: lastError
+                    ? this.t('config.backupLastFailed', 'Last run failed: {error}')
+                        .replace('{error}', lastError)
+                    : (enabled
+                        ? (Date.parse(data?.nextBackupAt || '')
+                            ? this.t('config.backupNextAt', 'Next {when}')
+                                .replace('{when}', this.formatRelative(data.nextBackupAt))
+                            : this.t('config.backupAutoOn', 'Auto-backup on'))
+                        : this.t('config.backupAutoOff', 'Auto-backup off')),
             },
             {
                 key: 'stored',
@@ -3789,8 +3992,6 @@ class DashboardConfig {
                         : this.t('config.recheckEveryDays', 'Every {n} days').replace('{n}', String(h / 24))));
             return `<option value="${h}" ${h === recheckHours ? 'selected' : ''}>${esc(label)}</option>`;
         }).join('');
-        const deviceSpecific = window.DeviceSettingsMerge?.isDeviceSpecificEnabled?.() === true
-            || (() => { try { return localStorage.getItem('deviceSpecificSettings') === 'true'; } catch { return false; } })();
 
         const faviconPolicy = s.faviconRefreshPolicy || 'monthly';
         const faviconPolicyOptions = [
@@ -3828,6 +4029,15 @@ class DashboardConfig {
         return this.renderDataBackupsMain();
     }
 
+    bmTabLabel(tab) {
+        const map = {
+            list: ['config.bmTabList', 'List'],
+            settings: ['config.bmTabSettings', 'Settings'],
+        };
+        const [key, fallback] = map[tab] || [tab, tab];
+        return this.t(key, fallback);
+    }
+
     dbTabLabel(tab) {
         const map = {
             backups: ['config.dbTabBackups', 'Backups & data'],
@@ -3843,25 +4053,25 @@ class DashboardConfig {
     /** Everything except the destructive actions, which live on their own tab. */
     renderDataBackupsMain() {
         const esc = (v) => this.dash.escapeHtml(v);
+        const s = this.dash.settings || {};
+        // Weekly is the default the server falls back to, and 0 is how an install
+        // that never chose says so — the option carries that value rather than 7
+        // so an untouched setting stays untouched.
+        const backupIntervalDays = Number(s.autoBackupIntervalDays) || 0;
+        const backupIntervalOptions = [[1, this.t('config.backupEveryDay', 'Every day')],
+            [7, this.t('config.backupEveryWeek', 'Every week')],
+            [14, this.t('config.backupEveryTwoWeeks', 'Every two weeks')],
+            [30, this.t('config.backupEveryMonth', 'Every month')]]
+            .map(([days, label]) => {
+                const selected = days === (backupIntervalDays || 7);
+                return `<option value="${days}" ${selected ? 'selected' : ''}>${esc(label)}</option>`;
+            }).join('');
+
         const loading = this._backupData == null;
         const tiles = loading
             ? `<p class="config-view-loading">${esc(this.t('config.backupLoading', 'Loading…'))}</p>`
             : `<div class="config-tiles" role="list">${this.dataBackupsTiles().map((t) => this.renderTile(t)).join('')}</div>`;
 
-        const s = this.dash.settings || {};
-        const recheckHours = Number(s.healthAutoRecheckIntervalHours) || 24;
-        const intervalOptions = [6, 12, 24, 48, 168].map((h) => {
-            const label = h < 24
-                ? this.t('config.recheckEveryHours', 'Every {n}h').replace('{n}', String(h))
-                : (h === 24
-                    ? this.t('config.recheckDaily', 'Daily')
-                    : (h === 168
-                        ? this.t('config.recheckWeekly', 'Weekly')
-                        : this.t('config.recheckEveryDays', 'Every {n} days').replace('{n}', String(h / 24))));
-            return `<option value="${h}" ${h === recheckHours ? 'selected' : ''}>${esc(label)}</option>`;
-        }).join('');
-        const deviceSpecific = window.DeviceSettingsMerge?.isDeviceSpecificEnabled?.() === true
-            || (() => { try { return localStorage.getItem('deviceSpecificSettings') === 'true'; } catch { return false; } })();
 
         return `
             ${tiles}
@@ -3874,8 +4084,12 @@ class DashboardConfig {
                 </div>
                 <label class="config-toggle">
                     <input type="checkbox" data-backup-toggle="autoBackupEnabled" ${s.autoBackupEnabled ? 'checked' : ''}>
-                    <span>${esc(this.t('config.autoBackupEnabledLabel', 'Automatic daily backups'))}</span>
+                    <span>${esc(this.t('config.autoBackupEnabledLabel', 'Create a backup automatically'))}</span>
                 </label>
+                <div class="config-field" style="margin-top:12px">
+                    <span class="config-field-label">${esc(this.t('config.autoBackupIntervalLabel', 'How often'))}</span>
+                    <select class="config-select" data-backup-select="autoBackupIntervalDays" ${s.autoBackupEnabled ? '' : 'disabled'}>${backupIntervalOptions}</select>
+                </div>
             </div>
 
             <div class="config-panel">
@@ -3896,9 +4110,11 @@ class DashboardConfig {
                 <p class="config-panel-note">${esc(this.t('config.csvExportDescription', 'Export every bookmark as a CSV file, or import bookmarks exported from a browser.'))}</p>
                 <div class="config-actions">
                     <button type="button" class="config-btn" data-backup-action="csv-export">${esc(this.t('config.csvExportBtn', 'Export bookmarks (CSV)'))}</button>
+                    <button type="button" class="config-btn" data-backup-action="csv-import">${esc(this.t('config.csvImportBtn', 'Import bookmarks (CSV)'))}</button>
                     <button type="button" class="config-btn" data-backup-action="browser-import">${esc(this.t('config.browserImportBtn', 'Import browser bookmarks…'))}</button>
                 </div>
                 <input type="file" id="config-browser-import-input" accept=".html,.htm" hidden>
+                <input type="file" id="config-csv-import-input" accept=".csv,text/csv" hidden>
             </div>
 
             <div class="config-panel">
@@ -3909,23 +4125,8 @@ class DashboardConfig {
                     <button type="button" class="config-btn" data-backup-action="settings-import">${esc(this.t('config.settingsImportBtn', 'Import settings…'))}</button>
                 </div>
                 <input type="file" id="config-settings-import-input" accept=".json" hidden>
-                <label class="config-toggle">
-                    <input type="checkbox" data-backup-toggle="deviceSpecificSettings" ${deviceSpecific ? 'checked' : ''}>
-                    <span>${esc(this.t('config.deviceSpecificSettings', 'Keep some settings specific to this device'))}</span>
-                </label>
             </div>
 
-            <div class="config-panel">
-                <h3 class="config-panel-title">${esc(this.t('config.statusRecheckInterval', 'Automatic health rechecks'))}</h3>
-                <label class="config-toggle">
-                    <input type="checkbox" data-backup-toggle="healthAutoRecheckEnabled" ${s.healthAutoRecheckEnabled ? 'checked' : ''}>
-                    <span>${esc(this.t('config.healthRecheckEnabledLabel', 'Recheck link health automatically'))}</span>
-                </label>
-                <div class="config-field" style="margin-top:12px">
-                    <span class="config-field-label">${esc(this.t('config.healthRecheckIntervalLabel', 'Interval'))}</span>
-                    <select class="config-select" data-backup-select="healthAutoRecheckIntervalHours" ${s.healthAutoRecheckEnabled ? '' : 'disabled'}>${intervalOptions}</select>
-                </div>
-            </div>
 
         `;
     }
@@ -4017,6 +4218,11 @@ class DashboardConfig {
             ['', this.t('config.logLevelAll', 'Everything')],
             ['warn', this.t('config.logLevelWarn', 'Warnings & errors')],
             ['error', this.t('config.logLevelError', 'Errors only')],
+            // Not a severity: activity lines are what someone did — a bookmark
+            // saved, a page added — and they have always been in here, mixed
+            // in with the requests. Finding them meant knowing to type
+            // "activity" into the search box.
+            ['activity', this.t('config.logLevelActivity', 'Activity only')],
         ].map(([v, label]) => `<option value="${esc(v)}" ${v === this.logLevelFilter ? 'selected' : ''}>${esc(label)}</option>`).join('');
 
         return `
@@ -4058,6 +4264,8 @@ class DashboardConfig {
                     <span class="config-field-label">${esc(this.t('config.logLevelLabel', 'Show'))}</span>
                     <select class="config-select" data-log-select="level">${levelOptions}</select>
                 </div>
+                <p class="config-panel-note" data-log-activity-note ${this.logLevelFilter === 'activity' ? '' : 'hidden'}>${esc(this.t('config.logActivityHint',
+                    'What was done — bookmarks saved, pages added, checks run — mixed into the same log as the requests. Pick Activity only to read just those, or turn categories on and off with NEXTDASH_ACTIVITY_LOG.'))}</p>
                 <div class="config-field">
                     <span class="config-field-label">${esc(this.t('config.logSearchLabel', 'Search'))}</span>
                     <input type="search" class="config-text" data-log-search
@@ -4317,6 +4525,11 @@ class DashboardConfig {
                 }
                 if (kind === 'level') {
                     this.logLevelFilter = value;
+                    // Toggled rather than repainted: rebuilding the panel to
+                    // show one line of explanation would take the focus off the
+                    // select the user just used.
+                    const note = container.querySelector('[data-log-activity-note]');
+                    if (note) note.hidden = value !== 'activity';
                     void this.loadServerLog({ reset: true });
                 }
             });
@@ -4471,12 +4684,53 @@ class DashboardConfig {
             'Deleted bookmarks stay here for {days} days, then go for good.'
         ).replace('{days}', String(days));
 
-        const items = Array.isArray(data.items) ? data.items : [];
-        if (!items.length) {
+        // A failed load is not an empty trash. Saying "the trash is empty" when
+        // the server could not be reached is the one message that stops someone
+        // from trying to recover what they just lost.
+        if (this._trashLoadFailed) {
+            return `
+                <p class="config-view-intro">${esc(intro)}</p>
+                <p class="config-panel-empty">${esc(this.t('config.trashLoadFailed',
+                    'The trash could not be loaded.'))}</p>
+                <div class="config-actions">
+                    <button type="button" class="config-btn" data-trash-action="reload">${esc(this.t('config.trashRetry', 'Try again'))}</button>
+                </div>`;
+        }
+
+        const allItems = Array.isArray(data.items) ? data.items : [];
+        if (!allItems.length) {
             return `
                 <p class="config-view-intro">${esc(intro)}</p>
                 <p class="config-panel-empty">${esc(this.t('config.trashEmpty', 'The trash is empty.'))}</p>
             `;
+        }
+
+        // Deleting twenty bookmarks in one bulk action and restoring them one
+        // by one, from a list that holds up to 500 with no way to search, is
+        // the case this view is for — and the only screen where the user is
+        // under time pressure.
+        const query = String(this._trashQuery || '').trim().toLowerCase();
+        const items = query ? allItems.filter((it) => this.trashItemHaystack(it).includes(query)) : allItems;
+        const selected = this._trashSelected instanceof Set ? this._trashSelected : new Set();
+
+        const toolbar = `
+            <div class="config-pt-toolbar">
+                <input type="search" class="config-text" data-trash-search
+                       value="${esc(this._trashQuery || '')}"
+                       placeholder="${esc(this.t('config.trashSearchPlaceholder', 'Search the trash…'))}"
+                       aria-label="${esc(this.t('config.trashSearchPlaceholder', 'Search the trash…'))}">
+                <span class="config-field-hint">${esc(this.t('config.trashShowing', '{n} of {total}')
+                    .replace('{n}', String(items.length)).replace('{total}', String(allItems.length)))}</span>
+            </div>`;
+
+        if (!items.length) {
+            return `
+                <p class="config-view-intro">${esc(intro)}</p>
+                <div class="config-panel">
+                    <h3 class="config-panel-title">${esc(this.t('config.trashTitle', 'Deleted items'))}</h3>
+                    ${toolbar}
+                    <p class="config-panel-empty">${esc(this.t('config.trashNoMatches', 'Nothing here matches that search.'))}</p>
+                </div>`;
         }
 
         const rows = items.map((item) => {
@@ -4502,6 +4756,10 @@ class DashboardConfig {
                 : '';
             return `
                 <li class="config-backup-row">
+                    <label class="config-toggle config-trash-select">
+                        <input type="checkbox" data-trash-select="${esc(item.id)}" ${selected.has(String(item.id)) ? 'checked' : ''}
+                               aria-label="${esc(this.t('config.trashSelectItem', 'Select {name}').replace('{name}', name))}">
+                    </label>
                     <div class="config-backup-meta">
                         <span class="config-backup-name">${esc(name)}</span>
                         <span class="config-backup-size">${esc(url)}</span>
@@ -4519,20 +4777,43 @@ class DashboardConfig {
             <p class="config-view-intro">${esc(intro)}</p>
             <div class="config-panel">
                 <h3 class="config-panel-title">${esc(this.t('config.trashTitle', 'Deleted items'))}</h3>
+                ${toolbar}
                 <ul class="config-backup-list">${rows}</ul>
                 <div class="config-actions">
+                    <button type="button" class="config-btn" data-trash-action="select-all">${esc(
+                        selected.size >= items.length
+                            ? this.t('config.trashSelectNone', 'Select none')
+                            : this.t('config.trashSelectAll', 'Select all'))}</button>
+                    <button type="button" class="config-btn" data-trash-action="restore-selected"${selected.size ? '' : ' disabled'}>${esc(
+                        this.t('config.trashRestoreSelected', 'Restore selected ({n})').replace('{n}', String(selected.size)))}</button>
                     <button type="button" class="config-btn config-btn--danger" data-trash-action="empty">${esc(this.t('config.trashEmptyBtn', 'Empty trash'))}</button>
                 </div>
             </div>
         `;
     }
 
+    /** Everything about a trash entry a search should match. */
+    trashItemHaystack(item) {
+        const kind = item?.kind || 'bookmark';
+        const parts = [
+            item?.bookmark?.name, item?.bookmark?.url, item?.bookmark?.category,
+            item?.pageName, kind,
+            item?.trashedPage?.page?.name,
+            item?.trashedCategory?.category?.name, item?.trashedCategory?.category?.id,
+        ];
+        if (Array.isArray(item?.bookmark?.tags)) parts.push(item.bookmark.tags.join(' '));
+        return parts.filter(Boolean).join(' ').toLowerCase();
+    }
+
     /** Fetch the trash and repaint the tab, when it is the one showing. */
     async loadTrash({ repaint = true } = {}) {
         try {
             this._trashData = await window.DashboardTrash.list();
+            this._trashLoadFailed = false;
         } catch (_error) {
+            // Kept apart from a genuinely empty trash — see renderDataTrash.
             this._trashData = { items: [], count: 0, retentionDays: 30 };
+            this._trashLoadFailed = true;
         }
         if (!repaint || this.dbTab !== 'trash') {
             return;
@@ -4585,7 +4866,81 @@ class DashboardConfig {
         }
     }
 
+    /**
+     * Redraw just the trash body, keeping the search caret where it was.
+     *
+     * Typing repaints on every keystroke, so without this the caret jumped to
+     * the start of the field after the first character.
+     */
+    repaintTrashBody({ keepFocus = false } = {}) {
+        const body = document.getElementById('config-db-body');
+        if (!body) return;
+        const search = body.querySelector('[data-trash-search]');
+        const caret = keepFocus && search ? search.selectionStart : null;
+        body.innerHTML = this.renderDbTab();
+        this.bindDataBackupsActions(body);
+        if (keepFocus) {
+            const next = body.querySelector('[data-trash-search]');
+            next?.focus?.();
+            if (caret != null) { try { next?.setSelectionRange(caret, caret); } catch { /* ignore */ } }
+        }
+    }
+
+    /** Restore several entries at once, reporting per-item outcome. */
+    async restoreSelectedTrash() {
+        const ids = [...(this._trashSelected instanceof Set ? this._trashSelected : new Set())];
+        if (!ids.length) return;
+
+        // One at a time rather than one bulk call: the server has no bulk
+        // restore endpoint, and a page whose id was reused legitimately refuses
+        // — so a single failure must not take the rest of the batch with it.
+        const failures = [];
+        for (const id of ids) {
+            try {
+                await window.DashboardTrash.restore(id);
+            } catch (error) {
+                failures.push(String(error?.message || id));
+            }
+        }
+        const restored = ids.length - failures.length;
+        this._trashSelected = new Set();
+
+        const pagesRes = await fetch('/api/pages').catch(() => null);
+        if (pagesRes?.ok) {
+            this.dash.pages = await pagesRes.json();
+            this.dash.pageNav?.renderPageNavigation?.();
+        }
+        await this.dash.data?.refreshAfterBookmarkMutation?.({});
+
+        if (failures.length) {
+            this.notify(this.t('config.trashRestoredSomeFailed',
+                'Restored {ok}. {failed} could not be restored and stay in the trash.')
+                .replace('{ok}', String(restored)).replace('{failed}', String(failures.length)), 'error');
+        } else {
+            this.notify(this.t('config.trashRestoredMany', 'Restored {n} items.')
+                .replace('{n}', String(restored)), 'success');
+        }
+        await this.loadTrash();
+    }
+
     async handleTrashAction(action, id) {
+        // Selection and search are view state, not server actions.
+        if (action === 'reload') { void this.loadTrash(); return; }
+        if (action === 'select-all') {
+            const data = this._trashData;
+            const all = Array.isArray(data?.items) ? data.items : [];
+            const query = String(this._trashQuery || '').trim().toLowerCase();
+            const shown = query ? all.filter((it) => this.trashItemHaystack(it).includes(query)) : all;
+            const current = this._trashSelected instanceof Set ? this._trashSelected : new Set();
+            // Selects what is on screen, so a search narrows what "all" means.
+            this._trashSelected = current.size >= shown.length
+                ? new Set()
+                : new Set(shown.map((it) => String(it.id)));
+            this.repaintTrashBody();
+            return;
+        }
+        if (action === 'restore-selected') { await this.restoreSelectedTrash(); return; }
+
         try {
             if (action === 'restore') {
                 // The response says what came back: a page restore also has to
@@ -4667,11 +5022,21 @@ class DashboardConfig {
         if (backups.length === 0) {
             return `<p class="config-panel-empty">${esc(this.t('config.backupListEmpty', 'No stored backups yet.'))}</p>`;
         }
+        // The rotation was invisible: the panel counted what exists and said
+        // nothing about a fourth pushing the oldest out — which makes "Make a
+        // backup now" a destructive button once the rotation is full, and the
+        // same is true of the copy taken before a restore.
+        const keep = Number(this._backupData?.keep) || 0;
+        const note = keep
+            ? `<p class="config-panel-note">${esc(this.t('config.backupRotationNote',
+                'The newest {keep} are kept. Making another — or restoring, which copies the current data first — removes the oldest.')
+                .replace('{keep}', String(keep)))}</p>`
+            : '';
         const rows = backups.map((b) => `
             <li class="config-backup-row">
                 <div class="config-backup-meta">
-                    <span class="config-backup-name">${esc(this.formatRelative(b.createdAt) || b.name)}</span>
-                    <span class="config-backup-size">${esc(this.formatBytes(b.size))}</span>
+                    <span class="config-backup-name" title="${esc(this.formatExactTime(b.createdAt))}">${esc(this.formatRelative(b.createdAt) || b.name)}</span>
+                    <span class="config-backup-size">${esc(this.formatBytes(b.size))}${esc(this.backupContentsLabel(b))}</span>
                 </div>
                 <div class="config-backup-row-actions">
                     <button type="button" class="config-btn config-btn--small" data-backup-item="restore" data-backup-name="${esc(b.name)}">${esc(this.t('config.autoBackupRestore', 'Restore'))}</button>
@@ -4680,7 +5045,33 @@ class DashboardConfig {
                 </div>
             </li>
         `).join('');
-        return `<ul class="config-backup-list">${rows}</ul>`;
+        return `${note}<ul class="config-backup-list">${rows}</ul>
+            <div class="config-actions">
+                <button type="button" class="config-btn config-btn--small" data-backup-action="download-all">${esc(
+                    this.t('config.backupDownloadAll', 'Download all'))}</button>
+            </div>`;
+    }
+
+    /** The exact moment, for the title on a row that shows "15h ago". */
+    formatExactTime(iso) {
+        const at = Date.parse(iso);
+        if (!Number.isFinite(at)) return '';
+        try {
+            return new Intl.DateTimeFormat(this.dash.settings?.language || undefined,
+                { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(at));
+        } catch {
+            return new Date(at).toISOString();
+        }
+    }
+
+    /** "· 412 bookmarks on 5 pages", or nothing where the archive was unreadable. */
+    backupContentsLabel(backup) {
+        const bookmarks = Number(backup?.bookmarks) || 0;
+        const pages = Number(backup?.pages) || 0;
+        if (!bookmarks && !pages) return '';
+        return ` · ${this.t('config.backupContents', '{bookmarks} bookmarks on {pages} pages')
+            .replace('{bookmarks}', this.statsNumber(bookmarks))
+            .replace('{pages}', this.statsNumber(pages))}`;
     }
 
     async loadBackupData() {
@@ -4747,6 +5138,22 @@ class DashboardConfig {
                 );
             });
         });
+        const search = container.querySelector('[data-trash-search]');
+        if (search) {
+            search.addEventListener('input', () => {
+                this._trashQuery = search.value;
+                this.repaintTrashBody({ keepFocus: true });
+            });
+        }
+        container.querySelectorAll('[data-trash-select]').forEach((box) => {
+            box.addEventListener('change', () => {
+                if (!(this._trashSelected instanceof Set)) this._trashSelected = new Set();
+                const id = String(box.getAttribute('data-trash-select'));
+                if (box.checked) this._trashSelected.add(id);
+                else this._trashSelected.delete(id);
+                this.repaintTrashBody();
+            });
+        });
         container.querySelectorAll('[data-backup-action]').forEach((btn) => {
             btn.addEventListener('click', () => this.handleBackupAction(btn.getAttribute('data-backup-action')));
         });
@@ -4774,6 +5181,7 @@ class DashboardConfig {
         };
         bindFileInput('#config-import-input', this.importBackup, ['.zip', '.json']);
         bindFileInput('#config-browser-import-input', this.importBrowserBookmarks, ['.html', '.htm']);
+        bindFileInput('#config-csv-import-input', this.importBookmarksCSV, ['.csv']);
         bindFileInput('#config-settings-import-input', this.importSettings, ['.json']);
 
         container.querySelectorAll('[data-backup-toggle]').forEach((input) => {
@@ -4795,6 +5203,7 @@ class DashboardConfig {
             case 'import': document.getElementById('config-import-input')?.click(); break;
             case 'csv-export': void this.exportBookmarksCSV(); break;
             case 'browser-import': document.getElementById('config-browser-import-input')?.click(); break;
+            case 'csv-import': document.getElementById('config-csv-import-input')?.click(); break;
             case 'settings-export': void this.exportSettings(); break;
             case 'settings-import': document.getElementById('config-settings-import-input')?.click(); break;
             case 'reset': void this.resetAllData(); break;
@@ -4802,16 +5211,39 @@ class DashboardConfig {
             case 'refresh-previews': void this.refreshAllPreviews(); break;
             case 'clear-previews': void this.clearAllPreviews(); break;
             case 'delete-bookmarks': void this.deleteAllBookmarks(); break;
+            case 'download-all': void this.downloadAllBackups(); break;
         }
+    }
+
+    /**
+     * Save every stored backup, one file at a time.
+     *
+     * Sequential rather than parallel: three archives of a megabyte or two are
+     * three navigations, and browsers throttle a burst of them into silently
+     * dropping all but the first. Sequential also means the count in the toast
+     * is the number that actually arrived.
+     */
+    async downloadAllBackups() {
+        const backups = Array.isArray(this._backupData?.backups) ? this._backupData.backups : [];
+        if (!backups.length) return;
+        let saved = 0;
+        for (const backup of backups) {
+            try {
+                await this.downloadStoredBackup(backup.name);
+                saved += 1;
+            } catch {
+                // Reported in the total below rather than one toast per file.
+            }
+        }
+        this.notify(saved === backups.length
+            ? this.t('config.backupDownloadAllDone', 'Saved {n} backups.').replace('{n}', String(saved))
+            : this.t('config.backupDownloadAllPartial', 'Saved {n} of {total} backups.')
+                .replace('{n}', String(saved)).replace('{total}', String(backups.length)),
+            saved === backups.length ? 'success' : 'error');
     }
 
     setBackupToggle(name, value) {
         const d = this.dash;
-        if (name === 'deviceSpecificSettings') {
-            try { localStorage.setItem('deviceSpecificSettings', value ? 'true' : 'false'); } catch { /* ignore */ }
-            this.notify(this.t('config.deviceSpecificSaved', 'Preference saved.'), 'success');
-            return;
-        }
         if (name === 'autoBackupEnabled' || name === 'healthAutoRecheckEnabled') {
             d.settings[name] = value;
             void this.saveSettingsWithFeedback();
@@ -4831,6 +5263,15 @@ class DashboardConfig {
             this.repaintBackupSection();
             return;
         }
+        if (name === 'autoBackupIntervalDays') {
+            this.dash.settings.autoBackupIntervalDays = Number(value) || 0;
+            // Saved through the same path as the recheck interval beside it,
+            // rather than a patch helper of its own.
+            void this.saveSettingsWithFeedback();
+            // The tile says when the next one is due, which this changes.
+            void this.loadBackupData();
+            return;
+        }
         if (name !== 'healthAutoRecheckIntervalHours') return;
         this.dash.settings.healthAutoRecheckIntervalHours = Number(value) || 24;
         void this.saveSettingsWithFeedback();
@@ -4839,9 +5280,18 @@ class DashboardConfig {
     /** Re-download every bookmark favicon across all pages. */
     async refreshAllFavicons() {
         if (!await this.confirmAction(this.t('config.bulkRefreshFaviconsConfirm', 'Download every bookmark icon again? This can take a while on a large dashboard.'), { confirmLabel: this.t('config.confirmContinue', 'Continue'), danger: false })) return;
+        // Via ConfigFaviconPrefetch, like the command palette and the quickstart
+        // do. Posting to /api/bookmarks/prefetch-icons directly cannot work: the
+        // endpoint is per-page and batched, and decodes the request body first,
+        // so a body-less POST was rejected with 400 every single time — the
+        // button always ended on "Could not refresh the favicons."
+        if (typeof window.ConfigFaviconPrefetch !== 'function') {
+            this.notify(this.t('config.bulkRefreshFaviconsError', 'Could not refresh the favicons.'), 'error');
+            return;
+        }
         try {
-            const res = await this.writeFetch('/api/bookmarks/prefetch-icons', { method: 'POST' });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const prefetch = new window.ConfigFaviconPrefetch((key) => this.t(key));
+            await prefetch.run(null, { refreshAll: true });
             this.notify(this.t('config.bulkRefreshFaviconsDone', 'Favicons refreshed.'), 'success');
             await this.dash.loadAllBookmarks?.();
             this.dash.renderDashboard?.({ animate: false });
@@ -5150,6 +5600,123 @@ class DashboardConfig {
         }
     }
 
+    /**
+     * Read back a CSV written by Export.
+     *
+     * Export has been one-way since it shipped: you could take the list out,
+     * tidy 200 rows in a spreadsheet — bulk-fixing categories, adding tags —
+     * and have no way to put it back. The browser-HTML import is not a
+     * substitute, because that format carries neither tags nor notes, which is
+     * exactly the kind of editing a spreadsheet is for.
+     *
+     * Rows land on the current page through the same endpoint the browser
+     * import uses, so URL de-duplication is the server's existing behaviour
+     * rather than a second implementation here.
+     */
+    async importBookmarksCSV(file) {
+        if (!/\.csv$/i.test(file.name)) {
+            this.notify(this.t('config.csvImportInvalidFile', 'Please choose a CSV file.'), 'error');
+            return;
+        }
+        let rows;
+        try {
+            rows = DashboardConfig.parseBookmarksCSV(await file.text());
+        } catch {
+            this.notify(this.t('config.csvImportError', 'Could not read that CSV file.'), 'error');
+            return;
+        }
+        if (!rows.length) {
+            this.notify(this.t('config.csvImportEmpty', 'No bookmarks found in that file.'), 'error');
+            return;
+        }
+
+        const pageId = Number(this.dash.currentPageId) || (this.dash.pages?.[0]?.id) || 1;
+        const ok = await this.confirmAction(
+            this.t('config.csvImportConfirm', 'Import {n} bookmarks onto the current page?')
+                .replace('{n}', String(rows.length)),
+            { confirmLabel: this.t('config.confirmImport', 'Import'), danger: false }
+        );
+        if (!ok) return;
+
+        try {
+            const res = await this.writeFetch('/api/bookmarks/import-browser', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pageId, bookmarks: rows }),
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const result = await res.json().catch(() => ({}));
+            this.notify(
+                this.t('config.csvImportDone', 'Imported {i}, skipped {s} duplicates. Reloading…')
+                    .replace('{i}', String(Number(result.imported) || 0))
+                    .replace('{s}', String(Number(result.skipped) || 0)),
+                'success'
+            );
+            setTimeout(() => window.location.reload(), 1000);
+        } catch {
+            this.notify(this.t('config.csvImportError', 'Could not import the bookmarks.'), 'error');
+        }
+    }
+
+    /**
+     * Parse the CSV that exportBookmarksCSV writes.
+     *
+     * Written by hand rather than split(',') because the export quotes every
+     * field: a note containing a comma, a quote (doubled, per RFC 4180) or a
+     * line break would otherwise tear a row apart. Column order is read from
+     * the header, so a spreadsheet that reorders columns still imports.
+     */
+    static parseBookmarksCSV(text) {
+        const src = String(text || '').replace(/^﻿/, '');
+        const rows = [];
+        let row = [];
+        let field = '';
+        let quoted = false;
+        for (let i = 0; i < src.length; i += 1) {
+            const ch = src[i];
+            if (quoted) {
+                if (ch === '"') {
+                    if (src[i + 1] === '"') { field += '"'; i += 1; }
+                    else quoted = false;
+                } else field += ch;
+                continue;
+            }
+            if (ch === '"') { quoted = true; continue; }
+            if (ch === ',') { row.push(field); field = ''; continue; }
+            if (ch === '\r') continue;
+            if (ch === '\n') { row.push(field); rows.push(row); row = []; field = ''; continue; }
+            field += ch;
+        }
+        if (field !== '' || row.length) { row.push(field); rows.push(row); }
+        if (rows.length < 2) return [];
+
+        const header = rows[0].map((h) => h.trim().toLowerCase());
+        const at = (name) => header.indexOf(name);
+        const iName = at('name');
+        const iUrl = at('url');
+        if (iUrl < 0) return [];   // without a URL there is no bookmark
+        const iCategory = at('category');
+        const iShortcut = at('shortcut');
+        const iTags = at('tags');
+        const iNotes = at('notes');
+
+        const out = [];
+        for (let r = 1; r < rows.length; r += 1) {
+            const cells = rows[r];
+            const url = String(cells[iUrl] ?? '').trim();
+            if (!url) continue;
+            const bookmark = { name: String(cells[iName] ?? '').trim() || url, url };
+            if (iCategory >= 0 && cells[iCategory]?.trim()) bookmark.category = cells[iCategory].trim();
+            if (iShortcut >= 0 && cells[iShortcut]?.trim()) bookmark.shortcut = cells[iShortcut].trim();
+            if (iNotes >= 0 && cells[iNotes]?.trim()) bookmark.note = cells[iNotes].trim();
+            if (iTags >= 0 && cells[iTags]?.trim()) {
+                bookmark.tags = cells[iTags].split(',').map((t) => t.trim()).filter(Boolean);
+            }
+            out.push(bookmark);
+        }
+        return out;
+    }
+
     async exportSettings() {
         try {
             const res = await fetch('/api/settings');
@@ -5204,6 +5771,11 @@ class DashboardConfig {
         const ok = await this.confirmAction(this.t('config.resetOnboardingConfirm', 'Replay the welcome tour and tips next time?'), { confirmLabel: this.t('config.confirmContinue', 'Continue'), danger: false });
         if (!ok) return;
         this.dash.settings.onboardingCompleted = false;
+        // The dialog promises the tour and the tips, and only the quick-start
+        // card came back: the tip and tour ids live in discoverabilityState,
+        // which onboardingCompleted does not touch. Persisted by the save
+        // below rather than on its own timer, so one click is one write.
+        window.DiscoverabilityState?.clearSeenTips?.({ persist: false });
         try {
             await this.dash.saveSettings?.();
             this.notify(this.t('config.resetOnboardingSuccess', 'Onboarding will replay next time.'), 'success');
@@ -5328,9 +5900,15 @@ class DashboardConfig {
         const theme = String(s.theme || 'dark').endsWith('-light') || s.theme === 'light' ? 'light' : 'dark';
         const tiles = `<div class="config-tiles config-tiles--text" role="list">${this.appearanceTiles().map((t) => this.renderTile(t)).join('')}</div>`;
 
+        // Small / Medium / Large names a size without showing one, so each
+        // button carries the letters at the size it sets. Hovering still applies
+        // the real thing to the dashboard behind the panel; this is what the
+        // choice looks like before you get that far.
         const fontOptions = DashboardConfig.FONT_SIZES.map((size) => {
             const active = size === this.currentFontSize();
-            return `<button type="button" class="config-choice${active ? ' is-active' : ''}" data-appearance-font="${esc(size)}" aria-pressed="${active ? 'true' : 'false'}">${esc(this.fontSizeLabel(size))}</button>`;
+            return `<button type="button" class="config-choice config-choice--art${active ? ' is-active' : ''}" data-appearance-font="${esc(size)}" aria-pressed="${active ? 'true' : 'false'}">`
+                + `${window.SettingArt?.render?.('fontSize', size) || ''}`
+                + `<span class="config-choice-label">${esc(this.fontSizeLabel(size))}</span></button>`;
         }).join('');
 
         const presets = (window.DashboardFont?.PRESET_IDS) || ['source-code-pro', 'jetbrains-mono', 'ibm-plex-mono', 'inter', 'ibm-plex-sans', 'dm-sans', 'system'];
@@ -5393,7 +5971,10 @@ class DashboardConfig {
 
         const apTabs = DashboardConfig.APPEARANCE_TABS.map((tab) => {
             const active = tab === this.appearanceTab;
-            return `<button type="button" class="config-subtab${active ? ' is-active' : ''}" role="tab" aria-selected="${active}" tabindex="${active ? 0 : -1}" aria-controls="config-appearance-body" data-appearance-tab="${esc(tab)}">${esc(this.appearanceTabLabel(tab))}</button>`;
+            const isNew = DashboardConfig.NEW_THIS_RELEASE.section === 'appearance'
+                && tab === DashboardConfig.NEW_THIS_RELEASE.tab;
+            const stars = isNew ? this.renderNewFeaturesPanelStars() : '';
+            return `<button type="button" class="config-subtab${active ? ' is-active' : ''}${isNew ? ' config-subtab--animated' : ''}" role="tab" aria-selected="${active}" tabindex="${active ? 0 : -1}" aria-controls="config-appearance-body" data-appearance-tab="${esc(tab)}">${esc(this.appearanceTabLabel(tab))}${stars}</button>`;
         }).join('');
 
         const shell = (body) => `
@@ -5407,14 +5988,14 @@ class DashboardConfig {
         if (this.appearanceTab === 'layout') {
             return shell(this.renderAppearanceLayoutBody());
         }
+        if (this.appearanceTab === 'buttonbar') {
+            return shell(this.renderAppearanceButtonBarBody());
+        }
         if (this.appearanceTab === 'display') {
             return shell(this.renderAppearanceDisplayBody());
         }
         if (this.appearanceTab === 'toolbar') {
             return shell(this.renderAppearanceToolbarBody());
-        }
-        if (this.appearanceTab === 'branding') {
-            return shell(this.renderAppearanceBrandingBody());
         }
 
         return shell(`
@@ -5480,7 +6061,7 @@ class DashboardConfig {
             </div>
 
             <div class="config-panel">
-                <h3 class="config-panel-title">${esc(this.t('config.backgroundLabel', 'Background'))}</h3>
+                <h3 class="config-panel-title">${esc(this.t('config.appearanceBackgroundTitle', 'Background'))}</h3>
                 <p class="config-panel-note">${esc(this.t('config.appearanceBackgroundNote', 'What sits behind the bookmarks. Auto follows your theme; Gradient and Image let you choose your own, and opacity fades it back so the text stays readable.'))}</p>
                 <div class="config-field">
                     <span class="config-field-label">${esc(this.t('config.backgroundLabel', 'Background'))}</span>
@@ -5501,6 +6082,9 @@ class DashboardConfig {
                     </label>
                     ${this.appearanceAff('showBackgroundDots')}
                 </div>
+                <div class="config-field-art" data-appearance-art="showBackgroundDots" data-art-kind="dots">${
+                    window.SettingArt?.render?.('dots', s.showBackgroundDots !== false) || ''
+                }</div>
             </div>`);
     }
 
@@ -5514,11 +6098,11 @@ class DashboardConfig {
             + this.renderControlPanels(this.panelsFor('appearance', 'toolbar'), 'behavior');
     }
 
+    /** The branding panel, appended to Display since it lost its own tab. */
     renderAppearanceBrandingBody() {
         const esc = (v) => this.dash.escapeHtml(v);
         const s = this.dash.settings || {};
         return `
-            ${this.renderChangedFilterBar('appearance', 'branding')}
             <div class="config-panel">
                 <h3 class="config-panel-title">${esc(this.t('config.generalGroupBranding', 'Branding'))}</h3>
                 <p class="config-panel-note">${esc(this.t('config.appearanceBrandingNote', 'The page title and favicon this dashboard uses in the browser tab.'))}</p>
@@ -5541,10 +6125,18 @@ class DashboardConfig {
             </div>`;
     }
 
-    renderAppearanceLayoutBody() {
+    /**
+     * The whole button bar on one tab: where it sits, and what is on it.
+     *
+     * The position was a panel on Layout and the twelve toggles were two panels
+     * on Toolbar & tabs, two tabs further along — so hiding a button and moving
+     * the bar that carries it were separate errands, and the second one was
+     * usually found by accident. Toolbar & tabs keeps the header strip, which
+     * is a different object.
+     */
+    renderAppearanceButtonBarBody() {
         const esc = (v) => this.dash.escapeHtml(v);
         const s = this.dash.settings || {};
-        const layout = s.layoutVersion === 'modern' ? 'modern' : 'classic';
 
         // These five are the only values the server accepts; it silently
         // rewrites anything else to 'bottom'. See models.go.
@@ -5559,17 +6151,18 @@ class DashboardConfig {
             ['side-left', this.t('config.buttonBarPositionSideLeftShort', 'Rail left')],
             ['side-right', this.t('config.buttonBarPositionSideRightShort', 'Rail right')],
         ];
+        // Five names for five places on the page, and no page to point at. Each
+        // button draws the dashboard with the bar where that option puts it.
         const barChoices = barPositions.map(([val, label]) =>
-            `<button type="button" class="config-choice${barPosition === val ? ' is-active' : ''}" data-appearance-barpos="${esc(val)}" aria-pressed="${barPosition === val}">${esc(label)}</button>`
+            `<button type="button" class="config-choice config-choice--art${barPosition === val ? ' is-active' : ''}" data-appearance-barpos="${esc(val)}" aria-pressed="${barPosition === val}">`
+            + `${window.SettingArt?.render?.('barPosition', val) || ''}`
+            + `<span class="config-choice-label">${esc(label)}</span></button>`
         ).join('');
 
-        // Bookmarks layout first, then the button bar, and the layout version
-        // last: the first two are what people come here to change, while the
-        // version switch is a one-off that mostly wants to be found rather than
-        // stepped over on the way down the tab.
+        // Where first, then what is on it: the position is the one choice that
+        // changes the shape of the thing the toggles below are describing.
         return `
-            ${this.renderChangedFilterBar('appearance', 'layout')}
-            ${this.renderControlPanels(this.panelsFor('appearance', 'layout'), 'behavior')}
+            ${this.renderChangedFilterBar('appearance', 'buttonbar')}
 
             <div class="config-panel">
                 <h3 class="config-panel-title">${esc(this.t('config.buttonBarPositionTitle', 'Button bar'))}</h3>
@@ -5582,14 +6175,32 @@ class DashboardConfig {
                 </div>
             </div>
 
+            ${this.renderControlPanels(this.panelsFor('appearance', 'buttonbar'), 'behavior')}`;
+    }
+
+    renderAppearanceLayoutBody() {
+        const esc = (v) => this.dash.escapeHtml(v);
+        const s = this.dash.settings || {};
+        const layout = s.layoutVersion === 'modern' ? 'modern' : 'classic';
+        // Bookmarks layout first and the layout version last: the grid is what
+        // people come here to change, while the version switch is a one-off
+        // that mostly wants to be found rather than stepped over on the way
+        // down the tab. The button bar left for a tab of its own.
+        return `
+            ${this.renderChangedFilterBar('appearance', 'layout')}
+            ${this.renderControlPanels(this.panelsFor('appearance', 'layout'), 'behavior')}
+
             <div class="config-panel">
                 <h3 class="config-panel-title">${esc(this.t('config.appearanceLayoutVersionTitle', 'Layout version'))}</h3>
                 <p class="config-panel-note">${esc(this.t('config.layoutVersionDescIntro', 'Choose a layout style. Classic is recommended; Modern is still in early beta.'))}</p>
                 <div class="config-field">
                     <span class="config-field-label">${esc(this.t('config.appearanceLayoutVersion', 'Layout'))}</span>
                     <div class="config-choices" role="group">
-                        <button type="button" class="config-choice${layout === 'classic' ? ' is-active' : ''}" data-appearance-layout="classic" aria-pressed="${layout === 'classic'}">${esc(this.t('config.layoutClassic', 'Classic'))}</button>
-                        <button type="button" class="config-choice${layout === 'modern' ? ' is-active' : ''}" data-appearance-layout="modern" aria-pressed="${layout === 'modern'}">${esc(this.t('config.layoutModern', 'Modern'))}</button>
+                        ${['classic', 'modern'].map((version) => `
+                        <button type="button" class="config-choice config-choice--art${layout === version ? ' is-active' : ''}" data-appearance-layout="${version}" aria-pressed="${layout === version}">
+                            ${window.SettingArt?.render?.('layoutVersion', version) || ''}
+                            <span class="config-choice-label">${esc(this.t(version === 'classic' ? 'config.layoutClassic' : 'config.layoutModern', version === 'classic' ? 'Classic' : 'Modern'))}</span>
+                        </button>`).join('')}
                     </div>
                     ${this.appearanceAff('layoutVersion')}
                     ${layout === 'modern'
@@ -5630,7 +6241,8 @@ class DashboardConfig {
                     ${this.appearanceAff('animationsEnabled')}
                 </div>
             </div>
-            ${this.renderControlPanels(this.panelsFor('appearance', 'display'), 'behavior')}`;
+            ${this.renderControlPanels(this.panelsFor('appearance', 'display'), 'behavior')}
+            ${this.renderAppearanceBrandingBody()}`;
     }
 
     /** Friendly name for a theme id, matching the old config's labels. */
@@ -5815,7 +6427,27 @@ class DashboardConfig {
                 // this as "close the config view" on the same key press.
                 e.stopPropagation();
                 close({ restore: true });
+                return;
             }
+            // Typeahead. A native select gives this for free and this
+            // hand-built replacement did not, which is felt at 150 themes:
+            // reaching Terracotta meant holding an arrow key or scrolling.
+            // Letters accumulate for a second so "te" beats "t", the way a
+            // select behaves, and a repeated single letter steps through the
+            // themes that start with it.
+            if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return;
+            e.preventDefault();
+            const now = Date.now();
+            if (now - (this._themeTypeaheadAt || 0) > 1000) this._themeTypeahead = '';
+            this._themeTypeaheadAt = now;
+            const repeat = this._themeTypeahead === e.key.toLowerCase();
+            this._themeTypeahead = repeat ? e.key.toLowerCase() : this._themeTypeahead + e.key.toLowerCase();
+            const query = this._themeTypeahead;
+            const labelOf = (option) => (option.textContent || '').trim().toLowerCase();
+            const from = repeat ? at + 1 : at;
+            const order = [...all.slice(from), ...all.slice(0, from)];
+            const hit = order.find((option) => labelOf(option).startsWith(query));
+            if (hit) highlight(hit);
         });
 
         // Leaving the picker entirely counts as cancelling. focusout fires
@@ -5896,6 +6528,30 @@ class DashboardConfig {
         this.bindSubTabStrip(container, 'data-appearance-tab', (tab) => {
             void this.switchAppearanceTab(tab);
         });
+        // The filter field is rendered by the shared bar, but this section is
+        // hand-written markup — so it is applied to the DOM after each render
+        // rather than while the controls are built.
+        this.applyDomSettingsFilter(container);
+        container.querySelectorAll('[data-settings-filter]').forEach((field) => {
+            if (field.dataset.domFilterBound === '1') return;
+            field.dataset.domFilterBound = '1';
+            let debounce = null;
+            const run = () => {
+                this.settingsFilter = field.value;
+                this.applyDomSettingsFilter(container);
+            };
+            field.addEventListener('input', () => {
+                clearTimeout(debounce);
+                debounce = setTimeout(run, 150);
+            });
+            field.addEventListener('keydown', (e) => {
+                if (e.key !== 'Escape' || !String(this.settingsFilter || '').trim()) return;
+                e.preventDefault();
+                e.stopPropagation();
+                field.value = '';
+                run();
+            });
+        });
         container.querySelectorAll('[data-tile-appearance-tab]').forEach((btn) => {
             btn.addEventListener('click', () => {
                 void this.switchAppearanceTab(btn.getAttribute('data-tile-appearance-tab'));
@@ -5906,7 +6562,34 @@ class DashboardConfig {
             btn.addEventListener('click', () => this.setQuickMode(btn.getAttribute('data-appearance-theme')));
         });
         container.querySelectorAll('[data-appearance-font]').forEach((btn) => {
-            btn.addEventListener('click', () => this.setFontSize(btn.getAttribute('data-appearance-font')));
+            // Small/Medium/Large says nothing about what the grid will look
+            // like, so pointing at one shows it and leaving puts it back. The
+            // theme picker already works this way; type is the other choice you
+            // cannot judge from its label.
+            const size = btn.getAttribute('data-appearance-font');
+            const preview = () => {
+                if (this._fontSizeBeforePreview == null) {
+                    this._fontSizeBeforePreview = this.currentFontSize();
+                }
+                this.dash.settings.fontSize = size;
+                this.dash.applyFontSize?.();
+            };
+            const revert = () => {
+                const previous = this._fontSizeBeforePreview;
+                this._fontSizeBeforePreview = null;
+                if (previous == null) return;
+                this.dash.settings.fontSize = previous;
+                this.dash.applyFontSize?.();
+            };
+            btn.addEventListener('pointerenter', preview);
+            btn.addEventListener('focus', preview);
+            btn.addEventListener('pointerleave', revert);
+            btn.addEventListener('blur', revert);
+            btn.addEventListener('click', () => {
+                // Taken, so there is nothing to put back.
+                this._fontSizeBeforePreview = null;
+                this.setFontSize(size);
+            });
         });
         container.querySelectorAll('[data-appearance-layout]').forEach((btn) => {
             btn.addEventListener('click', () => this.setLayout(btn.getAttribute('data-appearance-layout')));
@@ -5932,7 +6615,15 @@ class DashboardConfig {
             btn.addEventListener('click', () => this.setButtonBarPosition(btn.getAttribute('data-appearance-barpos')));
         });
         container.querySelectorAll('[data-appearance-toggle]').forEach((input) => {
-            input.addEventListener('change', () => this.setToggle(input.getAttribute('data-appearance-toggle'), input.checked));
+            input.addEventListener('change', () => {
+                const field = input.getAttribute('data-appearance-toggle');
+                const host = container.querySelector(`[data-appearance-art="${CSS.escape(field)}"]`);
+                if (host) {
+                    host.innerHTML = window.SettingArt?.render?.(
+                        host.getAttribute('data-art-kind') || '', input.checked) || '';
+                }
+                return this.setToggle(field, input.checked);
+            });
         });
         // `select` only: the theme picker shares the data-appearance-select hook
         // so search and the changed-filter still find it, but it is a button with
@@ -6019,7 +6710,7 @@ class DashboardConfig {
         // live setter (via applyAppearanceField), which repaints the section so
         // the ↺ visibility refreshes.
         this.bindAffordances(container, null, (field, def) => this.applyAppearanceField(field, def));
-        if (['layout', 'display', 'toolbar'].includes(this.appearanceTab)) {
+        if (['layout', 'buttonbar', 'display', 'toolbar'].includes(this.appearanceTab)) {
             this.bindControlPanels(container, 'behavior');
         } else {
             // bindControlPanels brings the toggle with it; the tabs without
@@ -6131,9 +6822,9 @@ class DashboardConfig {
         const map = {
             general: ['config.appearanceTabGeneral', 'Theme'],
             layout: ['config.appearanceTabLayout', 'Layout'],
+            buttonbar: ['config.appearanceTabButtonBar', 'Button bar'],
             display: ['config.appearanceTabDisplay', 'Display'],
             toolbar: ['config.appearanceTabToolbar', 'Toolbar & tabs'],
-            branding: ['config.appearanceTabBranding', 'Branding'],
             'custom-themes': ['config.appearanceTabCustomThemes', 'Custom themes'],
         };
         const [key, fallback] = map[tab] || [tab, tab];
@@ -6259,6 +6950,7 @@ class DashboardConfig {
                         </span>
                     </div>
                     <div class="config-crud-row-actions">
+                        <button type="button" class="config-btn config-btn--small" data-theme-export="${esc(id)}" aria-label="${esc(this.t('config.themeExport', 'Export theme'))}" title="${esc(this.t('config.themeExport', 'Export theme'))}">⤓</button>
                         <button type="button" class="config-btn config-btn--small" data-theme-move="up" data-id="${esc(id)}" ${i === 0 ? 'disabled' : ''} aria-label="${esc(this.t('config.moveUp', 'Move up'))}">↑</button>
                         <button type="button" class="config-btn config-btn--small" data-theme-move="down" data-id="${esc(id)}" ${i === ids.length - 1 ? 'disabled' : ''} aria-label="${esc(this.t('config.moveDown', 'Move down'))}">↓</button>
                         <button type="button" class="config-btn config-btn--small${active ? ' is-active' : ''}" data-theme-edit="${esc(id)}">${esc(active ? this.t('config.themeEditing', 'Editing') : this.t('config.themeEdit', 'Edit'))}</button>
@@ -6275,6 +6967,8 @@ class DashboardConfig {
                 <ul class="config-crud-list">${list}</ul>
                 <div class="config-actions">
                     <button type="button" class="config-btn" data-theme-add>${esc(this.t('config.addCustomTheme', 'Add custom theme'))}</button>
+                    <button type="button" class="config-btn" data-theme-import>${esc(this.t('config.themeImport', 'Import theme…'))}</button>
+                    <input type="file" id="config-theme-import-input" accept=".json,application/json" hidden>
                 </div>
             </div>
             <div class="config-panel">
@@ -6309,7 +7003,7 @@ class DashboardConfig {
                     return `
                     <div class="config-field config-theme-field">
                         <span class="config-field-label">${esc(this.themeColorLabel(prop))}</span>
-                        <input type="color" class="config-theme-picker" data-theme-color-picker="${esc(prop)}" value="${esc(forPicker)}" aria-label="${esc(this.themeColorLabel(prop))}">
+                        <input type="color" class="config-theme-color-input" data-theme-color-picker="${esc(prop)}" value="${esc(forPicker)}" aria-label="${esc(this.themeColorLabel(prop))}">
                         <input type="text" class="config-text config-theme-hex" data-theme-color="${esc(prop)}" value="${esc(val)}" spellcheck="false" placeholder="#1a1a1a">
                     </div>`;
                 }).join('')}
@@ -6329,6 +7023,7 @@ class DashboardConfig {
                     <button type="button" class="config-btn" data-theme-action="apply">${esc(this.t('config.themeApply', 'Use this theme'))}</button>
                     <button type="button" class="config-btn" data-theme-action="duplicate">${esc(this.t('config.themeDuplicate', 'Duplicate'))}</button>
                     <button type="button" class="config-btn" data-theme-action="export">${esc(this.t('config.themeExport', 'Export'))}</button>
+                    <button type="button" class="config-btn" data-theme-action="import">${esc(this.t('config.themeImport', 'Import'))}</button>
                     ${isCustom ? '' : `<button type="button" class="config-btn" data-theme-action="reset">${esc(this.t('config.themeResetDefaults', 'Reset to default'))}</button>`}
                 </div>
             </div>`;
@@ -6413,6 +7108,57 @@ class DashboardConfig {
      * variables, so a new theme copies a packaged one — the current theme where
      * possible, so "add" reads as "start from what I am looking at".
      */
+    /**
+     * One theme as a file, and back again.
+     *
+     * A theme is a name and a dozen colours — small enough to paste into a chat
+     * window, and until now movable only inside a whole-install backup, which
+     * carries every bookmark with it. Exported with a marker and a version so
+     * an import can tell a theme from any other JSON someone points at it.
+     */
+    exportCustomTheme(id) {
+        const theme = this._colorsData?.custom?.[id];
+        if (!theme) return;
+        const payload = { nextdashTheme: 1, name: theme.name || id, colors: { ...theme } };
+        delete payload.colors.name;
+        const safeName = String(theme.name || id).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        this.triggerDownload(
+            new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }),
+            `nextdash-theme-${safeName || 'custom'}.json`);
+    }
+
+    async importCustomTheme(file) {
+        const data = this._colorsData;
+        if (!data) return;
+        let payload = null;
+        try {
+            payload = JSON.parse(await file.text());
+        } catch {
+            this.notify(this.t('config.themeImportInvalid', 'That file is not a nextDash theme.'), 'error');
+            return;
+        }
+        // Either shape is accepted: what this exports, and a bare object of
+        // colours — someone who copied a palette out of a backup has the latter.
+        const colors = payload?.colors && typeof payload.colors === 'object'
+            ? payload.colors
+            : (payload && typeof payload === 'object' ? payload : null);
+        if (!colors || !colors.backgroundPrimary || !colors.textPrimary) {
+            this.notify(this.t('config.themeImportInvalid', 'That file is not a nextDash theme.'), 'error');
+            return;
+        }
+        const names = Object.values(data.custom || {}).map((t) => t.name);
+        const wanted = String(payload?.name || colors.name || this.t('config.customThemePrefix', 'My theme')).trim();
+        const id = DashboardConfig.newThemeId();
+        const clean = { ...colors };
+        delete clean.name;
+        data.custom[id] = { ...clean, name: DashboardConfig.uniqueNameFrom(wanted, names) };
+        this._themeSelected = id;
+        this.syncCustomThemeIds();
+        this.repaintAppearanceBody();
+        await this.saveColorsData();
+        this.notify(this.t('config.themeImported', 'Theme imported.'), 'success');
+    }
+
     addCustomTheme() {
         const data = this._colorsData;
         if (!data) return;
@@ -6565,6 +7311,17 @@ class DashboardConfig {
     bindCustomThemes(container) {
         container.querySelector('[data-theme-add]')
             ?.addEventListener('click', () => this.addCustomTheme());
+        container.querySelectorAll('[data-theme-export]').forEach((btn) => {
+            btn.addEventListener('click', () => this.exportCustomTheme(btn.getAttribute('data-theme-export')));
+        });
+        const themeImport = container.querySelector('#config-theme-import-input');
+        container.querySelector('[data-theme-import]')
+            ?.addEventListener('click', () => themeImport?.click());
+        themeImport?.addEventListener('change', () => {
+            const file = themeImport.files?.[0];
+            themeImport.value = '';
+            if (file) void this.importCustomTheme(file);
+        });
 
         container.querySelectorAll('[data-theme-delete]').forEach((btn) => {
             btn.addEventListener('click', () => void this.deleteCustomTheme(btn.getAttribute('data-theme-delete')));
@@ -6744,6 +7501,69 @@ class DashboardConfig {
             a.click();
             URL.revokeObjectURL(url);
         }
+        if (action === 'import') {
+            this.importThemeFromFile();
+        }
+    }
+
+    /**
+     * Read a theme back in from an exported .json.
+     *
+     * Export has existed on its own since custom themes shipped, which made it
+     * a one-way door: a palette built on a laptop could not be carried to the
+     * server instance except through a full ZIP restore, which overwrites
+     * everything. Lands as a new theme rather than overwriting one, so an
+     * import can never destroy the palette you are looking at — the naming and
+     * id logic is the same as Duplicate's.
+     */
+    importThemeFromFile() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'application/json,.json';
+        input.addEventListener('change', async () => {
+            const file = input.files?.[0];
+            if (!file) return;
+            try {
+                const parsed = JSON.parse(await file.text());
+                const theme = this.normalizeImportedTheme(parsed);
+                if (!theme) throw new Error('not a theme');
+
+                const names = Object.values(this._colorsData.custom || {}).map((t) => t.name);
+                const newId = DashboardConfig.newThemeId();
+                this._colorsData.custom[newId] = {
+                    ...theme,
+                    name: DashboardConfig.uniqueNameFrom(theme.name, names),
+                };
+                this._themeSelected = newId;
+                this.syncCustomThemeIds();
+                this.repaintAppearanceBody();
+                await this.saveColorsData();
+                this.notify(this.t('config.themeImported', 'Theme imported.'), 'success');
+            } catch {
+                this.notify(this.t('config.themeImportError',
+                    'That file is not a nextDash theme.'), 'error');
+            }
+        });
+        input.click();
+    }
+
+    /**
+     * Accept an exported theme, reject anything else.
+     *
+     * A theme is an object of colour values; without a check, any JSON file at
+     * all would be accepted and land as a theme with no colours in it.
+     */
+    normalizeImportedTheme(parsed) {
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+        const colorKeys = Object.keys(parsed).filter((k) => k !== 'name'
+            && typeof parsed[k] === 'string' && /^(#|rgb|hsl|var\()/i.test(parsed[k].trim()));
+        if (!colorKeys.length) return null;
+        const out = { name: DashboardConfig.NAME_MAX_LENGTH
+            ? String(parsed.name || this.t('config.themeImportedName', 'Imported theme'))
+                .trim().slice(0, DashboardConfig.NAME_MAX_LENGTH)
+            : String(parsed.name || '') };
+        colorKeys.forEach((k) => { out[k] = parsed[k]; });
+        return out.name ? out : null;
     }
 
     /**
@@ -7219,7 +8039,8 @@ class DashboardConfig {
         language: { info: ['languageInfoTitle', 'languageInfoMessage'], def: 'en' },
         openInNewTab: { info: ['openLinksInNewTabInfoTitle', 'openLinksInNewTabInfoMessage'], def: true },
         globalShortcuts: { info: ['globalShortcutsInfoTitle', 'globalShortcutsInfoMessage'], def: true },
-        showShortcutTooltips: { info: ['shortcutTooltipsInfoTitle', 'shortcutTooltipsInfoMessage'], def: true },
+        showShortcutTooltips: { info: ['shortcutTooltipsInfoTitle', 'shortcutTooltipsInfoMessage'], def: false },
+        showGridKeyLegend: { info: ['showGridKeyLegendInfoTitle', 'showGridKeyLegendInfoMessage'], hint: 'gridKeyLegendHint', def: true },
         allowLocalBookmarks: { info: ['allowLocalBookmarksInfoTitle', 'allowLocalBookmarksInfoMessage'], def: true },
         enableSessionTips: { info: ['sessionTipsInfoTitle', 'sessionTipsInfoMessage'], hint: 'sessionTipsHint', def: true },
         hyprMode: { info: ['hyprModeInfoTitle', 'hyprModeInfoMessage'], def: false },
@@ -7238,18 +8059,20 @@ class DashboardConfig {
         categorySpacing: { info: ['categorySpacingInfoTitle', 'categorySpacingInfoMessage'], def: 'balanced' },
         sideMargin: { info: ['sideMarginInfoTitle', 'sideMarginInfoMessage'], def: 'balanced' },
         packedColumns: { info: ['packedColumnsInfoTitle', 'packedColumnsInfoMessage'], def: true },
+        defaultCategorySpread: { info: ['defaultCategorySpreadInfoTitle', 'defaultCategorySpreadInfoMessage'], hint: 'defaultCategorySpreadHint', def: false },
+        categorySpreadResetScope: { info: ['categorySpreadResetScopeInfoTitle', 'categorySpreadResetScopeInfoMessage'], hint: 'categorySpreadResetScopeHint', def: 'page' },
         interleaveMode: { info: ['interleaveModeInfoTitle', 'interleaveModeInfoMessage'], def: false },
         hideEmptyCategories: { info: ['hideEmptyCategoriesInfoTitle', 'hideEmptyCategoriesInfoMessage'], def: true },
         alwaysCollapseCategories: { info: ['alwaysCollapseCategoriesInfoTitle', 'alwaysCollapseCategoriesInfoMessage'], def: false },
         layoutVersion: { info: ['layoutVersionInfoTitle', 'layoutVersionInfoMessage'], def: 'classic' },
         layoutPreset: { info: ['layoutPresetInfoTitle', 'layoutPresetInfoMessage'], def: 'default' },
-        categoryItemLimit: { info: ['categoryItemLimitInfoTitle', 'categoryItemLimitInfoMessage'], def: 15 },
+        categoryItemLimit: { info: ['categoryItemLimitInfoTitle', 'categoryItemLimitInfoMessage'], hint: 'categoryItemLimitHint', def: 15 },
         launcherIconSize: { info: ['launcherIconSizeInfoTitle', 'launcherIconSizeInfoMessage'], def: 'normal' },
         // Bookmark display
         showShortcuts: { info: ['showShortcutsInfoTitle', 'showShortcutsInfoMessage'], def: true },
         showStatus: { info: ['showBookmarkStatusInfoTitle', 'showBookmarkStatusInfoMessage'], def: true },
         showPing: { info: ['showPingTimesInfoTitle', 'showPingTimesInfoMessage'], def: true },
-        showLinkPreviewCards: { info: ['showLinkPreviewCardsInfoTitle', 'showLinkPreviewCardsInfoMessage'], def: false },
+        showLinkPreviewCards: { info: ['showLinkPreviewCardsInfoTitle', 'showLinkPreviewCardsInfoMessage'], def: true },
         colorizeStatus: { info: ['colorizeStatusInfoTitle', 'colorizeStatusInfoMessage'], def: true },
         showIcons: { info: ['showIconsInfoTitle', 'showIconsInfoMessage'], def: true },
         // Toolbar & tabs
@@ -7258,6 +8081,10 @@ class DashboardConfig {
         showTitle: { info: ['showDashboardTitleInfoTitle', 'showDashboardTitleInfoMessage'], def: true },
         showTagCloudButton: { info: ['showTagCloudButtonInfoTitle', 'showTagCloudButtonInfoMessage'], def: true },
         // Search
+        shortcutOpenMode: { info: ['shortcutOpenModeInfoTitle', 'shortcutOpenModeInfoMessage'], def: 'instant' },
+        rememberScrollPosition: { info: ['rememberScrollPositionInfoTitle', 'rememberScrollPositionInfoMessage'], def: true },
+        detectSoftNotFound: { info: ['detectSoftNotFoundInfoTitle', 'detectSoftNotFoundInfoMessage'], def: true },
+        certWarnDays: { info: ['certWarnDaysInfoTitle', 'certWarnDaysInfoMessage'], def: 0 },
         includeFindersInSearch: { info: ['includeFindersInSearchInfoTitle', 'includeFindersInSearchInfoMessage'], def: false },
         enableFuzzySuggestions: { info: ['fuzzySuggestionsInfoTitle', 'fuzzySuggestionsInfoMessage'], def: false },
         fuzzySuggestionsStartWith: { info: ['fuzzySuggestionsStartWithInfoTitle', 'fuzzySuggestionsStartWithInfoMessage'], def: false },
@@ -7269,6 +8096,8 @@ class DashboardConfig {
         // Status & health
         statusRecheckIntervalMinutes: { info: ['statusRecheckIntervalInfoTitle', 'statusRecheckIntervalInfoMessage'], def: 5 },
         healthAutoRecheckEnabled: { info: ['healthRecheckInfoTitle', 'healthRecheckInfoMessage'], def: false },
+        feedsEnabled: { info: ['feedsInfoTitle', 'feedsInfoMessage'], def: false },
+        feedsMarkQuiet: { def: false },
         healthAutoRecheckIntervalHours: { info: ['healthRecheckIntervalInfoTitle', 'healthRecheckIntervalInfoMessage'], def: 24 },
         skipFastPing: { info: ['skipFastPingInfoTitle', 'skipFastPingInfoMessage'], def: false },
         statusOfflineRetries: { info: ['statusOfflineRetriesInfoTitle', 'statusOfflineRetriesInfoMessage'], def: 3 },
@@ -7279,9 +8108,23 @@ class DashboardConfig {
         // listed so the ↺ button and the changed-settings count can see them;
         // a field with no `def` silently reports itself as unchanged whatever
         // it holds. Values come from models.go — see config-field-defaults.spec.js.
+        // Config → Bookmarks. The list had no settings of its own; these are the
+        // choices it used to make on the user's behalf. Defaults mirror
+        // models.go, so the ↺ button and the changed-settings count agree with
+        // the server about what "unchanged" means.
+        configBookmarksSort: { info: ['configBookmarksSortInfoTitle', 'configBookmarksSortInfoMessage'], def: 'page' },
+        configBookmarksPageSize: { info: ['configBookmarksPageSizeInfoTitle', 'configBookmarksPageSizeInfoMessage'], def: 50 },
+        bookmarkDeleteConfirmFrom: { info: ['bookmarkDeleteConfirmFromInfoTitle', 'bookmarkDeleteConfirmFromInfoMessage'], def: 1 },
+        defaultMonitorIntervalMinutes: { info: ['defaultMonitorIntervalInfoTitle', 'defaultMonitorIntervalInfoMessage'], def: 15 },
+        newBookmarkCheckMode: { info: ['newBookmarkCheckModeInfoTitle', 'newBookmarkCheckModeInfoMessage'], def: 'off' },
+        newBookmarkPinned: { info: ['newBookmarkPinnedInfoTitle', 'newBookmarkPinnedInfoMessage'], def: false },
+        newBookmarkCategory: { def: '' },
+        bookmarkStaleDays: { info: ['bookmarkStaleDaysInfoTitle', 'bookmarkStaleDaysInfoMessage'], def: 90 },
+        bulkFaviconConfirmFrom: { info: ['bulkFaviconConfirmFromInfoTitle', 'bulkFaviconConfirmFromInfoMessage'], def: 0 },
+        bookmarkArchiveUrl: { info: ['bookmarkArchiveUrlInfoTitle', 'bookmarkArchiveUrlInfoMessage'], def: 'https://web.archive.org/web/*/{url}' },
         pasteDestination: { def: 'ask' },
         monitorEmphasis: { def: 'problems' },
-        theme: { def: 'moss-stone-dark' },
+        theme: { def: 'retro-crt-dark' },
         fontSize: { def: 'm' },
         customTitle: { def: '' },
         monitorNotifyRetries: { info: ['monitorNotifyRetriesInfoTitle', 'monitorNotifyRetriesInfoMessage'], def: 3 },
@@ -7292,7 +8135,7 @@ class DashboardConfig {
         // Toolbar & chrome
         showRecentButton: { def: false },
         showCheatSheetButton: { def: false },
-        showCollapseAllButton: { def: true },
+        showCollapseAllButton: { def: false },
         showConfigButton: { def: true },
         showHealthDashboard: { def: true },
         showAddBookmarkButton: { def: true },
@@ -7305,9 +8148,10 @@ class DashboardConfig {
         weatherRefreshMinutes: { info: ['weatherRefreshInfoTitle', 'weatherRefreshInfoMessage'], def: 30 },
         calendarUrl: { info: ['calendarUrlInfoTitle', 'calendarUrlInfoMessage'] },
         // Link previews
-        linkPreviewHoverDelayMs: { info: ['linkPreviewHoverDelayInfoTitle', 'linkPreviewHoverDelayInfoMessage'], def: 150 },
+        linkPreviewMode: { info: ['linkPreviewModeInfoTitle', 'linkPreviewModeInfoMessage'], def: 'hover' },
+        linkPreviewParts: { info: ['linkPreviewPartsInfoTitle', 'linkPreviewPartsInfoMessage'], def: null },
+        linkPreviewHoverDelayMs: { info: ['linkPreviewHoverDelayInfoTitle', 'linkPreviewHoverDelayInfoMessage'], def: 250 },
         // Sync
-        showSyncToasts: { info: ['showSyncToastsInfoTitle', 'showSyncToastsInfoMessage'] },
         faviconRefreshPolicy: { info: ['faviconRefreshPolicyInfoTitle', 'faviconRefreshPolicyInfoMessage'], def: 'on-save' },
         // Privacy
         analyticsOptIn: { info: ['usageAnalyticsInfoTitle', 'usageAnalyticsInfoMessage'], hint: 'usageAnalyticsHint', def: false },
@@ -7329,6 +8173,10 @@ class DashboardConfig {
         showSmartRecentCollection: { def: false },
         showSmartStaleCollection: { def: false },
         showSmartMostUsedCollection: { def: false },
+        showRowTags: { info: ['showRowTagsInfoTitle', 'showRowTagsInfoMessage'], def: false },
+        rowTagsMax: { def: 2 },
+        showSmartAddedCollection: { def: false },
+        smartAddedLimit: { def: 20 },
         smartTodayLimit: { info: ['smartTodayLimitInfoTitle', 'smartTodayLimitInfoMessage'], def: 8 },
         smartRecentLimit: { info: ['smartRecentLimitInfoTitle', 'smartRecentLimitInfoMessage'], def: 50 },
         smartStaleLimit: { info: ['smartStaleLimitInfoTitle', 'smartStaleLimitInfoMessage'], def: 50 },
@@ -7347,6 +8195,11 @@ class DashboardConfig {
         const meta = this.fieldMeta(field);
         if (!meta || meta.def === undefined) return true; // no known default → hide reset
         const d = meta.def;
+        // A field whose default is "nothing stored" — the preview card's row
+        // list, where absent means all of them. Compared as a value rather than
+        // through String(), which turns null into "null" and never matches.
+        if (d === null) return value === null || value === undefined;
+        if (Array.isArray(d)) return JSON.stringify(value ?? null) === JSON.stringify(d);
         if (typeof d === 'boolean') return Boolean(value) === d;
         if (typeof d === 'number') return Number(value) === d;
         return String(value ?? '') === String(d);
@@ -7515,6 +8368,60 @@ class DashboardConfig {
         const layoutPresets = window.LayoutUtils?.getLayoutPresets?.()
             || ['default', 'compact', 'cards', 'terminal', 'masonry', 'list', 'widgets', 'launcher'];
         return [
+            // Config → Bookmarks had no settings at all; the list made these
+            // choices on the user's behalf and forgot them between visits.
+            {
+                section: 'bookmarks',
+                tab: null,
+                title: t('config.bookmarksGroupList', 'The list'),
+                note: t('config.bookmarksGroupListNote', 'How this list opens and how much of it loads at a time.'),
+                controls: [
+                    { field: 'configBookmarksSort', type: 'select', label: t('config.configBookmarksSortLabel', 'Open sorted by'), options: [
+                        opt('page', t('config.sortByPage', 'Page order')),
+                        opt('name', t('config.sortByName', 'Name (A–Z)')),
+                        opt('url', t('config.sortByUrl', 'URL')),
+                        opt('category', t('config.sortByCategory', 'Category')),
+                        opt('recent', t('config.sortByRecent', 'Recently added')),
+                        opt('lastOpened', t('config.sortByLastOpened', 'Last opened')),
+                        opt('opens', t('config.sortByOpens', 'Most opened')),
+                        opt('pinned', t('config.sortByPinned', 'Pinned first')),
+                    ] },
+                    { field: 'configBookmarksPageSize', type: 'number', min: 10, max: 500, step: 10,
+                        label: t('config.configBookmarksPageSizeLabel', 'Rows per load') },
+                ],
+            },
+            {
+                section: 'bookmarks',
+                tab: null,
+                title: t('config.bookmarksGroupNew', 'New bookmarks'),
+                note: t('config.bookmarksGroupNewNote', 'What a bookmark added with & or + starts out as.'),
+                controls: [
+                    { field: 'newBookmarkCheckMode', type: 'select', label: t('config.newBookmarkCheckModeLabel', 'Availability'), options: [
+                        opt('off', t('config.checkModeOff', 'Off')),
+                        opt('periodic', t('config.checkModePeriodic', 'Periodic')),
+                        opt('monitor', t('config.checkModeMonitor', 'Monitor')),
+                    ] },
+                    bool('newBookmarkPinned', 'config.newBookmarkPinnedLabel', 'Pinned'),
+                    { field: 'defaultMonitorIntervalMinutes', type: 'number', min: 5, max: 1440, step: 5,
+                        label: t('config.defaultMonitorIntervalLabel', 'Monitor interval (minutes)') },
+                ],
+            },
+            {
+                section: 'bookmarks',
+                tab: null,
+                title: t('config.bookmarksGroupBulk', 'Bulk actions and cleanup'),
+                note: t('config.bookmarksGroupBulkNote', 'When to ask first, and what counts as neglected.'),
+                controls: [
+                    { field: 'bookmarkDeleteConfirmFrom', type: 'number', min: 1, max: 500, step: 1,
+                        label: t('config.bookmarkDeleteConfirmFromLabel', 'Confirm deleting from') },
+                    { field: 'bulkFaviconConfirmFrom', type: 'number', min: 0, max: 1000, step: 10,
+                        label: t('config.bulkFaviconConfirmFromLabel', 'Confirm icon refresh from') },
+                    { field: 'bookmarkStaleDays', type: 'number', min: 7, max: 365, step: 1,
+                        label: t('config.bookmarkStaleDaysLabel', 'Count as neglected after (days)') },
+                    { field: 'bookmarkArchiveUrl', type: 'text',
+                        label: t('config.bookmarkArchiveUrlLabel', 'Archive service') },
+                ],
+            },
             {
                 section: 'behavior',
                 tab: 'general',
@@ -7527,6 +8434,11 @@ class DashboardConfig {
                     bool('openInNewTab', 'config.openInNewTab', 'Open links in a new tab'),
                     bool('globalShortcuts', 'config.globalShortcutsLabel', 'Global keyboard shortcuts'),
                     { ...bool('showShortcutTooltips', 'config.shortcutTooltipsLabel', 'Show shortcut hints on toolbar icons'), special: 'shortcutTooltips' },
+                    // Beside the other two discoverability switches rather than
+                    // under Appearance: what it controls is whether the keyboard
+                    // explains itself, not how the grid looks.
+                    { ...bool('showGridKeyLegend', 'config.gridKeyLegendLabel', 'Show a key legend under the bookmarks'), special: 'render' },
+                    bool('rememberScrollPosition', 'config.rememberScrollPositionLabel', 'Come back to where you were on a page'),
                     bool('allowLocalBookmarks', 'config.allowLocalBookmarks', 'Allow local (non-http) bookmark URLs'),
                     bool('hyprMode', 'config.hyprModeLabel', 'Hypr mode'),
                 ],
@@ -7576,13 +8488,13 @@ class DashboardConfig {
                 title: t('config.generalGroupLayout', 'Bookmarks layout'),
                 note: t('config.generalLayoutIntro', 'Grid structure, column count, layout preset, and density.'),
                 controls: [
-                    { field: 'columnsPerRow', type: 'number', label: t('config.columnsLabel', 'Columns'), min: 1, max: 12, special: 'render' },
+                    { field: 'columnsPerRow', type: 'number', label: t('config.columnsLabel', 'Columns'), min: 1, max: 12, special: 'render', art: 'grid' },
                     // The preset drives the grid's `layout-*` class and the
                     // data-layout-preset attribute, so it needs the chrome
                     // reapplied as well as a re-render.
                     { field: 'layoutPreset', type: 'select', label: t('config.layoutPresetLabelShort', 'Layout preset'), special: 'chromeRender',
                         options: layoutPresets.map((p) => opt(p, t(`config.layoutPresetName.${p}`, p))) },
-                    { field: 'densityMode', type: 'select', label: t('config.densityLabel', 'Density'), special: 'render', options: [
+                    { field: 'densityMode', type: 'select', label: t('config.densityLabel', 'Density'), special: 'render', art: 'density', options: [
                         opt('comfortable', t('config.densityComfortable', 'Comfortable')), opt('compact', t('config.densityCompact', 'Compact')),
                         opt('dense', t('config.densityDense', 'Dense')), opt('auto', t('config.densityAuto', 'Auto')),
                     ] },
@@ -7593,20 +8505,21 @@ class DashboardConfig {
                     // Cards rather than a select: three options whose difference
                     // is spatial, so seeing all three at once — and the sentence
                     // under each — beats hiding two of them behind a click.
-                    { field: 'categorySpacing', type: 'cards', label: t('config.categorySpacingLabel', 'Space between categories'), special: 'chromeRender', options: [
+                    { field: 'categorySpacing', type: 'cards', label: t('config.categorySpacingLabel', 'Space between categories'), special: 'chromeRender', art: 'spacing', options: [
                         { value: 'snug', label: t('config.categorySpacingSnug', 'Snug'), body: t('config.categorySpacingSnugBody', 'Rows sit close together.') },
                         { value: 'balanced', label: t('config.categorySpacingBalanced', 'Balanced'), body: t('config.categorySpacingBalancedBody', 'The default.') },
                         { value: 'airy', label: t('config.categorySpacingAiry', 'Airy'), body: t('config.categorySpacingAiryBody', 'Extra room between rows.') },
                     ] },
-                    { field: 'sideMargin', type: 'cards', label: t('config.sideMarginLabel', 'Page margins'), special: 'chromeRender', options: [
+                    { field: 'sideMargin', type: 'cards', label: t('config.sideMarginLabel', 'Page margins'), special: 'chromeRender', art: 'margins', options: [
                         { value: 'snug', label: t('config.sideMarginSnug', 'Snug'), body: t('config.sideMarginSnugBody', 'Narrow edges — more room for columns.') },
                         { value: 'balanced', label: t('config.sideMarginBalanced', 'Balanced'), body: t('config.sideMarginBalancedBody', 'The default.') },
                         { value: 'airy', label: t('config.sideMarginAiry', 'Airy'), body: t('config.sideMarginAiryBody', 'Wide edges — columns pulled together.') },
                     ] },
-                    { field: 'categoryItemLimit', type: 'select', label: t('config.categoryItemLimitLabelShort', 'Items per category'), special: 'render', options: [
-                        opt(10, '10'), opt(15, '15'), opt(20, '20'), opt(25, '25'), opt(30, '30'), opt(50, '50'),
-                        opt(0, t('config.categoryItemLimitUnlimited', 'Unlimited')),
-                    ] },
+                    // Unlimited is out of reach while any category is wider than
+                    // one column: the limit is what caps the height of a
+                    // column, and a wide category is measured in columns. Left
+                    // in the list and disabled rather than removed, so the
+                    // choice can be seen not to have vanished.
                     bool('packedColumns', 'config.packedColumnsLabel', 'Pack columns tightly'),
                     bool('interleaveMode', 'config.interleaveModeLabel', 'Interleave categories across columns'),
                     bool('hideEmptyCategories', 'config.hideEmptyCategoriesLabel', 'Hide empty categories'),
@@ -7625,6 +8538,42 @@ class DashboardConfig {
                     bool('alwaysCollapseCategories', 'config.alwaysCollapseCategoriesLabel', 'Start with categories collapsed'),
                 ],
             },
+            // Its own panel, and the items-per-category limit moved into it.
+            //
+            // The width of a single category is set on the category itself — on
+            // the grid, or per row in Pages & tags → Categories — so what is
+            // left here is what applies to all of them at once. The limit came
+            // along because the two decide one thing together: the limit caps
+            // the height of a column, the width says how many columns, and each
+            // rules out the other's extreme. Two panels apart, the greyed-out
+            // Unlimited had no visible explanation.
+            {
+                section: 'appearance',
+                tab: 'layout',
+                title: t('config.generalGroupCategoryWidth', 'Categories across columns'),
+                note: t('config.generalCategoryWidthIntro',
+                    'How tall a category gets, and how wide it may be. Width needs two things: a limit below (not Unlimited) and at least two columns. Then set a category with Shift+W on the dashboard, right-click → Width, or per row in Pages & tags → Categories — the settings here only decide what a new category starts at and how far the reset reaches.'),
+                controls: [
+                    { field: 'categoryItemLimit', type: 'select', label: t('config.categoryItemLimitLabelShort', 'Items per category'), special: 'render', options: [
+                        opt(10, '10'), opt(15, '15'), opt(20, '20'), opt(25, '25'), opt(30, '30'), opt(50, '50'),
+                        {
+                            value: 0,
+                            label: window.DashboardCategorySpan?.anySpreadCategory(this.dash)
+                                ? t('config.categoryItemLimitUnlimitedBlocked', 'Unlimited — not while a category spreads across columns')
+                                : t('config.categoryItemLimitUnlimited', 'Unlimited'),
+                            disabled: window.DashboardCategorySpan?.anySpreadCategory(this.dash) === true,
+                        },
+                    ] },
+                    bool('defaultCategorySpread', 'config.defaultCategorySpreadLabel', 'New categories spread across columns'),
+                    { field: 'categorySpreadResetScope', type: 'select', label: t('config.categorySpreadResetScopeLabel', 'Turning spreading off covers'), options: [
+                        opt('page', t('config.categorySpreadResetScopePage', 'The current page')),
+                        opt('all', t('config.categorySpreadResetScopeAll', 'Every page')),
+                    ] },
+                    { type: 'action', action: 'resetCategorySpreads',
+                        label: t('config.categorySpreadResetLabel', 'Turn spreading off everywhere'),
+                        button: t('config.categorySpreadResetButton', 'Turn off') },
+                ],
+            },
             {
                 section: 'appearance',
                 tab: 'display',
@@ -7635,12 +8584,54 @@ class DashboardConfig {
                     bool('showStatus', 'config.showStatusLabel', 'Show online/offline status'),
                     bool('showStatusLoading', 'config.showStatusLoadingLabel', 'Show a loading state while checking'),
                     bool('showPing', 'config.showPingLabel', 'Show ping times'),
-                    bool('showLinkPreviewCards', 'config.showLinkPreviewCardsLabel', 'Show link preview cards'),
-                    { field: 'linkPreviewHoverDelayMs', type: 'select', label: t('config.linkPreviewHoverDelayLabel', 'Preview hover delay'), options: [
-                        opt(0, t('config.linkPreviewDelayInstant', 'Instant')), opt(200, '200 ms'), opt(400, '400 ms'),
-                        opt(700, '700 ms'), opt(1000, '1 s'),
-                    ] },
                     bool('showPageInTitle', 'config.showPageInTitleLabel', 'Show the page name in the browser title'),
+                    { ...bool('showRowTags', 'config.showRowTagsLabel', 'Show tags on bookmark rows'), special: 'render' },
+                    { field: 'rowTagsMax', type: 'number', min: 1, max: 5, step: 1, special: 'render',
+                        label: t('config.rowTagsMaxLabel', 'Tags shown before “+N”') },
+                ],
+            },
+            {
+                section: 'appearance',
+                tab: 'display',
+                title: t('config.linkPreviewGroup', 'Link preview cards'),
+                note: t('config.linkPreviewGroupNote',
+                    'A card beside a bookmark with what the page says and what nextDash knows about it.'),
+                controls: [
+                    // Three ways rather than a switch: wanting what the card
+                    // says and not wanting a panel to appear under the pointer
+                    // are different objections, and "off" used to be the only
+                    // answer to either.
+                    { field: 'linkPreviewMode', type: 'cards', special: 'previewCard',
+                        label: t('config.linkPreviewModeLabel', 'Link preview cards'), options: [
+                            { value: 'off', label: t('config.linkPreviewModeOff', 'Off'),
+                                body: t('config.linkPreviewModeOffBody', 'The row keeps its ordinary tooltip.') },
+                            { value: 'hover', label: t('config.linkPreviewModeHover', 'On hover'),
+                                body: t('config.linkPreviewModeHoverBody', 'Appears beside the row after the delay below.') },
+                            { value: 'keyboard', label: t('config.linkPreviewModeKeyboard', 'Keyboard only'),
+                                body: t('config.linkPreviewModeKeyboardBody', 'Never appears on its own; Shift + V opens it for the selected row.') },
+                        ] },
+                    { field: 'linkPreviewHoverDelayMs', type: 'select', special: 'previewCard',
+                        label: t('config.linkPreviewHoverDelayLabel', 'Preview hover delay'), options: [
+                            opt(100, t('config.linkPreviewDelayFast', 'Fast (100ms)')),
+                            opt(150, t('config.linkPreviewDelayBalanced', 'Balanced (150ms)')),
+                            opt(250, t('config.linkPreviewDelaySlow', 'Calm (250ms)')),
+                        ] },
+                    // Someone who writes no notes should never see a note row,
+                    // and someone who monitors nothing never a status row.
+                    { field: 'linkPreviewParts', type: 'checkset', special: 'previewCard',
+                        label: t('config.linkPreviewPartsLabel', 'What the card shows'), options: [
+                            { value: 'image', label: t('config.linkPreviewPartImage', 'Image') },
+                            { value: 'description', label: t('config.linkPreviewPartDescription', 'Description') },
+                            { value: 'note', label: t('config.linkPreviewPartNote', 'Your note') },
+                            { value: 'tags', label: t('config.linkPreviewPartTags', 'Tags') },
+                            { value: 'status', label: t('config.linkPreviewPartStatus', 'Status & uptime') },
+                            { value: 'opens', label: t('config.linkPreviewPartOpens', 'Opens & last opened') },
+                            { value: 'fresh', label: t('config.linkPreviewPartFresh', 'Fresh count') },
+                            { value: 'location', label: t('config.linkPreviewPartLocation', 'Shortcut & location') },
+                        ] },
+                    { type: 'previewSample' },
+                    { type: 'note', text: t('config.linkPreviewElsewhere',
+                        'The fetched text and images are managed under Bookmarks → Link preview, and Health lists the bookmarks that have none.') },
                 ],
             },
             /*
@@ -7678,7 +8669,7 @@ class DashboardConfig {
             },
             {
                 section: 'appearance',
-                tab: 'toolbar',
+                tab: 'buttonbar',
                 title: t('config.chromeGroupPrimary', 'Button bar — main buttons'),
                 note: t('config.chromeGroupPrimaryNote', 'The four everyday actions. Hiding one leaves its keyboard shortcut working.'),
                 bulk: 'chrome',
@@ -7691,7 +8682,7 @@ class DashboardConfig {
             },
             {
                 section: 'appearance',
-                tab: 'toolbar',
+                tab: 'buttonbar',
                 title: t('config.chromeGroupSecondary', 'Button bar — extras'),
                 note: t('config.chromeGroupSecondaryNote', 'The second group, beside the main buttons. With all of these off the group disappears entirely.'),
                 bulk: 'chrome',
@@ -7700,8 +8691,9 @@ class DashboardConfig {
                     chrome('showCheatSheetButton', 'config.showCheatSheetButtonLabel', 'Show the cheat-sheet button'),
                     chrome('showCollapseAllButton', 'config.showCollapseAllButtonLabel', 'Show the fold-all button'),
                     chrome('showTagCloudButton', 'config.showTagCloudButtonLabel', 'Show the tag-cloud button'),
-                    // Button bar position lives on the Layout tab, as a button
-                    // group beside the other two layout choices.
+                    // The position control sits above these, at the top of
+                    // this tab: where the bar is and what it carries are the
+                    // same errand.
                 ],
             },
             {
@@ -7710,6 +8702,31 @@ class DashboardConfig {
                 title: t('config.generalGroupSearch', 'Search'),
                 note: t('config.generalSearchInputIntro', 'Search overlay behavior and suggestions.'),
                 controls: [
+                    {
+                        field: 'shortcutOpenMode',
+                        type: 'cards',
+                        label: t('config.shortcutOpenModeLabel', 'Typing a bookmark shortcut'),
+                        // The default leads, and it is the fast one again: a
+                        // shortcut that needs a second key to finish is not
+                        // much of a shortcut. The other two are the ways out.
+                        options: [
+                            {
+                                value: 'instant',
+                                label: t('config.shortcutOpenModeInstant', 'Open the moment it matches'),
+                                body: t('config.shortcutOpenModeInstantBody', 'No Enter, no pause — the fastest, and the one that can swallow an ordinary word that starts with the same letters.'),
+                            },
+                            {
+                                value: 'delay',
+                                label: t('config.shortcutOpenModeDelay', 'Open after a short pause'),
+                                body: t('config.shortcutOpenModeDelayBody', 'The shortcut opens on its own once you stop typing for a moment. Keep typing and it stays out of the way.'),
+                            },
+                            {
+                                value: 'enter',
+                                label: t('config.shortcutOpenModeEnter', 'Press Enter to open'),
+                                body: t('config.shortcutOpenModeEnterBody', 'Typing only filters the list. The shortcut you typed leads it, and Enter opens it. Nothing can decide for you that you had finished typing.'),
+                            },
+                        ],
+                    },
                     bool('includeFindersInSearch', 'config.includeFindersInSearch', 'Include finders in search'),
                     bool('enableFuzzySuggestions', 'config.enableFuzzySuggestions', 'Fuzzy search suggestions'),
                     bool('fuzzySuggestionsStartWith', 'config.fuzzySuggestionsStartWith', 'Prefer matches that start with the query'),
@@ -7719,13 +8736,13 @@ class DashboardConfig {
             },
             {
                 section: 'behavior',
-                tab: 'search',
+                tab: 'inbox',
                 title: t('config.generalGroupQuickAdd', 'Quick add & inbox'),
                 note: t('config.generalGroupQuickAddNote', 'What happens when you paste a URL onto the dashboard — add it straight away, or collect it in the inbox to sort later.'),
                 controls: [
                     bool('pasteUrlQuickAdd', 'config.pasteUrlQuickAdd', 'Quick-add a pasted URL'),
                     bool('inboxEnabled', 'config.inboxEnabledLabel', 'Enable the inbox'),
-                    { field: 'pasteDestination', type: 'select', label: t('config.pasteDestinationLabel', 'Paste destination'), options: [
+                    { field: 'pasteDestination', type: 'select', label: t('config.pasteDestinationLabel', 'Paste destination'), art: 'flow', options: [
                         opt('ask', t('config.pasteDestinationAsk', 'Ask each time')), opt('bookmark', t('config.pasteDestinationBookmark', 'New bookmark')),
                         opt('inbox', t('config.pasteDestinationInbox', 'Inbox')),
                     ] },
@@ -7757,7 +8774,6 @@ class DashboardConfig {
                 title: t('config.monitorEmphasisTitle', 'Monitored bookmarks on the dashboard'),
                 note: t('config.monitorEmphasisNote', 'How much a monitored bookmark stands out among the others. A monitor that is down is always marked, whichever you pick — this chooses how visible the healthy ones are.'),
                 appliesTo: t('config.appliesToMonitorOnly', 'Monitor only'),
-                highlight: true,
                 controls: [
                     {
                         field: 'monitorEmphasis',
@@ -7813,6 +8829,52 @@ class DashboardConfig {
                         opt(48, t('config.recheckEveryDays', 'Every {n} days').replace('{n}', '2')),
                         opt(168, t('config.recheckWeekly', 'Weekly')),
                     ] },
+                    // Three seconds was hardcoded for every check in the app, so
+                    // a service that legitimately answers in four — a large
+                    // Nextcloud, a container that just woke up — was permanently
+                    // "Timeout", which reads as offline. The server clamps to
+                    // 2–30; these are the useful points inside it.
+                    { field: 'healthCheckTimeoutSeconds', type: 'select', label: t('config.healthCheckTimeoutLabel', 'Check timeout'), numeric: true, options: [
+                        opt(0, t('config.healthCheckTimeoutDefault', 'Default (3 seconds)')),
+                        opt(5, t('config.healthCheckTimeoutSeconds', '{n} seconds').replace('{n}', '5')),
+                        opt(10, t('config.healthCheckTimeoutSeconds', '{n} seconds').replace('{n}', '10')),
+                        opt(15, t('config.healthCheckTimeoutSeconds', '{n} seconds').replace('{n}', '15')),
+                        opt(30, t('config.healthCheckTimeoutSeconds', '{n} seconds').replace('{n}', '30')),
+                    ] },
+                    // Costs one bounded body read per monitored check, which is
+                    // why it is a switch rather than always on — and why it sits
+                    // beside the timeout rather than among the display options.
+                    bool('detectSoftNotFound', 'config.detectSoftNotFoundLabel', 'Spot pages that answer 200 but say "not found"'),
+                    // One number, not three: "warn me a fortnight out" is
+                    // something people mean. The two tighter marks follow it in
+                    // the same proportion the built-in ladder uses.
+                    { field: 'certWarnDays', type: 'select', label: t('config.certWarnDaysLabel', 'Warn about certificates'), numeric: true, options: [
+                        opt(0, t('config.certWarnDaysDefault', 'Default (30 days ahead)')),
+                        opt(7, t('config.certWarnDaysAhead', '{n} days ahead').replace('{n}', '7')),
+                        opt(14, t('config.certWarnDaysAhead', '{n} days ahead').replace('{n}', '14')),
+                        opt(60, t('config.certWarnDaysAhead', '{n} days ahead').replace('{n}', '60')),
+                        opt(90, t('config.certWarnDaysAhead', '{n} days ahead').replace('{n}', '90')),
+                    ] },
+                ],
+            },
+            {
+                section: 'behavior',
+                tab: 'fresh',
+                title: t('config.feedsTitle', 'Fresh'),
+                note: t('config.feedsNote', 'A bookmark whose page advertises a feed can say how much it has published since you last opened it — a small count on the row, and a Fresh collection. Switching it on looks for feeds on the pages you have saved, then asks each one, hourly, with a conditional request a quiet site answers in a few hundred bytes. Off by default, because it is the one feature here that talks to other people\'s servers on your behalf.'),
+                controls: [
+                    { ...bool('feedsEnabled', 'config.feedsEnabledLabel', 'Show what is new since you last looked'), special: 'feeds' },
+                    // Off by default on purpose: most rows with a feed are
+                    // silent most of the time, and a mark on twenty of them is
+                    // the noise Fresh exists to avoid. For the reader who would
+                    // rather see who is taking part than ask one row at a time.
+                    { ...bool('feedsMarkQuiet', 'config.feedsMarkQuietLabel', 'Mark rows that publish, even when nothing is new'), special: 'render' },
+                    // Most bookmarks have no feed, so an empty Fresh is the
+                    // normal state and looks exactly like a broken feature.
+                    // This line is the difference: it says how many pages have
+                    // been asked and how many of them publish anything at all.
+                    { type: 'action', label: t('config.feedsCoverageLabel', 'Feeds found'),
+                      button: t('config.feedsFindNow', 'Find feeds now'), action: 'findFeeds' },
                 ],
             },
             {
@@ -7852,7 +8914,6 @@ class DashboardConfig {
                 title: t('config.generalGroupSync', 'Sync & feedback'),
                 note: t('config.generalGroupSyncNote', 'Settings normally follow you to every browser. Keep them on this device to give this one its own appearance and layout.'),
                 controls: [
-                    bool('showSyncToasts', 'config.showSyncToastsLabel', 'Show sync notifications'),
                     bool('deviceSpecificSettings', 'config.deviceSpecificSettingsLabel', 'Keep settings on this device only'),
                 ],
             },
@@ -7881,19 +8942,70 @@ class DashboardConfig {
         ));
     }
 
+    /**
+     * Which settings do not follow the rule the rest of them follow.
+     *
+     * With "Keep settings on this device only" off, every setting is shared, so
+     * saying so on each row would be noise. With it on, most settings become
+     * local to this browser — but seven of them stay server-wide by design
+     * (see GLOBAL_SERVER_SETTING_KEYS in device-settings-merge.js), and those
+     * are exactly the ones that surprise: the font or the favicon changing on
+     * the other machine when nothing else did. The switch itself is always
+     * local, whichever way it is set.
+     */
+    fieldScopeNote(field) {
+        const deviceMode = window.DeviceSettingsMerge?.isDeviceSpecificEnabled?.() === true;
+        if (field === 'deviceSpecificSettings') {
+            return { label: this.t('config.scopeThisDevice', 'this device'),
+                title: this.t('config.scopeThisDeviceHint', 'Kept in this browser, whichever way it is set.') };
+        }
+        if (!deviceMode) return null;
+        const global = window.DeviceSettingsMerge?.GLOBAL_SERVER_SETTING_KEYS || [];
+        if (!global.includes(field)) return null;
+        return {
+            label: this.t('config.scopeAllDevices', 'all devices'),
+            title: this.t('config.scopeAllDevicesHint',
+                'Stays on the server even while settings are kept per device, so it is the same everywhere.'),
+        };
+    }
+
     /** ℹ + ↺ affordances shown after a control, based on the field's metadata. */
     renderFieldAffordances(field, val) {
         const esc = (v) => this.dash.escapeHtml(v);
         const meta = this.fieldMeta(field);
         let out = '';
-        if (meta?.info) {
+        const scope = this.fieldScopeNote(field);
+        if (scope) {
+            out += `<span class="config-field-scope" title="${esc(scope.title)}">${esc(scope.label)}</span>`;
+        }
+        // Only where there is something to say. The button was drawn from the
+        // presence of an info *reference*, and ten of those pointed at locale
+        // keys nobody had written — so the ℹ opened a dialog with an empty
+        // title, an empty body and a Got it button.
+        if (meta?.info && this.hasInfoText(meta.info)) {
             out += `<button type="button" class="config-info-btn" data-info-field="${esc(field)}" aria-label="${esc(this.t('config.settingInfoAria', 'More info'))}" title="${esc(this.t('config.settingInfoAria', 'More info'))}">ℹ</button>`;
         }
         const showReset = meta && meta.def !== undefined && !this.isFieldDefault(field, val);
         if (meta && meta.def !== undefined) {
-            out += `<button type="button" class="config-reset-btn${showReset ? ' is-visible' : ''}" data-reset-field="${esc(field)}" aria-label="${esc(this.t('config.settingResetAria', 'Reset to default'))}" title="${esc(this.t('config.settingResetTitle', 'Reset to default'))}">↺</button>`;
+            // Kept in the DOM so the row does not reflow when a value changes,
+            // but out of the tab order and unannounced while it would do
+            // nothing: a screen reader used to meet a Reset button on every
+            // setting that was already at its default.
+            out += `<button type="button" class="config-reset-btn${showReset ? ' is-visible' : ''}" data-reset-field="${esc(field)}"${
+                showReset ? '' : ' tabindex="-1" aria-hidden="true"'} aria-label="${esc(this.t('config.settingResetAria', 'Reset to default'))}" title="${esc(this.t('config.settingResetTitle', 'Reset to default'))}">↺</button>`;
         }
         return out;
+    }
+
+    /** Whether an [titleKey, messageKey] pair resolves to real text. */
+    hasInfoText(info) {
+        const [titleKey, messageKey] = Array.isArray(info) ? info : [];
+        const resolved = (key) => {
+            if (!key) return '';
+            const value = this.t(`config.${key}`, '');
+            return value && value !== `config.${key}` ? value : '';
+        };
+        return Boolean(resolved(titleKey) || resolved(messageKey));
     }
 
     /** Render a schema of panels into HTML, keyed by a data-<prefix>-field. */
@@ -7906,6 +9018,39 @@ class DashboardConfig {
             // below turns an unknown type into a text input bound to undefined.
             if (c.type === 'note') {
                 return `<p class="config-field-hint">${esc(c.text)}</p>`;
+            }
+            // A live card built from a real bookmark, redrawn as the checklist
+            // beside it is flipped. Appearance previews its settings; this was
+            // the one you had to leave the screen and hover something to see.
+            if (c.type === 'previewSample') {
+                return `
+                    <div class="config-preview-sample">
+                        <div class="config-preview-sample-card" data-preview-sample></div>
+                    </div>`;
+            }
+            // A set of names rather than one value: eight checkboxes writing one
+            // array, so the card's rows are chosen the way a list is chosen.
+            if (c.type === 'checkset') {
+                const current = Array.isArray(s[c.field])
+                    ? s[c.field].map((v) => String(v))
+                    // Absent means all of them, which is what the card has
+                    // always drawn — an empty list is a deliberate choice and
+                    // reads as one.
+                    : c.options.map((o) => String(o.value));
+                const boxes = c.options.map((o) => `
+                    <label class="config-toggle config-checkset-item">
+                        <input type="checkbox" data-${prefix}-field="${esc(c.field)}"
+                               data-${prefix}-type="checkset" data-${prefix}-special="${esc(c.special || '')}"
+                               data-${prefix}-value="${esc(o.value)}"
+                               ${current.includes(String(o.value)) ? 'checked' : ''}>
+                        <span>${esc(o.label)}</span>
+                    </label>`).join('');
+                return `
+                    <div class="config-field">
+                        <span class="config-field-label">${esc(c.label)}</span>
+                        <span class="config-field-affordances">${this.renderFieldAffordances(c.field, s[c.field])}</span>
+                    </div>
+                    <div class="config-checkset" role="group" aria-label="${esc(c.label)}">${boxes}</div>`;
             }
             // Per-device push controls. Permission is granted per browser, so this
             // cannot be a synced setting like the toggles around it — the state is
@@ -7936,11 +9081,32 @@ class DashboardConfig {
                         <span class="config-field-hint" data-monitor-notify-test-status></span>
                     </div>`;
             }
-            const val = s[c.field];
+            // A button that does something once instead of a value that is
+            // stored — no field, so like `note` it has to be handled before
+            // anything below reads c.field.
+            if (c.type === 'action') {
+                return `
+                    <div class="config-field-row">
+                        <span class="config-field-label">${esc(c.label)}</span>
+                        <button type="button" class="config-btn" data-config-action="${esc(c.action)}">${esc(c.button)}</button>
+                        <span class="config-field-hint" data-config-action-status="${esc(c.action)}"></span>
+                    </div>`;
+            }
+            // deviceSpecificSettings is kept in this browser rather than in the
+            // settings object it is rendered from, so reading it the ordinary
+            // way would draw the box unchecked however it is set.
+            const val = c.field === 'deviceSpecificSettings'
+                ? window.DeviceSettingsMerge?.isDeviceSpecificEnabled?.() === true
+                : s[c.field];
             const dataAttrs = `data-${prefix}-field="${esc(c.field)}" data-${prefix}-special="${esc(c.special || '')}"`;
             const aff = this.renderFieldAffordances(c.field, val);
             const hintKey = this.fieldMeta(c.field)?.hint;
             const hint = hintKey ? `<p class="config-field-hint">${esc(this.t(`config.${hintKey}`, ''))}</p>` : '';
+            // A drawing of what the current value does, for the settings whose
+            // difference is a shape rather than a word. It repaints on change
+            // (see bindControlPanels), so it is the answer to "what will this
+            // look like" without leaving the panel to find out.
+            const art = c.art ? this.renderControlArt(c, val, prefix) : '';
             if (c.type === 'checkbox') {
                 return `
                     <div class="config-field-row">
@@ -7949,7 +9115,7 @@ class DashboardConfig {
                             <span>${esc(c.label)}</span>
                         </label>
                         <span class="config-field-affordances">${aff}</span>
-                    </div>${hint}`;
+                    </div>${art}${hint}`;
             }
             // Big labelled choice buttons, for a small set of options where the
             // trade-off needs a sentence each. A <select> hides those sentences
@@ -7957,10 +9123,17 @@ class DashboardConfig {
             if (c.type === 'cards') {
                 const cards = c.options.map((o) => {
                     const on = String(val) === String(o.value);
+                    // Each card draws its own option, so the three are compared
+                    // as shapes at a glance and the sentence under them is a
+                    // confirmation rather than the only evidence.
+                    const cardArt = c.art
+                        ? (window.SettingArt?.render?.(c.art, o.value) || '')
+                        : '';
                     return `
                         <button type="button" class="config-choice-card${on ? ' is-active' : ''}"
                                 ${dataAttrs} data-${prefix}-type="cards" data-${prefix}-value="${esc(o.value)}"
                                 role="radio" aria-checked="${on ? 'true' : 'false'}">
+                            ${cardArt}
                             <span class="config-choice-card-title">${esc(o.label)}</span>
                             <span class="config-choice-card-body">${esc(o.body || '')}</span>
                         </button>`;
@@ -7974,8 +9147,12 @@ class DashboardConfig {
             }
             let control;
             if (c.type === 'select') {
+                // A disabled option is still listed: the reader has to be able
+                // to see that the choice exists and read why it is out of
+                // reach, or they go looking for a setting that seems to have
+                // been taken away.
                 const opts = c.options.map((o) =>
-                    `<option value="${esc(o.value)}" ${String(val) === String(o.value) ? 'selected' : ''}>${esc(o.label)}</option>`
+                    `<option value="${esc(o.value)}" ${String(val) === String(o.value) ? 'selected' : ''}${o.disabled ? ' disabled' : ''}>${esc(o.label)}</option>`
                 ).join('');
                 // A <select> always yields a string, but these fields are ints
                 // server-side and a string fails to unmarshal — rejecting the
@@ -7993,7 +9170,7 @@ class DashboardConfig {
                     <span class="config-field-label">${esc(c.label)}</span>
                     ${control}
                     <span class="config-field-affordances">${aff}</span>
-                </div>${hint}`;
+                </div>${art}${hint}`;
         };
         // `note` explains the panel; `appliesTo` names the availability modes the
         // panel's settings actually affect, because several of them are inert
@@ -8004,9 +9181,13 @@ class DashboardConfig {
             // the rest show only the controls that differ. The note and the
             // applies-to badge stay: they explain the controls that remain.
             if (this.changedOnly && !changedFields.length) return '';
-            const controls = this.changedOnly
-                ? panel.controls.filter((c) => changedFields.includes(c.field))
+            const filtered = String(this.settingsFilter || '').trim()
+                ? panel.controls.filter((c) => this.controlMatchesFilter(c))
                 : panel.controls;
+            if (!filtered.length) return '';
+            const controls = this.changedOnly
+                ? filtered.filter((c) => changedFields.includes(c.field))
+                : filtered;
 
             const badge = panel.appliesTo
                 ? `<span class="config-applies-to" title="${esc(this.t('config.appliesToTitle', 'These settings only take effect for bookmarks set to this mode'))}">${esc(panel.appliesTo)}</span>`
@@ -8033,6 +9214,10 @@ class DashboardConfig {
         if (this.changedOnly && !rendered.trim()) {
             return `<p class="config-panel-empty">${esc(this.t('config.changedNoneOnTab',
                 'Nothing on this tab differs from its default.'))}</p>`;
+        }
+        if (String(this.settingsFilter || '').trim() && !rendered.trim()) {
+            return `<p class="config-panel-empty">${esc(this.t('config.settingsFilterNone',
+                'No setting on this tab matches that.'))}</p>`;
         }
         return rendered;
     }
@@ -8102,7 +9287,107 @@ class DashboardConfig {
             </div>`;
     }
 
+    /**
+     * The drawing under a control, in its own row so the label column above is
+     * left alone.
+     *
+     * Carries the kind on the element rather than in a closure: the panel is
+     * rendered as a string and bound afterwards, so the change handler has only
+     * the DOM to work from when it repaints.
+     */
+    renderControlArt(control, value, prefix) {
+        const art = window.SettingArt?.render?.(control.art, this.artValue(control.field, control.art, value));
+        if (!art) return '';
+        const esc = (v) => this.dash.escapeHtml(v);
+        return `<div class="config-field-art" data-${prefix}-art="${esc(control.field)}"`
+            + ` data-art-kind="${esc(control.art)}">${art}</div>`;
+    }
+
+    /** Redraw a control's art for a value it has just been given. */
+    repaintControlArt(container, prefix, field, value) {
+        const host = container.querySelector(`[data-${prefix}-art="${CSS.escape(field)}"]`);
+        if (!host) return;
+        const kind = host.getAttribute('data-art-kind') || '';
+        host.innerHTML = window.SettingArt?.render?.(kind, this.artValue(field, kind, value)) || '';
+    }
+
+    /**
+     * What a drawing is handed, which is not always the stored value.
+     *
+     * The shapes take the value as it is — three columns is three columns. A
+     * route takes words, and words have to be translated, which the art module
+     * has no business knowing how to do. So the mapping from a stored value to
+     * the chips that draw it lives here, beside the labels it borrows.
+     */
+    artValue(field, kind, value) {
+        if (kind !== 'flow') return value;
+        if (field === 'pasteDestination') {
+            const paste = this.t('config.pasteArtPaste', 'Paste a URL');
+            const bookmark = this.t('config.pasteDestinationBookmark', 'New bookmark');
+            const inbox = this.t('config.pasteDestinationInbox', 'Inbox');
+            // "Ask each time" ends in two places, so it is drawn as a fork
+            // rather than as a third single destination.
+            if (String(value) === 'inbox') return [paste, inbox];
+            if (String(value) === 'bookmark') return [paste, bookmark];
+            return [paste, [bookmark, inbox]];
+        }
+        return value;
+    }
+
     /** Bind a rendered schema's controls (and ℹ/↺ affordances) back to setBehavior. */
+    /**
+     * Draw the sample card in the Link preview panel.
+     *
+     * Built by the card's own code from a real bookmark — the one with the most
+     * to say, so the rows the checklist governs are actually in it — rather than
+     * a drawing of a card, which would be free to drift from the card.
+     */
+    paintPreviewSample(container) {
+        const host = container.querySelector('[data-preview-sample]');
+        if (!host) return;
+        const d = this.dash;
+        const preview = d.preview;
+        if (!preview || typeof preview.paintPreviewCard !== 'function') {
+            host.remove();
+            return;
+        }
+        const pool = (d.allBookmarks?.length ? d.allBookmarks : d.bookmarks) || [];
+        // Whichever bookmark can fill the most rows: a sample with no note and
+        // no description would say nothing about the boxes beside it.
+        const sample = [...pool].sort((a, b) => this.previewSampleScore(b) - this.previewSampleScore(a))[0] || null;
+        const bookmark = sample || {
+            name: 'nextDash',
+            url: 'https://example.com/docs',
+            note: this.t('config.linkPreviewSampleNote', 'The note you wrote about this page.'),
+            tags: ['docs'],
+            openCount: 42,
+            lastOpened: Date.now() - 3 * 86400000,
+        };
+        host.className = 'bookmark-preview-card config-preview-sample-card is-visible';
+        host.innerHTML = window.DashboardPreview.cardMarkup();
+        const payload = preview.buildPreviewPayload(
+            bookmark,
+            {
+                title: bookmark.previewTitle || bookmark.name,
+                description: bookmark.previewDesc
+                    || this.t('config.linkPreviewSampleDesc', 'What the page itself says about the page.'),
+                image: bookmark.previewImage || '',
+                url: bookmark.url,
+            }
+        );
+        preview.paintPreviewCard(host, payload, { mode: 'peek' });
+    }
+
+    /** How much a bookmark would fill a sample card. */
+    previewSampleScore(bookmark) {
+        if (!bookmark) return -1;
+        return (String(bookmark.note || '').trim() ? 2 : 0)
+            + ((bookmark.tags || []).length ? 1 : 0)
+            + (String(bookmark.previewDesc || '').trim() ? 1 : 0)
+            + (String(bookmark.previewImage || '').trim() ? 1 : 0)
+            + (Number(bookmark.openCount || 0) > 0 ? 1 : 0);
+    }
+
     bindControlPanels(container, prefix) {
         container.querySelectorAll(`[data-${prefix}-field]`).forEach((el) => {
             const field = el.getAttribute(`data-${prefix}-field`);
@@ -8124,20 +9409,46 @@ class DashboardConfig {
                     });
                     void this.setBehavior(field, value, special);
                 });
+            } else if (type === 'checkset') {
+                el.addEventListener('change', () => {
+                    const boxes = [...container.querySelectorAll(
+                        `[data-${prefix}-field="${CSS.escape(field)}"][data-${prefix}-type="checkset"]`
+                    )];
+                    const value = boxes
+                        .filter((box) => box.checked)
+                        .map((box) => box.getAttribute(`data-${prefix}-value`));
+                    return this.setBehavior(field, value, special);
+                });
             } else if (type === 'checkbox') {
-                el.addEventListener('change', () => this.setBehavior(field, el.checked, special));
+                el.addEventListener('change', () => {
+                    this.repaintControlArt(container, prefix, field, el.checked);
+                    return this.setBehavior(field, el.checked, special);
+                });
             } else if (type === 'number' || numericSelect) {
-                el.addEventListener('change', () => this.setBehavior(field, Number(el.value), special));
+                el.addEventListener('change', () => {
+                    this.repaintControlArt(container, prefix, field, Number(el.value));
+                    return this.setBehavior(field, Number(el.value), special);
+                });
+                // A number field is typed into, not chosen: waiting for the
+                // change event to redraw means the drawing lags a whole field
+                // behind what the box says.
+                el.addEventListener('input', () =>
+                    this.repaintControlArt(container, prefix, field, Number(el.value)));
             } else {
-                el.addEventListener('change', () => this.setBehavior(field, el.value, special));
+                el.addEventListener('change', () => {
+                    this.repaintControlArt(container, prefix, field, el.value);
+                    return this.setBehavior(field, el.value, special);
+                });
             }
         });
+        this.paintPreviewSample(container);
         this.bindPanelBulkActions(container, prefix);
         this.bindChangedFilter(container);
         this.bindPanelResetActions(container);
         this.bindPushDeviceControls(container);
         this.bindMaintenanceWindows(container);
         this.bindMonitorNotifyTest(container);
+        this.bindPanelActions(container);
         this.bindAffordances(container, (field) => {
             const el = container.querySelector(`[data-${prefix}-field="${CSS.escape(field)}"]`);
             const special = el?.getAttribute(`data-${prefix}-special`) || '';
@@ -8249,6 +9560,35 @@ class DashboardConfig {
             btn.addEventListener('click', () => {
                 this.changedOnly = !this.changedOnly;
                 this._trackAction('changed-filter', { value: this.changedOnly ? 'on' : 'off' });
+                this.repaintActiveControlPanels();
+            });
+        });
+        container.querySelectorAll('[data-settings-filter]').forEach((field) => {
+            if (field.dataset.filterBound === '1') return;
+            field.dataset.filterBound = '1';
+            let debounce = null;
+            field.addEventListener('input', () => {
+                clearTimeout(debounce);
+                debounce = setTimeout(() => {
+                    this.settingsFilter = field.value;
+                    this.repaintActiveControlPanels();
+                    // The repaint replaces the field, so the caret goes with it
+                    // unless it is put back where it was.
+                    const fresh = document.querySelector('[data-settings-filter]');
+                    if (fresh) {
+                        fresh.focus();
+                        fresh.setSelectionRange(fresh.value.length, fresh.value.length);
+                    }
+                }, 200);
+            });
+            // Escape clears the filter rather than closing config, matching the
+            // help search.
+            field.addEventListener('keydown', (e) => {
+                if (e.key !== 'Escape' || !String(this.settingsFilter || '').trim()) return;
+                e.preventDefault();
+                e.stopPropagation();
+                this.settingsFilter = '';
+                field.value = '';
                 this.repaintActiveControlPanels();
             });
         });
@@ -8530,6 +9870,107 @@ class DashboardConfig {
      * is clicked the server already has whatever was just typed — no need to
      * gather values from the DOM here.
      */
+    /**
+     * Wire the one-shot buttons a panel schema declares with `type: 'action'`.
+     *
+     * The button reports back beside itself rather than through a toast: it is
+     * the kind of action whose result is a number ("12 categories reset"), and
+     * a number is easier to read where the button that produced it is.
+     */
+    bindPanelActions(container) {
+        // Fresh: look for feeds now, and say what the round found.
+        const findFeeds = container.querySelector('[data-config-action="findFeeds"]');
+        if (findFeeds) {
+            this.paintFeedCoverage();
+            findFeeds.addEventListener('click', async () => {
+                findFeeds.disabled = true;
+                const status = container.querySelector('[data-config-action-status="findFeeds"]');
+                if (status) status.textContent = this.t('config.feedsFindingNow', 'Looking…');
+                try {
+                    const round = await this.dash.feeds?.pollNow();
+                    this.paintFeedCoverage(round);
+                    this.dash.renderDashboard?.({ animate: false });
+                } finally {
+                    findFeeds.disabled = false;
+                }
+            });
+        }
+
+        container.querySelectorAll('[data-config-action]').forEach((btn) => {
+            const action = btn.getAttribute('data-config-action');
+            if (action !== 'resetCategorySpreads') {
+                return;
+            }
+            btn.addEventListener('click', async () => {
+                const status = container.querySelector(`[data-config-action-status="${CSS.escape(action)}"]`);
+                const scope = this.dash.settings?.categorySpreadResetScope === 'all' ? 'all' : 'page';
+                const scopeLabel = scope === 'all'
+                    ? this.t('config.categorySpreadResetScopeAll', 'Every page')
+                    : this.t('config.categorySpreadResetScopePage', 'The current page');
+                // Not danger: nothing is lost that cannot be set again in a
+                // click, and the default confirm button says "Delete".
+                const ok = await this.confirmAction(
+                    this.t('config.categorySpreadResetConfirm',
+                        'Put every category back to one column? Reach: {scope}.').replace('{scope}', scopeLabel.toLowerCase()),
+                    {
+                        title: this.t('config.categorySpreadResetLabel', 'Turn spreading off everywhere'),
+                        confirmLabel: this.t('config.categorySpreadResetButton', 'Turn off'),
+                        danger: false,
+                    }
+                );
+                if (!ok) {
+                    return;
+                }
+                btn.disabled = true;
+                try {
+                    const changed = await window.DashboardCategorySpan?.resetAllCategorySpreads(this.dash, scope);
+                    if (status) {
+                        status.textContent = this.t('config.categorySpreadResetDone', '{n} categories reset')
+                            .replace('{n}', String(changed || 0));
+                    }
+                    this.dash.renderDashboard?.({ animate: false, forceFull: true });
+                } finally {
+                    btn.disabled = false;
+                }
+            });
+        });
+    }
+
+    /**
+     * What the last look for feeds found, beside the button that repeats it.
+     *
+     * Fresh spent a release looking broken on installs where it was working
+     * perfectly: most pages carry no feed, so the honest result is an empty
+     * dashboard, and an empty dashboard is indistinguishable from a feature
+     * that does nothing. Three numbers fix that — how many bookmarks there are,
+     * how many have been asked, and how many publish anything at all.
+     */
+    paintFeedCoverage(round = null) {
+        const status = document.querySelector('[data-config-action-status="findFeeds"]');
+        if (!status) return;
+        const feeds = this.dash?.feeds;
+        if (!feeds) return;
+        if (feeds.enabled !== true) {
+            status.textContent = this.t('config.feedsCoverageOff', 'Switched off — nothing is being asked.');
+            return;
+        }
+        const coverage = round || feeds.coverage || {};
+        const bookmarks = Number(coverage.bookmarks) || 0;
+        const checked = Number(coverage.checked) || 0;
+        const withFeed = Number(coverage.withFeed) || 0;
+        const text = this.t('config.feedsCoverageCount', '{checked} of {bookmarks} bookmarks asked · {withFeed} publish a feed')
+            .replace('{checked}', String(checked))
+            .replace('{bookmarks}', String(bookmarks))
+            .replace('{withFeed}', String(withFeed));
+        // The "and none of them publishes anything" case is the one worth a
+        // sentence rather than a number: it is the answer to "why is my
+        // dashboard not changing", and it is not a fault.
+        const none = checked > 0 && withFeed === 0
+            ? ` ${this.t('config.feedsCoverageNone', 'None of them publishes a feed, so there is nothing for Fresh to count.')}`
+            : '';
+        status.textContent = text + none;
+    }
+
     bindMonitorNotifyTest(container) {
         const btn = container.querySelector('[data-monitor-notify-test]');
         if (!btn) return;
@@ -8719,7 +10160,12 @@ class DashboardConfig {
         });
     }
 
-    static BEHAVIOR_TABS = ['general', 'datetime', 'search', 'status', 'privacy'];
+    // Fresh has a tab rather than a panel at the foot of Status & health. It is
+    // not link checking: that tab answers "is this still there", Fresh answers
+    // "has this moved on", and the two were only neighbours because both talk to
+    // the internet on a schedule. Four panels down a tab named after something
+    // else is also where a reader stops looking.
+    static BEHAVIOR_TABS = ['general', 'datetime', 'search', 'inbox', 'fresh', 'status', 'privacy'];
 
     /**
      * Date & weather fields that need a fresh fetch rather than a redraw: each
@@ -8732,7 +10178,14 @@ class DashboardConfig {
         const map = {
             general: ['config.behaviorTabGeneral', 'General'],
             datetime: ['config.behaviorTabDateTime', 'Date & weather'],
-            search: ['config.behaviorTabSearch', 'Search & inbox'],
+            // Was "Search & inbox": the inbox had four settings living under a
+            // tab named after something else, where nobody looking for the inbox
+            // would think to open them.
+            search: ['config.behaviorTabSearch', 'Search'],
+            inbox: ['config.behaviorTabInbox', 'Inbox'],
+            // The tab and the panel on it are the same subject, so they share
+            // the name rather than carrying two translations of one word.
+            fresh: ['config.feedsTitle', 'Fresh'],
             status: ['config.behaviorTabStatus', 'Status & health'],
             privacy: ['config.behaviorTabPrivacy', 'Privacy'],
         };
@@ -8744,11 +10197,8 @@ class DashboardConfig {
         const esc = (v) => this.dash.escapeHtml(v);
         const tabs = DashboardConfig.BEHAVIOR_TABS.map((tab) => {
             const active = tab === this.behaviorTab;
-            // The Status tab carries this release's new setting, so it gets the
-            // same twinkle the overview's New features panel and the Ko-fi
-            // button use — the established "look here" mark in this app. Dropped
-            // once the setting is no longer new.
-            const isNew = tab === 'status';
+            const isNew = DashboardConfig.NEW_THIS_RELEASE.section === 'behavior'
+                && tab === DashboardConfig.NEW_THIS_RELEASE.tab;
             const stars = isNew ? this.renderNewFeaturesPanelStars() : '';
             return `<button type="button" class="config-subtab${active ? ' is-active' : ''}${isNew ? ' config-subtab--animated' : ''}" role="tab" aria-selected="${active}" tabindex="${active ? 0 : -1}" aria-controls="config-behavior-body" data-behavior-tab="${esc(tab)}">${esc(this.behaviorTabLabel(tab))}${stars}</button>`;
         }).join('');
@@ -8790,6 +10240,10 @@ class DashboardConfig {
      */
     renderChangedFilterBar(section, tab) {
         const esc = (v) => this.dash.escapeHtml(v);
+        // Custom themes is a list editor rather than a grid of settings: there
+        // is no default to differ from and nothing for a filter to narrow, so
+        // the bar is absent by decision instead of by accident.
+        if (section === 'appearance' && tab === 'custom-themes') return '';
         const panels = this.panelsFor(section, tab);
         const manual = this.manualFieldsFor(section, tab);
         const changed = panels.reduce((n, p) => n + this.panelChangedFields(p).length, 0)
@@ -8814,7 +10268,90 @@ class DashboardConfig {
                     ${esc(this.t('config.changedOnlyToggle', 'Only changed'))}
                 </button>
                 <span class="config-changed-count">${esc(label)}</span>
+                <input type="search" class="config-text config-settings-filter"
+                       data-settings-filter="${esc(section)}"
+                       placeholder="${esc(this.t('config.settingsFilterPlaceholder', 'Filter settings…'))}"
+                       aria-label="${esc(this.t('config.settingsFilterLabel', 'Filter the settings on this tab'))}"
+                       value="${esc(this.settingsFilter || '')}">
             </div>`;
+    }
+
+    /**
+     * Narrow a hand-written section to what matches the filter.
+     *
+     * The schema sections filter while they render, because the controls are
+     * data there. Appearance is written out by hand, so the same field does
+     * nothing unless something walks the rendered DOM — which is what this is:
+     * every .config-field or .config-field-row whose text does not match is
+     * hidden, a panel left with nothing goes with it, and a section left with
+     * nothing says so rather than looking empty.
+     *
+     * Text rather than field names, matching the schema filter: someone typing
+     * "webhook" is reading the page.
+     */
+    applyDomSettingsFilter(container) {
+        const host = container.querySelector('#config-appearance-body');
+        if (!host) return;
+        const query = String(this.settingsFilter || '').trim().toLowerCase();
+        host.querySelectorAll('[data-filter-empty]').forEach((el) => el.remove());
+        // Only the outermost rows: a toggle or a field nested inside another row
+        // is carried by its parent, and hiding the two independently left the
+        // child visible in a hidden parent — which kept the panel alive and the
+        // "nothing matches" line away.
+        const rowSelector = '.config-field, .config-field-row';
+        const rows = [...host.querySelectorAll(rowSelector)]
+            .filter((row) => !row.parentElement?.closest(rowSelector));
+        const panels = host.querySelectorAll('.config-panel');
+        if (!query) {
+            rows.forEach((row) => row.removeAttribute('hidden'));
+            panels.forEach((panel) => panel.removeAttribute('hidden'));
+            return;
+        }
+        rows.forEach((row) => {
+            const text = (row.textContent || '').toLowerCase();
+            row.toggleAttribute('hidden', !text.includes(query));
+        });
+        let anyVisible = false;
+        panels.forEach((panel) => {
+            const visible = [...panel.querySelectorAll(rowSelector)]
+                .filter((row) => !row.parentElement?.closest(rowSelector))
+                .some((row) => !row.hasAttribute('hidden'));
+            // A panel of prose and buttons with no fields at all — the theme
+            // picker's own panel, say — is kept when its title or note matches.
+            const titleMatch = (panel.querySelector('.config-panel-title')?.textContent || '')
+                .toLowerCase().includes(query);
+            panel.toggleAttribute('hidden', !visible && !titleMatch);
+            if (visible || titleMatch) anyVisible = true;
+        });
+        if (!anyVisible) {
+            const note = document.createElement('p');
+            note.className = 'config-panel-empty';
+            note.setAttribute('data-filter-empty', '');
+            note.textContent = this.t('config.settingsFilterNone', 'No setting on this tab matches that.');
+            host.appendChild(note);
+        }
+    }
+
+    /**
+     * Whether a control survives the tab's filter.
+     *
+     * Matches the label a reader can see and the hint under it, not the field
+     * name: someone looking for "webhook" is reading the page, not the source.
+     * The global jump (Ctrl/Cmd+Shift+K) finds one setting anywhere; this
+     * narrows the eighty-odd on the tab in front of you, which is the other
+     * half of the same problem.
+     */
+    controlMatchesFilter(control) {
+        const query = String(this.settingsFilter || '').trim().toLowerCase();
+        if (!query) return true;
+        if (!control || control.type === 'note') return false;
+        const parts = [control.label, control.hint, control.field];
+        const meta = control.field ? this.fieldMeta(control.field) : null;
+        if (meta?.hint) parts.push(this.t(`config.${meta.hint}`, ''));
+        for (const option of control.options || []) {
+            parts.push(option.label);
+        }
+        return parts.filter(Boolean).some((part) => String(part).toLowerCase().includes(query));
     }
 
     renderOnboardingActions() {
@@ -8895,6 +10432,21 @@ class DashboardConfig {
     /** Apply a behaviour setting: mutate, run any special apply, save. */
     async setBehavior(field, value, special) {
         const d = this.dash;
+        // Not a synced setting: this one says whether the *other* settings
+        // follow you between browsers, so it can only live in this browser.
+        // Rendered by the same schema as its neighbours, it used to fall through
+        // to the ordinary save, which writes a key the server does not keep —
+        // the toggle moved and nothing happened. The Data & backups copy did the
+        // localStorage write; there is one control now, and it is this one.
+        if (field === 'deviceSpecificSettings') {
+            try {
+                localStorage.setItem('deviceSpecificSettings', value ? 'true' : 'false');
+            } catch { /* a browser refusing storage cannot keep the preference */ }
+            // DeviceSettingsMerge reads that same key on demand, so writing it
+            // is the whole of the change — there is no setter to call.
+            this.notify(this.t('config.deviceSpecificSaved', 'Preference saved.'), 'success');
+            return;
+        }
         d.settings[field] = value;
         // Which settings people actually change. The field name is a fixed enum
         // so it is safe to report; the value is not (titles, webhook URLs and
@@ -8930,6 +10482,16 @@ class DashboardConfig {
         // than a bespoke show/hide toggle for this one field.
         if (field === 'monitorNotifyPreset') {
             this.repaintActiveControlPanels();
+        }
+        // The card is bound to each row as the grid is drawn, so a mode change
+        // only takes effect on the next render — and the sample beside the
+        // checklist has to show what was just ticked.
+        if (field === 'linkPreviewMode') {
+            d.settings.showLinkPreviewCards = value !== 'off';
+        }
+        if (special === 'previewCard') {
+            const panels = document.getElementById('config-appearance-body');
+            if (panels) this.paintPreviewSample(panels);
         }
         switch (special) {
             case 'language':
@@ -8967,6 +10529,22 @@ class DashboardConfig {
                 // <body> by setupDOM, so neither alone is enough.
                 this.applyChromeSettings();
                 d.renderDashboard?.({ animate: false });
+                break;
+            case 'feeds':
+                // Switching this on looks for feeds and polls once now, rather
+                // than leaving the dashboard blank until the scheduler's next
+                // wake — turning a feature on and seeing nothing happen reads
+                // as broken. Off just drops what is painted.
+                if (value) {
+                    void d.feeds?.pollNow().then((round) => {
+                        this.paintFeedCoverage(round);
+                        d.renderDashboard?.({ animate: false });
+                    });
+                } else if (d.feeds) {
+                    d.feeds.enabled = false;
+                    d.feeds.byKey = new Map();
+                    d.renderDashboard?.({ animate: false });
+                }
                 break;
             case 'render':
                 d.renderDashboard?.({ animate: false });
@@ -9119,13 +10697,52 @@ class DashboardConfig {
      * repaintAppearanceBody(), which falls back to a full render() for
      * anything but the custom-themes tab.
      */
+    /**
+     * Remember which settings control had focus, and put it back after the
+     * panel is rebuilt. Returns the restore function.
+     *
+     * Identified by its field name rather than by node, since the element the
+     * user was on no longer exists once innerHTML is replaced.
+     */
+    captureControlPanelFocus() {
+        const active = document.activeElement;
+        const field = active?.getAttribute?.('data-behavior-field')
+            || active?.getAttribute?.('data-appearance-field');
+        if (!field) return () => {};
+        const selectionStart = active.selectionStart;
+        const selectionEnd = active.selectionEnd;
+        return () => {
+            const next = document.querySelector(
+                `[data-behavior-field="${CSS.escape(field)}"], [data-appearance-field="${CSS.escape(field)}"]`
+            );
+            if (!next) return;
+            next.focus?.();
+            // Text inputs keep the caret too, or typing resumes at the wrong end.
+            if (selectionStart != null && next.setSelectionRange) {
+                try { next.setSelectionRange(selectionStart, selectionEnd); } catch { /* not a text input */ }
+            }
+        };
+    }
+
     repaintActiveControlPanels() {
         if (!this.isActiveView()) return;
         const container = document.getElementById('dashboard-layout');
         if (!container) return;
+        // Controls bind on `change`, which for a select or checkbox fires while
+        // the control still has focus — and this replaces the whole body, so
+        // focus fell back to the document and the next Tab started from the top
+        // of the page. repaintTagsBody has done this for its own inputs for a
+        // while, with a comment explaining exactly this hazard; the settings
+        // panels never got it.
+        const restoreFocus = this.captureControlPanelFocus();
         if (this.section === 'behavior') {
             const body = document.getElementById('config-behavior-body');
-            if (body) { body.innerHTML = this.renderBehaviorBody(); this.bindControlPanels(container, 'behavior'); }
+            if (body) {
+                body.innerHTML = this.renderBehaviorBody();
+                this.bindControlPanels(container, 'behavior');
+                this.labelSettingsControls();
+                restoreFocus();
+            }
             return;
         }
         if (this.section === 'appearance') {
@@ -9133,6 +10750,7 @@ class DashboardConfig {
             const render = {
                 toolbar: () => this.renderAppearanceToolbarBody(),
                 layout: () => this.renderAppearanceLayoutBody(),
+                buttonbar: () => this.renderAppearanceButtonBarBody(),
                 display: () => this.renderAppearanceDisplayBody(),
                 branding: () => this.renderAppearanceBrandingBody(),
             }[this.appearanceTab];
@@ -9155,6 +10773,8 @@ class DashboardConfig {
                 // two handlers flip the flag twice per click, so the button
                 // did nothing at all.
                 this.bindAppearanceControls(body);
+                this.labelSettingsControls();
+                restoreFocus();
             }
             return;
         }
@@ -9174,7 +10794,23 @@ class DashboardConfig {
      */
     static DB_TABS = ['backups', 'icons', 'logs', 'trash', 'reset'];
 
-    static APPEARANCE_TABS = ['general', 'layout', 'display', 'toolbar', 'branding', 'custom-themes'];
+    /**
+     * Bookmarks is a list section, so its settings used to sit after the list —
+     * behind fifty rows by default and up to five hundred as the infinite scroll
+     * loads more, which also means you cannot reach them by jumping to the
+     * bottom: the bottom moves. One strip, the same one five other sections use.
+     */
+    static BM_TABS = ['list', 'settings'];
+
+    // Branding was a tab holding one panel with one toggle, a text field and an
+    // upload — a tab click for a single setting. It sits at the end of Display,
+    // which is already about what the page shows of itself.
+    // Button bar is a tab of its own rather than half a panel on Layout and two
+    // panels on Toolbar & tabs. It is one object on the screen, and the three
+    // questions people ask about it — where it sits, which of the four main
+    // buttons it carries, which extras — were answered two tabs apart, so
+    // changing the bar meant finding it twice.
+    static APPEARANCE_TABS = ['general', 'layout', 'buttonbar', 'display', 'toolbar', 'custom-themes'];
 
     static STATS_TABS = ['overview', 'activity', 'content', 'inbox', 'health'];
 
@@ -9217,6 +10853,9 @@ class DashboardConfig {
     bindPagesTags(container) {
         this.bindSubTabStrip(container, 'data-pt-tab', (tab) => {
             if (tab === this.ptTab) return;
+            // Leaving Collections is the moment a half-filled row stops being
+            // work in progress and starts being something the server threw away.
+            if (this.ptTab === 'collections') this.reportDroppedCollections();
             this.clearListKeyboardSelection();
             this.ptTab = tab;
             this.restoreConfigHash();
@@ -9416,7 +11055,7 @@ class DashboardConfig {
             return `
             <li class="config-crud-row" data-finder-index="${i}">
                 <div class="config-crud-fields">
-                    <input type="text" class="config-text" data-finder="name" data-index="${i}" placeholder="${esc(this.t('config.finderNamePlaceholder', 'Name'))}" value="${esc(f.name || '')}">
+                    <input type="text" class="config-text" maxlength="60" data-finder="name" data-index="${i}" placeholder="${esc(this.t('config.finderNamePlaceholder', 'Name'))}" value="${esc(f.name || '')}">
                     <input type="text" class="config-text${missingPlaceholder ? ' field-conflict' : ''}" data-finder="searchUrl" data-index="${i}" placeholder="https://example.com/search?q=%s" value="${esc(f.searchUrl || '')}">
                     <input type="text" class="config-text" style="min-width:70px" data-finder="shortcut" data-index="${i}" placeholder="${esc(this.t('config.finderShortcutPlaceholder', 'key'))}" value="${esc(f.shortcut || '')}">
                     ${warning}
@@ -9448,10 +11087,18 @@ class DashboardConfig {
         if (this._finders != null) return;
         try {
             const res = await fetch('/api/finders');
-            const data = res && res.ok ? await res.json() : [];
-            this._finders = Array.isArray(data) ? data : [];
+            if (!res || !res.ok) throw new Error(`HTTP ${res?.status ?? 'network'}`);
+            const data = await res.json();
+            if (!Array.isArray(data)) throw new Error('finders: unexpected payload');
+            this._finders = data;
+            this._findersLoadFailed = false;
         } catch {
+            // Not []: saveFinders posts the whole list, so a failed load that
+            // rendered as "no finders yet" let the first edit replace every
+            // saved finder with that one row. The flag keeps the two apart and
+            // blocks the write until a load succeeds.
             this._finders = [];
+            this._findersLoadFailed = true;
         }
         if (this.ptTab === 'finders') this.repaintPtBody();
     }
@@ -9541,6 +11188,12 @@ class DashboardConfig {
     }
 
     async saveFinders() {
+        // Refuse to write what we never managed to read — see loadFinders.
+        if (this._findersLoadFailed) {
+            this.notify(this.t('config.findersLoadFailed',
+                'Finders could not be loaded, so they will not be saved. Reload and try again.'), 'error');
+            return false;
+        }
         try {
             const res = await this.writeFetch('/api/finders', {
                 method: 'POST',
@@ -9548,8 +11201,11 @@ class DashboardConfig {
                 body: JSON.stringify(this._finders || []),
             });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            this.dash.configSync?.publishConfigSync?.('structure');
+            return true;
         } catch {
             this.notify(this.t('config.findersSaveError', 'Could not save finders.'), 'error');
+            return false;
         }
     }
 
@@ -9929,6 +11585,8 @@ class DashboardConfig {
                     { field: 'smartStaleLimit', type: 'select', label: t('config.smartStaleLimit', 'Stale limit'), special: 'render', options: limitOpts },
                     bool('showSmartMostUsedCollection', 'config.showSmartMostUsedCollection', 'Show “Most used” collection'),
                     { field: 'smartMostUsedLimit', type: 'select', label: t('config.smartMostUsedLimit', 'Most-used limit'), special: 'render', options: limitOpts },
+                    bool('showSmartAddedCollection', 'config.showSmartAddedCollection', 'Show “Recently added” collection'),
+                    { field: 'smartAddedLimit', type: 'select', label: t('config.smartAddedLimit', 'Recently-added limit'), special: 'render', options: limitOpts },
                     {
                         type: 'note',
                         // Turning this on before anything has been opened looks
@@ -9987,6 +11645,10 @@ class DashboardConfig {
             tag: ['config.collectionRuleFieldTag', 'Tag'],
             category: ['config.collectionRuleFieldCategory', 'Category'],
             shortcut: ['config.collectionRuleFieldShortcut', 'Shortcut'],
+            pinned: ['config.collectionRuleFieldPinned', 'Pinned'],
+            untagged: ['config.collectionRuleFieldUntagged', 'Has no tags'],
+            notOpenedDays: ['config.collectionRuleFieldNotOpened', 'Not opened in (days)'],
+            changedDays: ['config.collectionRuleFieldChanged', 'Changed within (days)'],
         };
         const [key, fallback] = map[field] || [field, field];
         return this.t(key, fallback);
@@ -10061,7 +11723,7 @@ class DashboardConfig {
             return `
             <div class="config-collection-rule" data-collection-rule="${i}">
                 <select class="config-select" data-rule-field="${i}">
-                    ${['tag', 'category', 'shortcut'].map((f) =>
+                    ${['tag', 'category', 'shortcut', 'pinned', 'untagged', 'notOpenedDays', 'changedDays'].map((f) =>
                         `<option value="${f}" ${f === field ? 'selected' : ''}>${esc(this.collectionRuleFieldLabel(f))}</option>`).join('')}
                 </select>
                 <select class="config-select" data-rule-operator="${i}">
@@ -10192,6 +11854,24 @@ class DashboardConfig {
     async saveCustomCollections() {
         this.dash.renderDashboard?.({ animate: false });
         await this.saveSettingsWithFeedback();
+    }
+
+    /**
+     * Tell the user which collections the server refused to keep.
+     *
+     * Deferred to leaving the tab rather than shown on every save: a collection
+     * with no name yet, or a rule whose value is still being typed, is dropped
+     * on each keystroke, and saying so each time would be noise. On the way out
+     * it is the last word on what was actually stored — which used to be
+     * nothing at all, behind a "Saved" badge.
+     */
+    reportDroppedCollections() {
+        const dropped = this.dash._droppedCollections;
+        if (!Array.isArray(dropped) || !dropped.length) return;
+        this.dash._droppedCollections = null;
+        this.notify(this.t('config.collectionsDropped',
+            'Not saved: {names}. A collection needs a name and at least one rule with a value.')
+            .replace('{names}', dropped.join(', ')), 'error', { duration: 8000 });
     }
 
     /** Live count of what a collection currently matches. */
@@ -10362,7 +12042,7 @@ class DashboardConfig {
             <li class="config-crud-row" data-page-row="${esc(p.id)}">
                 <div class="config-crud-fields">
                     <input type="text" class="config-text" style="min-width:56px;max-width:64px" data-page="icon" data-id="${esc(p.id)}" placeholder="📄" value="${esc(p.icon || '')}">
-                    <input type="text" class="config-text" data-page="name" data-id="${esc(p.id)}" placeholder="${esc(this.t('config.pageNamePlaceholder', 'Page name'))}" value="${esc(p.name || '')}">
+                    <input type="text" class="config-text" maxlength="60" data-page="name" data-id="${esc(p.id)}" placeholder="${esc(this.t('config.pageNamePlaceholder', 'Page name'))}" value="${esc(p.name || '')}">
                     <input type="color" class="config-color" data-page="color" data-id="${esc(p.id)}" value="${esc(p.color || '#888888')}" title="${esc(this.t('config.pageColorLabel', 'Tab colour'))}">
                     ${this.renderStatMeta(pageCounts[i], scales[i], 'config.pageBookmarkCount', '{count} bookmarks')}
                 </div>
@@ -10370,6 +12050,7 @@ class DashboardConfig {
                     ${locked ? '' : `
                     <button type="button" class="config-btn config-btn--small" data-page-move="up" data-id="${esc(p.id)}" ${i === 0 ? 'disabled' : ''} aria-label="${esc(this.t('config.moveUp', 'Move up'))}">↑</button>
                     <button type="button" class="config-btn config-btn--small" data-page-move="down" data-id="${esc(p.id)}" ${i === pages.length - 1 ? 'disabled' : ''} aria-label="${esc(this.t('config.moveDown', 'Move down'))}">↓</button>`}
+                    <button type="button" class="config-btn config-btn--small" data-page-duplicate="${esc(p.id)}" title="${esc(this.t('config.pageDuplicateHint', 'Copy this page — with or without its bookmarks'))}">${esc(this.t('config.pageDuplicate', 'Duplicate'))}</button>
                     <button type="button" class="config-btn config-btn--small config-btn--danger" data-page-delete="${esc(p.id)}" ${isFirst ? 'disabled title="' + esc(this.t('config.pageDeleteFirstBlocked', 'The first page cannot be deleted')) + '"' : ''}>${esc(this.t('config.backupDelete', 'Delete'))}</button>
                 </div>
             </li>`;
@@ -10415,6 +12096,9 @@ class DashboardConfig {
         });
         const addBtn = container.querySelector('[data-page-add]');
         if (addBtn) addBtn.addEventListener('click', () => void this.addPage());
+        container.querySelectorAll('[data-page-duplicate]').forEach((btn) => {
+            btn.addEventListener('click', () => void this.duplicatePage(Number(btn.getAttribute('data-page-duplicate'))));
+        });
         container.querySelectorAll('[data-page-delete]').forEach((btn) => {
             btn.addEventListener('click', () => void this.deletePage(Number(btn.getAttribute('data-page-delete'))));
         });
@@ -10449,6 +12133,158 @@ class DashboardConfig {
         pages.push(newPage);
         await this.savePages();
         this.repaintPtBody();
+    }
+
+    /**
+     * Copy a page: its categories always, its bookmarks if you say so.
+     *
+     * Setting up a page per project or per client meant recreating the same six
+     * categories by hand every time. The categories are the structure and are
+     * always worth copying; the bookmarks are the content, and whether you want
+     * them is the actual question — so it is asked rather than assumed.
+     *
+     * Read from the server rather than from the in-memory mirror: that mirror
+     * belongs to the page on screen, and duplicating a page you are not looking
+     * at would otherwise copy the wrong one.
+     */
+    async duplicatePage(id) {
+        const pageId = Number(id);
+        const source = (this.dash.pages || []).find((p) => Number(p.id) === pageId);
+        if (!source) return;
+
+        // Two questions, in the order they matter: whether to copy at all, and
+        // then whether the content comes with the structure. The modal's confirm
+        // is a yes/no, so a single dialog could not offer three answers without
+        // making Cancel mean "categories only" — which is not what Cancel means.
+        const proceed = await this.confirmAction(
+            this.t('config.pageDuplicateBody',
+                'Copy this page, with its categories? You are asked about the bookmarks next.'),
+            { confirmLabel: this.t('config.pageDuplicate', 'Duplicate') }
+        );
+        if (!proceed) return;
+        const withBookmarks = await this.confirmAction(
+            this.t('config.pageDuplicateAskBookmarks',
+                'Copy the bookmarks too? Choosing no gives you the same categories, empty.'),
+            { confirmLabel: this.t('config.pageDuplicateWith', 'With bookmarks') }
+        ) === true;
+
+        const pages = this.dash.pages || [];
+        const maxId = pages.length ? Math.max(...pages.map((p) => Number(p.id) || 0)) : 0;
+        const newId = maxId + 1;
+        const name = DashboardConfig.uniqueNameFrom(
+            this.t('config.pageDuplicateName', '{name} copy').replace('{name}', source.name || ''),
+            pages.map((p) => p.name)
+        );
+        const copy = { ...source, id: newId, name };
+
+        try {
+            const [bmRes, catRes] = await Promise.all([
+                fetch(`/api/bookmarks?page=${encodeURIComponent(pageId)}`),
+                fetch(`/api/categories?page=${encodeURIComponent(pageId)}`),
+            ]);
+            const sourceBookmarks = bmRes.ok ? await bmRes.json() : [];
+            const sourceCategories = catRes.ok ? await catRes.json() : [];
+
+            pages.push(copy);
+            if (!await this.savePages()) return;
+
+            const fetcher = typeof nextDashFetch === 'function' ? nextDashFetch : fetch;
+            if (Array.isArray(sourceCategories) && sourceCategories.length) {
+                await fetcher(`/api/categories?page=${encodeURIComponent(newId)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(sourceCategories),
+                });
+            }
+            if (withBookmarks && Array.isArray(sourceBookmarks) && sourceBookmarks.length) {
+                // Shortcuts are unique per page in practice but not enforced
+                // across a copy, and a duplicated check history would be a lie
+                // about a URL this copy has never checked itself.
+                const copies = sourceBookmarks.map((bm) => ({
+                    ...bm,
+                    pageId: newId,
+                    lastChecked: 0,
+                    lastError: '',
+                    brokenSince: 0,
+                    openCount: 0,
+                    lastOpened: 0,
+                }));
+                await fetcher(`/api/bookmarks?page=${encodeURIComponent(newId)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(copies),
+                });
+            }
+            this.notify(this.t('config.pageDuplicated', 'Page duplicated'), 'success');
+        } catch {
+            this.notify(this.t('config.pageDuplicateFailed', 'Could not duplicate this page'), 'error');
+        }
+        this.repaintPtBody();
+        void this.dash.data?.fetchAndStoreDataRevision?.();
+    }
+
+    /**
+     * Copy a category on the page being edited, optionally with its bookmarks.
+     *
+     * The settings a category carries — its width, its icon, its sort — are the
+     * thing worth copying; recreating them by hand is how a "same but for
+     * staging" category ends up subtly different from the one it was modelled
+     * on. A fresh id, because two categories sharing one would be the same
+     * category twice over.
+     */
+    async duplicateCategory(index) {
+        const list = this._categories || [];
+        const source = list[Number(index)];
+        if (!source) return;
+
+        const withBookmarks = await this.confirmAction(
+            this.t('config.categoryDuplicateAsk',
+                'Copy this category and its settings. Copy the bookmarks in it as well?'),
+            { confirmLabel: this.t('config.pageDuplicateWith', 'With bookmarks'), danger: false }
+        );
+        if (withBookmarks === null || withBookmarks === undefined) return;
+
+        const id = `cat-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+        const name = DashboardConfig.uniqueNameFrom(
+            this.t('config.pageDuplicateName', '{name} copy').replace('{name}', source.name || ''),
+            list.map((c) => c.name)
+        );
+        list.splice(Number(index) + 1, 0, { ...source, id, name });
+        this.repaintPtBody();
+        if (!await this.saveCategories(this._catPageId)) return;
+
+        if (withBookmarks === true) {
+            const pageId = this._catPageId;
+            try {
+                const res = await fetch(`/api/bookmarks?page=${encodeURIComponent(pageId)}`);
+                const bookmarks = res.ok ? await res.json() : [];
+                const copies = (bookmarks || [])
+                    .filter((bm) => String(bm.category || '') === String(source.id || ''))
+                    .map((bm) => ({
+                        ...bm,
+                        category: id,
+                        shortcut: '',
+                        lastChecked: 0,
+                        lastError: '',
+                        brokenSince: 0,
+                        openCount: 0,
+                        lastOpened: 0,
+                    }));
+                if (copies.length) {
+                    const fetcher = typeof nextDashFetch === 'function' ? nextDashFetch : fetch;
+                    await fetcher(`/api/bookmarks?page=${encodeURIComponent(pageId)}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify([...(bookmarks || []), ...copies]),
+                    });
+                }
+            } catch {
+                this.notify(this.t('config.categoryDuplicateBookmarksFailed',
+                    'The category was copied, but its bookmarks were not'), 'error');
+            }
+        }
+        this.notify(this.t('config.categoryDuplicated', 'Category duplicated'), 'success');
+        void this.dash.data?.fetchAndStoreDataRevision?.();
     }
 
     async deletePage(id) {
@@ -10561,16 +12397,26 @@ class DashboardConfig {
             const scales = DashboardConfig.statScales(catCounts);
             const visible = this.ptVisibleRows('categories', this._categories, (c) => c.name);
             const last = this._categories.length - 1;
+            // An icon beside the other row buttons rather than a labelled
+            // checkbox: ten rows of "Spread across columns" is a column of
+            // repeated prose between the names and their counts, and the row
+            // already has a place where its controls live.
+            const spreadLabel = this.t('config.categorySpreadLabel', 'Spread across columns');
             const rows = visible.map(({ item: c, index: i }) => `
                 <li class="config-crud-row" data-cat-row="${i}">
                     <div class="config-crud-fields">
                         <input type="text" class="config-text" data-cat="name" data-index="${i}" value="${esc(c.name || '')}">
+
                         ${this.renderStatMeta(catCounts[i], scales[i], 'config.categoryBookmarkCount', '{count} bookmarks')}
                     </div>
                     <div class="config-crud-row-actions">
+                        <button type="button" class="config-btn config-btn--small config-btn--icon${c.spread ? ' is-active' : ''}"
+                                data-cat-spread="${i}" aria-pressed="${c.spread ? 'true' : 'false'}"
+                                title="${esc(spreadLabel)}" aria-label="${esc(spreadLabel)}">↔</button>
                         ${locked ? '' : `
                         <button type="button" class="config-btn config-btn--small" data-cat-move="up" data-index="${i}" ${i === 0 ? 'disabled' : ''} aria-label="${esc(this.t('config.moveUp', 'Move up'))}">↑</button>
                         <button type="button" class="config-btn config-btn--small" data-cat-move="down" data-index="${i}" ${i === last ? 'disabled' : ''} aria-label="${esc(this.t('config.moveDown', 'Move down'))}">↓</button>`}
+                        <button type="button" class="config-btn config-btn--small" data-cat-duplicate="${i}" title="${esc(this.t('config.categoryDuplicateHint', 'Copy this category — with or without its bookmarks'))}">${esc(this.t('config.pageDuplicate', 'Duplicate'))}</button>
                         <button type="button" class="config-btn config-btn--small config-btn--danger" data-cat-delete="${i}">${esc(this.t('config.backupDelete', 'Delete'))}</button>
                     </div>
                 </li>`).join('');
@@ -10607,10 +12453,16 @@ class DashboardConfig {
         if (this._categories != null && this._catLoadedFor === pageId) return;
         try {
             const res = await fetch(`/api/categories?page=${encodeURIComponent(pageId)}`);
-            const data = res && res.ok ? await res.json() : [];
-            this._categories = Array.isArray(data) ? data : [];
+            if (!res || !res.ok) throw new Error(`HTTP ${res?.status ?? 'network'}`);
+            const data = await res.json();
+            if (!Array.isArray(data)) throw new Error('categories: unexpected payload');
+            this._categories = data;
+            this._categoriesLoadFailed = false;
         } catch {
+            // See loadFinders: an empty list here is a write instruction, so a
+            // failed read has to be remembered rather than rendered as "none".
             this._categories = [];
+            this._categoriesLoadFailed = true;
         }
         this._catLoadedFor = pageId;
         if (this.ptTab === 'categories') this.repaintPtBody();
@@ -10642,7 +12494,37 @@ class DashboardConfig {
                     }
                 )) return;
                 this._categories[i].name = input.value;
-                void this.saveCategories();
+                // Page id captured now, not at write time — see saveCategories.
+                void this.saveCategories(this._catPageId);
+            });
+        });
+        container.querySelectorAll('[data-cat-spread]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const i = Number(btn.getAttribute('data-cat-spread'));
+                if (!this._categories || !this._categories[i]) return;
+                const on = btn.getAttribute('aria-pressed') !== 'true';
+                btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+                btn.classList.toggle('is-active', on);
+                if (on) {
+                    this._categories[i].spread = true;
+                } else {
+                    delete this._categories[i].spread;
+                }
+                // Mirrored onto the dashboard's own copy first: saveCategories
+                // re-renders the grid, and the grid reads the switch from there
+                // rather than from the editor's list.
+                if (Number(this._catPageId) === Number(this.dash.currentPageId)) {
+                    const live = (this.dash.categories || []).find(
+                        (cat) => String(cat.id) === String(this._categories[i].id));
+                    if (live) {
+                        if (on) {
+                            live.spread = true;
+                        } else {
+                            delete live.spread;
+                        }
+                    }
+                }
+                void this.saveCategories(this._catPageId);
             });
         });
         const addBtn = container.querySelector('[data-cat-add]');
@@ -10654,9 +12536,15 @@ class DashboardConfig {
                 this.t('config.categoryNewName', 'New category'),
                 this._categories.map((c) => c.name)
             );
-            this._categories.push({ id, name });
+            // Same default a category created on the dashboard gets, and left
+            // off the object entirely when it is the plain single column.
+            const spread = this.dash.settings?.defaultCategorySpread === true;
+            this._categories.push(spread ? { id, name, spread: true } : { id, name });
             this.repaintPtBody();
-            void this.saveCategories();
+            void this.saveCategories(this._catPageId);
+        });
+        container.querySelectorAll('[data-cat-duplicate]').forEach((btn) => {
+            btn.addEventListener('click', () => void this.duplicateCategory(Number(btn.getAttribute('data-cat-duplicate'))));
         });
         container.querySelectorAll('[data-cat-delete]').forEach((btn) => {
             btn.addEventListener('click', async () => {
@@ -10684,7 +12572,16 @@ class DashboardConfig {
                 const removed = { ...cat };
                 this._categories.splice(i, 1);
                 this.repaintPtBody();
-                await this.saveCategories();
+                // The server refuses to drop the last category while bookmarks
+                // still point at it (409). Without checking, the delete carried
+                // on: a trash entry and a "Category deleted." toast for a
+                // category that is still there, contradicting the error toast
+                // saveCategories had just shown.
+                if (await this.saveCategories(pageId) === false) {
+                    this._categories.splice(i, 0, removed);
+                    this.repaintPtBody();
+                    return;
+                }
                 // After the save, so a delete that did not persist cannot leave
                 // a phantom entry in the trash.
                 await window.DashboardTrash?.recordCategory?.(removed, pageId, i, 'config-category-delete');
@@ -10733,23 +12630,48 @@ class DashboardConfig {
                 if (!this._categories || swap < 0 || swap >= this._categories.length) return;
                 [this._categories[i], this._categories[swap]] = [this._categories[swap], this._categories[i]];
                 this.repaintPtBody();
-                void this.saveCategories();
+                void this.saveCategories(this._catPageId);
             });
         });
     }
 
-    async saveCategories() {
+    /**
+     * Write the edited category list back.
+     *
+     * Returns whether it saved. Callers act on the outcome — the delete flow
+     * records a trash entry and offers Undo — and previously could not tell
+     * success from failure, because this swallowed the error and returned
+     * undefined either way. A 409 (categories still referenced) then produced a
+     * "Category deleted." toast for a category the server still had.
+     *
+     * The page id is captured on entry rather than read at write time: every
+     * caller fires this without awaiting, and the page picker reassigns
+     * `_catPageId` synchronously, so switching pages mid-save sent one page's
+     * categories to another.
+     */
+    async saveCategories(pageId = this._catPageId) {
+        if (this._categoriesLoadFailed) {
+            this.notify(this.t('config.categoriesLoadFailed',
+                'Categories could not be loaded, so they will not be saved. Reload and try again.'), 'error');
+            return false;
+        }
+        const payload = JSON.stringify(this._categories || []);
         try {
-            const res = await this.writeFetch(`/api/categories?page=${encodeURIComponent(this._catPageId)}`, {
+            const res = await this.writeFetch(`/api/categories?page=${encodeURIComponent(pageId)}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(this._categories || []),
+                body: payload,
             });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             this.dash.renderDashboard?.({ animate: false });
-            this.invalidateBookmarkCategoriesCache(this._catPageId);
+            this.invalidateBookmarkCategoriesCache(pageId);
+            // Tell the other tabs; without this they show stale categories
+            // until reloaded by hand.
+            this.dash.configSync?.publishConfigSync?.('structure');
+            return true;
         } catch {
             this.notify(this.t('config.categoriesSaveError', 'Could not save categories.'), 'error');
+            return false;
         }
     }
 
@@ -10797,7 +12719,7 @@ class DashboardConfig {
         let monitored = 0;
         const categoryKeys = new Set();
         all.forEach((b) => {
-            if ((b.tags || []).length) tagged += 1;
+            if (window.BookmarkPredicates.match('tagged', b)) tagged += 1;
             if (b.shortcut) withShortcut += 1;
             if (b.monitor === true) monitored += 1;
             if (b.category) categoryKeys.add(`${b.pageId}::${b.category}`);
@@ -10842,75 +12764,39 @@ class DashboardConfig {
     }
 
     resetBookmarkVisibleLimit() {
-        this.bmVisibleLimit = DashboardConfig.BM_PAGE_SIZE;
+        this.bmVisibleLimit = this.bmPageSize();
+    }
+
+    /**
+     * How many rows to draw, clamped to what there is.
+     *
+     * Kept across a search rather than reset: refining a query is the one filter
+     * change that is a narrowing of what you are already looking at, and
+     * throwing the reader back to row fifty after four hundred rows of
+     * scrolling — for one letter, sometimes a letter they then delete — is the
+     * kind of thing that makes a list feel hostile. Switching page, category or
+     * cleanup filter still resets, because that is a different list.
+     */
+    bookmarkVisibleLimit(total) {
+        const page = this.bmPageSize();
+        const wanted = Math.max(page, Number(this.bmVisibleLimit) || page);
+        return Math.max(page, Math.min(wanted, Number(total) || 0) || page);
     }
 
     scheduleBookmarkSearchRepaint() {
         clearTimeout(this._bmSearchTimer);
         this._bmSearchTimer = setTimeout(() => {
             this._bmSearchTimer = null;
-            this.resetBookmarkVisibleLimit();
             this.repaintBookmarksList();
+            // The query is part of what the list is showing, so it belongs in
+            // the address bar with the other filters — debounced with the
+            // repaint rather than written per keystroke.
+            this.restoreConfigHash();
         }, 180);
     }
 
-    bookmarkUsageTooltip(b) {
-        const translate = this.lastOpenedTranslator();
-        const fmt = (ts) => window.formatLastOpened?.(ts, { t: translate })
-            || { label: '—', never: true };
-        const opens = Number(b.openCount || 0);
-        const openLabel = this.t('config.bookmarkStatOpenCount', '{count}×').replace('{count}', String(opens));
-        const last = fmt(b.lastOpened);
-        const added = fmt(b.createdAt);
-        const parts = [openLabel];
-        if (!last.never) parts.push(`${this.t('config.bookmarkStatLastOpened', 'Last opened')}: ${last.label}`);
-        if (!added.never) parts.push(`${this.t('config.bookmarkStatAdded', 'Added')}: ${added.label}`);
-        return parts.join(' · ');
-    }
 
-    renderBookmarkFilterChips() {
-        const esc = (v) => this.dash.escapeHtml(v);
-        const chips = [];
-        const add = (key, label) => {
-            chips.push(`<button type="button" class="config-bm-filter-chip" data-bm-filter-clear="${esc(key)}">${esc(label)}<span aria-hidden="true">×</span></button>`);
-        };
-        if (this.bmPageFilter) {
-            const pageName = this.pageLabel(this.bmPageFilter);
-            add('page', this.t('config.bookmarksFilterPage', 'Page: {name}').replace('{name}', pageName));
-        }
-        if (this.bmCategoryFilter) {
-            const parsed = DashboardConfig.parseCategoryFilter(this.bmCategoryFilter);
-            const label = parsed.categoryId
-                ? (this.knownCategories().find((c) => c.id === this.bmCategoryFilter)?.label || parsed.categoryId)
-                : this.bmCategoryFilter;
-            add('category', this.t('config.bookmarksFilterCategory', 'Category: {name}').replace('{name}', label));
-        }
-        // One chip per tag rather than one lumped "Tag: a, b, c": each stays
-        // removable on its own, which is the point of picking several.
-        for (const tag of this.bookmarkTagFilters()) {
-            add(`tag:${tag}`, this.t('config.bookmarksFilterTag', 'Tag: {tag}').replace('{tag}', tag));
-        }
-        if (String(this.bmQuery || '').trim()) {
-            const q = String(this.bmQuery).trim();
-            add('search', this.t('config.bookmarksFilterSearch', 'Search: {q}').replace('{q}', q));
-        }
-        if (this.bmCleanupFilter) {
-            add('cleanup', this.cleanupFilterLabel(this.bmCleanupFilter));
-        }
-        if (chips.length > 1) {
-            chips.push(`<button type="button" class="config-bm-filter-chip config-bm-filter-chip--clear" data-bm-filter-clear="all">${esc(this.t('config.bookmarksClearAllFilters', 'Clear all'))}</button>`);
-        }
-        return chips.join('');
-    }
 
-    renderBookmarkCountLabel(shown, total) {
-        if (this.bookmarksFiltersActive() && shown !== total) {
-            return this.t('config.bookmarksCountFiltered', '{shown} of {total}')
-                .replace('{shown}', String(shown))
-                .replace('{total}', String(total));
-        }
-        return this.t('config.bookmarksCountAll', '{n} bookmarks').replace('{n}', String(total));
-    }
 
     updateBookmarkListChrome() {
         this.updateBookmarkTagCloud();
@@ -10918,12 +12804,12 @@ class DashboardConfig {
         const total = (this.dash.allBookmarks || []).length;
         const shown = filtered.length;
         const countEl = document.getElementById('config-bm-count');
-        if (countEl) countEl.textContent = this.renderBookmarkCountLabel(shown, total);
+        if (countEl) countEl.textContent = this.renderBookmarkCountLabelSafe(shown, total);
         const live = document.getElementById('config-bm-count-live');
-        if (live) live.textContent = this.renderBookmarkCountLabel(shown, total);
+        if (live) live.textContent = this.renderBookmarkCountLabelSafe(shown, total);
         const chips = document.getElementById('config-bm-filter-chips');
         if (chips) {
-            chips.innerHTML = this.renderBookmarkFilterChips();
+            chips.innerHTML = this.renderBookmarkFilterChipsSafe();
             this.bindBookmarkFilterChips(chips);
         }
         const selectAll = document.getElementById('config-bm-select-all');
@@ -11072,6 +12958,248 @@ class DashboardConfig {
 
     renderBookmarksSection() {
         const esc = (v) => this.dash.escapeHtml(v);
+        const totalAll = (this.dash.allBookmarks || []).length;
+        const tabs = DashboardConfig.BM_TABS.map((tab) => {
+            const active = tab === this.bmTab;
+            return `<button type="button" class="config-subtab${active ? ' is-active' : ''}" role="tab" aria-selected="${active}" tabindex="${active ? 0 : -1}" aria-controls="config-bm-body" data-bm-tab="${esc(tab)}">${esc(this.bmTabLabel(tab))}</button>`;
+        }).join('');
+
+        return `
+            <div class="config-bm-header">
+                <div class="config-bm-header-text">
+                    <p class="config-bm-subtitle">${esc(this.t('config.bookmarksIntro', 'Every bookmark across your pages. Search, edit, or remove them here.'))}</p>
+                </div>
+                <div class="config-bm-header-meta">
+                    <span class="config-bm-header-badge">${esc(String(totalAll))}</span>
+                </div>
+            </div>
+            <div class="config-subtabs" role="tablist">${tabs}</div>
+            <div id="config-bm-body" role="tabpanel" tabindex="0">${this.renderBmTab()}</div>
+        `;
+    }
+
+    /** Which sub-tab of Bookmarks is showing. */
+    renderBmTab() {
+        if (this.bmTab === 'settings') {
+            return this.renderControlPanels(this.panelsFor('bookmarks', 'general'), 'behavior');
+        }
+        return this.renderBookmarksListTab();
+    }
+
+
+    /**
+     * The list, or a placeholder while its renderers are on their way.
+     *
+     * One guard rather than a test at every call site: the twelve methods that
+     * draw a row arrive as a batch, so the only question is whether the batch is
+     * here. Kicked off when config opens rather than when this section does, so
+     * in practice it has landed before anyone clicks Bookmarks.
+     */
+    /**
+     * How tall one row is, measured rather than assumed.
+     *
+     * The spacers above and below the window are this times a row count, so a
+     * wrong number shows up as a scrollbar that lies. Measured from the rows on
+     * screen the first time there are any, and kept: rows differ by a few pixels
+     * (a second line of tags), and the average is what the spacers want.
+     */
+    bookmarkRowHeight() {
+        if (this._bmRowHeight) return this._bmRowHeight;
+        const rows = document.querySelectorAll('#config-bm-list .config-bm-row');
+        if (rows.length >= 2) {
+            const first = rows[0].getBoundingClientRect();
+            const last = rows[rows.length - 1].getBoundingClientRect();
+            const span = last.bottom - first.top;
+            const measured = span / rows.length;
+            if (measured > 20 && measured < 400) {
+                this._bmRowHeight = measured;
+                return measured;
+            }
+        }
+        // Until there is something to measure: the row's own min-height plus its
+        // gap, which is what the stylesheet asks for.
+        return 56;
+    }
+
+    /**
+     * Which slice of the loaded rows to draw, or null for all of them.
+     *
+     * Null below the threshold — a short list costs nothing to draw whole, and
+     * spacers on it would be arithmetic in exchange for nothing — and null while
+     * a row is expanded into its editor, whose height the spacers cannot know.
+     */
+    bookmarkRowWindow(total) {
+        const MIN_TO_WINDOW = 120;
+        const OVERSCAN = 25;
+        if (!Number.isFinite(total) || total <= MIN_TO_WINDOW) return null;
+        if (this.bmEditing) return null;
+
+        const host = this.bookmarkListScrollHost();
+        const rowHeight = this.bookmarkRowHeight();
+        const list = document.getElementById('config-bm-list');
+        // Where the list starts relative to whatever scrolls: the page, or a
+        // pane inside it.
+        let offset = 0;
+        let viewport = window.innerHeight;
+        if (list) {
+            const box = list.getBoundingClientRect();
+            if (host) {
+                const hostBox = host.getBoundingClientRect();
+                offset = host.scrollTop + (box.top - hostBox.top);
+                viewport = host.clientHeight;
+            } else {
+                offset = window.scrollY + box.top;
+            }
+        }
+        const scrollTop = host ? host.scrollTop : window.scrollY;
+        const first = Math.floor(Math.max(0, scrollTop - offset) / rowHeight);
+        const rowsInView = Math.ceil(viewport / rowHeight);
+        const start = Math.max(0, first - OVERSCAN);
+        const end = Math.min(total, first + rowsInView + OVERSCAN);
+        // A window that would cover almost everything is not worth its spacers.
+        if (start === 0 && end >= total) return null;
+        return { start, end };
+    }
+
+    /**
+     * Redraw the window as the reader scrolls past its edge.
+     *
+     * Throttled to a frame, and only when the window actually moved: a repaint
+     * per scroll event would cost more than the nodes it saves.
+     */
+    bindBookmarkWindowScroll() {
+        const list = document.getElementById('config-bm-list');
+        if (!list) return;
+        const host = this.bookmarkListScrollHost() || window;
+        if (this._bmWindowScrollTarget === host && this._bmWindowScrollBound) return;
+        if (this._bmWindowScrollTarget && this._bmWindowScrollHandler) {
+            this._bmWindowScrollTarget.removeEventListener('scroll', this._bmWindowScrollHandler);
+        }
+        let frame = 0;
+        this._bmWindowScrollHandler = () => {
+            if (frame) return;
+            frame = requestAnimationFrame(() => {
+                frame = 0;
+                if (this.section !== 'bookmarks' || !this.isActiveView()) return;
+                const rows = this.visibleBookmarks();
+                const shown = this.bookmarkVisibleLimit(rows.length);
+                const next = this.bookmarkRowWindow(shown);
+                const key = next ? `${next.start}-${next.end}` : 'all';
+                if (key === this._bmWindowKey) return;
+                this._bmWindowKey = key;
+                this.repaintBookmarkRowsOnly();
+            });
+        };
+        this._bmWindowScrollTarget = host;
+        this._bmWindowScrollBound = true;
+        host.addEventListener('scroll', this._bmWindowScrollHandler, { passive: true });
+    }
+
+    /**
+     * Redraw the rows without touching the scroll position.
+     *
+     * repaintBookmarksList restores the offset it saved, which is right when
+     * something changed and wrong here: the reader is mid-scroll, and the
+     * spacers mean the offset has not moved at all.
+     */
+    repaintBookmarkRowsOnly() {
+        const host = document.getElementById('config-bm-list');
+        if (!host || typeof this.renderBookmarksList !== 'function') return;
+        // A menu hangs off a row; replacing the rows under it would leave the
+        // menu pointing at an element that is no longer in the document.
+        if (document.querySelector('.move-popover, .config-bm-context-menu')) return;
+        // Focus lives on a row, and this replaces every row. Without putting it
+        // back, closing a menu or finishing an edit drops the list's j/k
+        // navigation on the floor.
+        const focusedKey = document.activeElement?.classList?.contains('config-bm-row')
+            ? this.bookmarkRowKey(document.activeElement)
+            : null;
+        this._bmLoadMoreObserver?.disconnect?.();
+        this._bmLoadMoreObserver = null;
+        host.innerHTML = this.renderBookmarksList();
+        this.bindBookmarkRows(host);
+        this.bindBookmarkKeyboard(host);
+        this.setupBookmarkLoadMore(host);
+        if (focusedKey) {
+            const again = [...host.querySelectorAll('.config-bm-row')]
+                .find((row) => this.bookmarkRowKey(row) === focusedKey);
+            again?.focus({ preventScroll: true });
+        }
+    }
+
+    renderBookmarksListSafe() {
+        void this.ensureBookmarkRenderers();
+        if (typeof this.renderBookmarksList === 'function') return this.renderBookmarksList();
+        // Only a paint that actually showed the placeholder is worth repainting
+        // when the file lands. Re-rendering unconditionally tears down whatever
+        // the reader had already opened — an editor mid-edit, a row mid-click —
+        // for a list that was drawn correctly the first time.
+        this._bookmarksAwaitingRenderers = true;
+        return `<p class="config-panel-empty">${this.dash.escapeHtml(
+            this.t('config.bookmarksLoading', 'Loading your bookmarks…'))}</p>`;
+    }
+
+    /** The bulk bar, likewise — it is drawn from three places. */
+    renderBulkToolbarSafe() {
+        if (typeof this.renderBulkToolbar === 'function') return this.renderBulkToolbar();
+        return '';
+    }
+
+    /** The tag cloud, the chips and the banner, same reason. */
+    renderBookmarkTagCloudSafe() {
+        return typeof this.renderBookmarkTagCloud === 'function' ? this.renderBookmarkTagCloud() : '';
+    }
+
+    renderBookmarkFilterChipsSafe() {
+        return typeof this.renderBookmarkFilterChips === 'function' ? this.renderBookmarkFilterChips() : '';
+    }
+
+    renderCleanupFilterBannerSafe() {
+        return typeof this.renderCleanupFilterBanner === 'function' ? this.renderCleanupFilterBanner() : '';
+    }
+
+    renderBookmarkQuickBarSafe() {
+        return typeof this.renderBookmarkQuickBar === 'function' ? this.renderBookmarkQuickBar() : '';
+    }
+
+    renderBookmarkCountLabelSafe(shown, total) {
+        return typeof this.renderBookmarkCountLabel === 'function'
+            ? this.renderBookmarkCountLabel(shown, total)
+            : '';
+    }
+
+    /**
+     * Load the bookmark list renderers, once.
+     *
+     * Repaints when they land, so the section fills itself in rather than
+     * waiting for the next click. A failure leaves the placeholder, which says
+     * the list is on its way — better than an empty panel that reads as a
+     * library with nothing in it.
+     */
+    ensureBookmarkRenderers() {
+        if (window.DashboardConfigBookmarksReady) return Promise.resolve(true);
+        if (this._bookmarkRenderersPromise) return this._bookmarkRenderersPromise;
+        this._bookmarkRenderersPromise = window.LazyScript.loadScriptOnce(
+            'js/dashboard/dashboard-config-bookmarks.js',
+            'dashboardConfigBookmarks',
+            () => window.DashboardConfigBookmarksReady === true
+        ).then(() => {
+            const waiting = this._bookmarksAwaitingRenderers === true;
+            this._bookmarksAwaitingRenderers = false;
+            if (waiting && this.isActiveView() && this.section === 'bookmarks') this.render();
+            return true;
+        }).catch(() => false);
+        return this._bookmarkRenderersPromise;
+    }
+
+    renderBookmarksListTab() {
+        // Bookmarks are edited in place all over the app — a tag added, a pin
+        // toggled, an open counted — and none of that moves the array identity
+        // the memo keys on. Dropped here so a paint always starts from the data
+        // as it now is, and shared by every caller within that paint.
+        this.invalidateVisibleBookmarks();
+        const esc = (v) => this.dash.escapeHtml(v);
+        if (this.bmSort == null) this.bmSort = this.defaultBookmarksSort();
         const pages = this.dash.pages || [];
         const pageOptions = [`<option value="">${esc(this.t('config.allPages', 'All pages'))}</option>`]
             .concat(pages.map((p) => {
@@ -11099,16 +13227,14 @@ class DashboardConfig {
         ).join('');
         const filtered = this.visibleBookmarks();
         const totalAll = (this.dash.allBookmarks || []).length;
-        const countLabel = this.renderBookmarkCountLabel(filtered.length, totalAll);
-
+        const countLabel = this.renderBookmarkCountLabelSafe(filtered.length, totalAll);
         return `
-            <p class="config-view-intro">${esc(this.t('config.bookmarksIntro', 'Every bookmark across your pages. Search, edit, or remove them here.'))}</p>
             <div class="config-bm-tiles-wrap">
                 <p class="config-bm-tiles-hint" id="config-bm-tiles-hint"${this.bookmarksFiltersActive() ? '' : ' hidden'}>${esc(this.t('config.bookmarksTilesFilteredHint', 'Filtered view — counts below match your filters'))}</p>
                 <div class="config-tiles config-tiles--bookmarks" id="config-bm-tiles" role="list">${this.bookmarksSummaryTiles(this.bookmarksFiltersActive() ? this.computeBookmarkSubsetStats(filtered) : null).map((t) => this.renderTile(t)).join('')}</div>
             </div>
             <div class="config-panel">
-                <div class="config-crud-toolbar">
+                <div class="config-crud-toolbar config-crud-toolbar--view">
                     <input type="search" class="config-text" id="config-bm-search" placeholder="${esc(this.t('config.searchBookmarks', 'Search bookmarks…'))}" value="${esc(this.bmQuery || '')}">
                     <select class="config-select" id="config-bm-page" aria-label="${esc(this.t('config.page', 'Page'))}"
                             data-config-setting-promo-anchor="bookmarksPageFilter">${pageOptions}</select>
@@ -11117,65 +13243,23 @@ class DashboardConfig {
                     <button type="button" class="config-btn config-btn--small" id="config-bm-add">${esc(this.t('config.addBookmark', 'Add bookmark'))}</button>
                     <button type="button" class="config-btn config-btn--small" id="config-bm-select-all">${esc(this.selectAllBookmarksLabel())}</button>
                 </div>
-                ${this.renderBookmarkTagCloud()}
+                ${this.renderBookmarkQuickBarSafe()}
+                <p class="config-bm-keys-hint">${this.t('config.bookmarksKeysHint',
+                    '<kbd>j</kbd>/<kbd>k</kbd> move · <kbd>x</kbd> ticks a row · <kbd>Enter</kbd> opens the editor · <kbd>Esc</kbd> clears the selection')}</p>
+                ${this.renderBookmarkTagCloudSafe()}
                 <div class="config-bm-list-meta">
                     <span class="config-bm-count" id="config-bm-count">${esc(countLabel)}</span>
-                    <div class="config-bm-filter-chips" id="config-bm-filter-chips">${this.renderBookmarkFilterChips()}</div>
+                    <div class="config-bm-filter-chips" id="config-bm-filter-chips">${this.renderBookmarkFilterChipsSafe()}</div>
                     <span class="config-sr-only" id="config-bm-count-live" aria-live="polite" aria-atomic="true">${esc(countLabel)}</span>
                 </div>
-                ${this.renderCleanupFilterBanner()}
-                <div id="config-bm-bulk">${this.renderBulkToolbar()}</div>
-                <div id="config-bm-list">${this.renderBookmarksList()}</div>
+                ${this.renderCleanupFilterBannerSafe()}
+                <div id="config-bm-bulk">${this.renderBulkToolbarSafe()}</div>
+                <div id="config-bm-list">${this.renderBookmarksListSafe()}</div>
             </div>
         `;
     }
 
-    /**
-     * Tag cloud above the bookmark list.
-     *
-     * Collapsed by default: with a few dozen tags it would otherwise push the
-     * list itself off the screen on every visit. Tags are ordered by how many
-     * bookmarks carry them, so the ones worth filtering on come first, and each
-     * is sized by that count the way the dashboard cloud is.
-     */
-    renderBookmarkTagCloud() {
-        const esc = (v) => this.dash.escapeHtml(v);
-        const tags = this.bookmarkTagCounts();
-        if (!tags.length) return '';
 
-        const active = new Set(this.bookmarkTagFilters());
-        const max = tags[0].count || 1;
-        const chips = tags.map(({ tag, count }) => {
-            const on = active.has(tag);
-            // Four steps rather than a continuous scale: enough to show weight,
-            // few enough that the rows still line up.
-            const step = Math.min(3, Math.floor((count / max) * 4));
-            return `<button type="button"
-                    class="config-bm-cloud-tag config-bm-cloud-tag--s${step}${on ? ' is-active' : ''}"
-                    role="option" aria-selected="${on}"
-                    data-bm-cloud-tag="${esc(tag)}">${esc(tag)}<span class="config-bm-cloud-count">${count}</span></button>`;
-        }).join('');
-
-        const activeCount = active.size;
-        const summary = activeCount
-            ? this.t('config.bookmarksTagCloudActive', '{count} selected').replace('{count}', activeCount)
-            : this.t('config.bookmarksTagCloudHint', 'Filter by one or more tags');
-        return `
-            <details class="config-bm-cloud" id="config-bm-cloud"${activeCount ? ' open' : ''}>
-                <summary class="config-bm-cloud-summary">
-                    <span>${esc(this.t('config.bookmarksTagCloudTitle', 'Tags'))}</span>
-                    <span class="config-bm-cloud-summary-note">${esc(summary)}</span>
-                </summary>
-                <div class="config-bm-cloud-body">
-                    <div class="config-bm-cloud-tags" role="listbox" aria-multiselectable="true"
-                         aria-label="${esc(this.t('config.bookmarksTagCloudTitle', 'Tags'))}">${chips}</div>
-                    <div class="config-bm-cloud-actions"${activeCount ? '' : ' hidden'}>
-                        <button type="button" class="config-btn config-btn--small" data-bm-cloud-select>${esc(this.t('config.bookmarksTagCloudSelect', 'Select these bookmarks'))}</button>
-                        <button type="button" class="config-btn config-btn--small" data-bm-cloud-clear>${esc(this.t('config.bookmarksTagCloudClear', 'Clear tags'))}</button>
-                    </div>
-                </div>
-            </details>`;
-    }
 
     /**
      * Wire the tag cloud.
@@ -11249,30 +13333,11 @@ class DashboardConfig {
             insecure: ['config.cleanupFilterInsecure', 'Not using HTTPS'],
             noicon: ['config.cleanupFilterNoIcon', 'Without an icon'],
             duplicate: ['config.cleanupFilterDuplicate', 'Duplicate URLs'],
+            changed: ['config.cleanupFilterChanged', 'Changed in the last week'],
         }[key];
         return map ? this.t(map[0], map[1]) : '';
     }
 
-    /**
-     * A banner naming the cleanup filter the list arrived with.
-     *
-     * Without it the user lands on a list that is silently hiding most of their
-     * bookmarks, with nothing on screen to say why or how to get back — the
-     * search box is empty and both dropdowns read "all".
-     */
-    renderCleanupFilterBanner() {
-        const esc = (v) => this.dash.escapeHtml(v);
-        const key = this.bmCleanupFilter;
-        if (!key || !DashboardConfig.CLEANUP_FILTERS[key]) return '';
-        const shown = this.visibleBookmarks().length;
-        const label = this.cleanupFilterLabel(key);
-        const count = this.t('config.cleanupFilterCount', '{n} shown').replace('{n}', String(shown));
-        return `
-            <div class="config-cleanup-banner" role="status">
-                <span class="config-cleanup-banner-text">${esc(label)} · ${esc(count)}</span>
-                <button type="button" class="config-btn config-btn--small" data-cleanup-clear="1">${esc(this.t('config.cleanupFilterClear', 'Show all bookmarks'))}</button>
-            </div>`;
-    }
 
     /** Every category name in use, across all pages, de-duplicated and sorted. */
     /**
@@ -11388,6 +13453,22 @@ class DashboardConfig {
         return index;
     }
 
+
+    /** The category's own name, without the page prefix the crumb now carries. */
+    categoryOwnLabel(b) {
+        const id = String(b.category || '');
+        if (!id) return '';
+        const labels = this.categoryLabelIndex();
+        if (this.bmPageFilter) return labels.get(id) || id;
+        const composite = DashboardConfig.categoryFilterKey(b.pageId, id);
+        const label = labels.get(composite);
+        if (!label) return id;
+        // The composite label reads "page · category"; the crumb prints the page
+        // itself, so take the tail rather than saying it twice.
+        const tail = label.split(' · ').pop();
+        return tail || label;
+    }
+
     categoryLabelForBookmark(b) {
         const id = String(b.category || '');
         if (!id) return '';
@@ -11467,16 +13548,56 @@ class DashboardConfig {
      */
     static BM_PAGE_SIZE = 50;
 
+    /** Days after which an unopened bookmark counts as neglected. */
+    bookmarkStaleDays() {
+        const n = Number(this.dash?.settings?.bookmarkStaleDays);
+        return Number.isFinite(n) && n >= 7 ? Math.min(365, Math.round(n)) : 90;
+    }
+
+    /** Whether deleting `count` rows should ask first. */
+    deleteNeedsConfirm(count) {
+        const from = Number(this.dash?.settings?.bookmarkDeleteConfirmFrom);
+        const threshold = Number.isFinite(from) && from >= 1 ? from : 1;
+        return count >= threshold;
+    }
+
+    /** The sort this list opens on, from settings. */
+    defaultBookmarksSort() {
+        const allowed = ['page', 'name', 'url', 'category', 'recent', 'lastOpened', 'opens', 'pinned'];
+        const stored = String(this.dash?.settings?.configBookmarksSort || '');
+        return allowed.includes(stored) ? stored : 'page';
+    }
+
+    /** Rows per load step, from settings; the constant is the fallback. */
+    bmPageSize() {
+        const n = Number(this.dash?.settings?.configBookmarksPageSize);
+        return Number.isFinite(n) && n >= 10 ? Math.min(500, Math.round(n)) : DashboardConfig.BM_PAGE_SIZE;
+    }
+
+    /**
+     * The cleanup filters, in terms of the shared predicates.
+     *
+     * These were written out here and again in the search bar, which is how
+     * "Without tags" and `status:untagged` came to disagree about a tag made of
+     * spaces. Only `duplicate` stays local: it is the one question that needs
+     * every other bookmark's URL rather than this one's fields.
+     */
     static CLEANUP_FILTERS = {
-        never: (b) => !Number(b.openCount || 0) && !Number(b.lastOpened || 0),
-        once: (b) => Number(b.openCount || 0) === 1,
-        untagged: (b) => !(Array.isArray(b.tags) && b.tags.length),
-        insecure: (b) => /^http:\/\//i.test(String(b.url || '')),
-        noicon: (b) => !String(b.icon || '').trim(),
+        never: (b) => window.BookmarkPredicates.match('never', b),
+        once: (b) => window.BookmarkPredicates.match('once', b),
+        untagged: (b) => window.BookmarkPredicates.match('untagged', b),
+        insecure: (b) => window.BookmarkPredicates.match('insecure', b),
+        noicon: (b) => window.BookmarkPredicates.match('noicon', b),
         duplicate: (b, dupes) => {
             const url = String(b.url || '').trim().toLowerCase();
             return url && dupes && dupes.has(url);
         },
+        // What did I touch? The question after an import, a bulk retag, or an
+        // afternoon of tidying — and every bookmark has carried updatedAt since
+        // it was added, with nothing able to ask for it. Seven days rather than
+        // a setting: this is "recently", and a number nobody can see is a number
+        // nobody can misread.
+        changed: (b) => window.BookmarkPredicates.match('changed', b),
     };
 
     /** Page id → position, built once so sort comparators can look up in O(1). */
@@ -11514,7 +13635,7 @@ class DashboardConfig {
         // versus query "a" with tag "b" must not share a token.
         const token = JSON.stringify([
             this.bmQuery, this.bmPageFilter, this.bmCategoryFilter,
-            this.bookmarkTagFilters(), this.bmCleanupFilter, this.bmSort,
+            this.bookmarkTagFilters(), this.bmCleanupFilter, this.bmSort ?? this.defaultBookmarksSort(),
         ]);
         if (this._bmVisibleSource === all && this._bmVisibleToken === token && this._bmVisible) {
             return this._bmVisible;
@@ -11580,7 +13701,7 @@ class DashboardConfig {
                 if (dp !== 0) return dp;
                 return pageIndex(a.pageId) - pageIndex(b.pageId);
             },
-        }[this.bmSort] || null;
+        }[this.bmSort ?? this.defaultBookmarksSort()] || null;
         return cmp ? [...rows].sort(cmp) : rows;
     }
 
@@ -11660,187 +13781,25 @@ class DashboardConfig {
     }
 
     /** The bulk-action bar, shown only once rows are ticked. */
-    renderBulkToolbar() {
-        const esc = (v) => this.dash.escapeHtml(v);
-        const n = this.bmSelected.size;
-        if (n === 0) return '';
-        const pages = this.dash.pages || [];
-        const picked = this.bookmarksFromKeys([...this.bmSelected]);
-        const pageOpts = [`<option value="">${esc(this.t('config.bulkMovePagePlaceholder', 'Move to page…'))}</option>`]
-            .concat(pages.map((p) => `<option value="${esc(p.id)}">${esc(p.name || p.id)}</option>`)).join('');
-        const catOpts = [`<option value="">${esc(this.t('config.bulkMoveCategoryPlaceholder', 'Set category…'))}</option>`]
-            .concat(this.bulkKnownCategories(picked).map((c) => `<option value="${esc(c.id)}">${esc(c.label)}</option>`)).join('');
-        const modeOpts = [
-            ['add', this.t('config.bulkTagsAdd', 'Add')],
-            ['replace', this.t('config.bulkTagsReplace', 'Replace')],
-            ['remove', this.t('config.bulkTagsRemove', 'Remove')],
-        ].map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
-        const statusOpts = (window.CheckMode?.options?.() || []).map((o) =>
-            `<option value="${esc(o.mode)}">${esc(o.label)}</option>`
-        ).join('');
-
-        return `
-            <div class="config-bulk-bar" role="group" aria-label="${esc(this.t('config.bulkActions', 'Bulk actions'))}">
-                <span class="config-bulk-count">${esc(this.t('config.bulkSelectedCount', '{n} selected').replace('{n}', String(n)))}</span>
-                ${this.renderBulkOffscreenNotice(picked)}
-                <div class="config-bulk-group">
-                    <select class="config-select" id="config-bulk-page">${pageOpts}</select>
-                    <select class="config-select" id="config-bulk-category">${catOpts}</select>
-                    <button type="button" class="config-btn config-btn--small" data-bulk="move">${esc(this.t('config.bulkMoveApply', 'Apply'))}</button>
-                </div>
-                <div class="config-bulk-group">
-                    <input type="text" class="config-text" id="config-bulk-tags" placeholder="${esc(this.t('config.detailTagsPlaceholder', 'work, dev, personal…'))}">
-                    <select class="config-select" id="config-bulk-tags-mode">${modeOpts}</select>
-                    <button type="button" class="config-btn config-btn--small" data-bulk="tags">${esc(this.t('config.bulkTagsApply', 'Apply tags'))}</button>
-                </div>
-                <div class="config-bulk-group">
-                    <select class="config-select" id="config-bulk-status">${statusOpts}</select>
-                    <button type="button" class="config-btn config-btn--small" data-bulk="status">${esc(this.t('config.bulkStatusApply', 'Set checking'))}</button>
-                    <button type="button" class="config-btn config-btn--small" data-bulk="pin">${esc(this.t('config.bulkTogglePin', 'Toggle pin'))}</button>
-                </div>
-                <div class="config-bulk-group">
-                    <button type="button" class="config-btn config-btn--small" data-bulk="favicons">${esc(this.t('config.bulkRefreshFavicons', 'Refresh favicons'))}</button>
-                    <button type="button" class="config-btn config-btn--small" data-bulk="export">${esc(this.t('config.bulkExportCsv', 'Export CSV'))}</button>
-                    <button type="button" class="config-btn config-btn--small config-btn--danger" data-bulk="delete">${esc(this.t('config.bulkDelete', 'Delete'))}</button>
-                    <button type="button" class="config-btn config-btn--small" data-bulk="clear">${esc(this.t('config.bulkClearSelection', 'Clear selection'))}</button>
-                </div>
-            </div>`;
+    /**
+     * Selected rows that the current filter does not show.
+     *
+     * A selection used to be dropped whenever a filter changed, which is safe
+     * and makes "tick the untagged, then also the duplicates" impossible. It
+     * survives now, so the bar has to be honest about what is behind it: acting
+     * on twelve when three are off screen is exactly the surprise the clearing
+     * was there to prevent.
+     */
+    hiddenSelectionCount() {
+        if (!this.bmSelected.size) return 0;
+        const visible = new Set(this.visibleBookmarks().map((b) => this.bookmarkKey(b)));
+        let hidden = 0;
+        this.bmSelected.forEach((key) => { if (!visible.has(key)) hidden += 1; });
+        return hidden;
     }
 
-    /** One bookmark row in the config feed. */
-    renderBookmarkRow(b, ctx) {
-        const esc = ctx.esc;
-        const key = this.bookmarkKey(b);
-        const ticked = this.bmSelected.has(key);
-        const title = b.name || this.formatBookmarkUrlDisplay(b.url) || b.url;
-        const domain = this.formatBookmarkUrlDisplay(b.url);
-        const metaBits = [];
-        if (b.pinned) {
-            metaBits.push(`<span class="config-bm-pin-icon" aria-label="${esc(this.t('config.bookmarkPinnedAria', 'Pinned'))}" title="${esc(this.t('config.pinnedShort', 'Pinned'))}">📌</span>`);
-        }
-        if (b.shortcut) metaBits.push(`<span class="config-bm-shortcut-pill">${esc(b.shortcut)}</span>`);
-        if (ctx.isDuplicate) {
-            metaBits.push(`<span class="config-bm-duplicate-badge">${esc(this.t('config.bookmarkDuplicateBadge', 'Duplicate'))}</span>`);
-        }
-        const tags = b.tags || [];
-        const tagChips = tags.map((tag) =>
-            `<button type="button" class="config-bm-tag-chip" data-bm-filter-tag="${esc(tag)}">${esc(tag)}</button>`
-        ).join('');
-        // One or two tags read fine beside the domain. Beyond that they crowd it
-        // out, so they move to a line of their own — the identifying line stays
-        // scannable and the tags keep their own left edge down the feed.
-        const TAGS_INLINE_MAX = 2;
-        const tagsOnOwnLine = tags.length > TAGS_INLINE_MAX;
-        const inlineTagChips = tagsOnOwnLine ? '' : tagChips;
-        const tagRow = tagsOnOwnLine
-            ? `<p class="config-bm-tag-row">${tagChips}</p>`
-            : '';
-        const mode = window.CheckMode?.of?.(b) || 'off';
-        const feed = window.BookmarkFeedRow;
-        const noteHtml = b.note
-            ? `<p class="inbox-item-note">${esc(b.note)}</p>`
-            : '';
-        const iconSrc = this.resolveIconSrc(b.icon);
-        const categoryLine = b.category
-            ? `<p class="config-bm-meta-category"><button type="button" class="config-bm-meta-category-link" data-bm-row-key="${esc(key)}">${esc(this.categoryLabelForBookmark(b))}</button></p>`
-            : '';
-        // The category line above already reads "page · category" whenever no
-        // page filter is on, so repeating the page name in the footer says the
-        // same thing twice. Keep the badge only where that line cannot: on
-        // bookmarks with no category at all.
-        const pageShownInCategoryLine = !!b.category && !this.bmPageFilter;
-        const pageFooter = ctx.showPageBadge && !pageShownInCategoryLine
-            ? `<button type="button" class="config-bm-page-badge config-bm-page-name config-bm-page-name--link" data-bm-filter-page="${esc(String(b.pageId))}">${esc(ctx.pageName(b.pageId))}</button>`
-            : '<span class="config-bm-page-name config-bm-page-name--empty" aria-hidden="true"></span>';
-        const usageTip = esc(this.bookmarkUsageTooltip(b));
-        const usageFooter = `
-            <div class="config-bm-meta-footer">
-                ${pageFooter}
-                <div class="config-bm-usage-col" title="${usageTip}">${this.renderBookmarkUsageLine(b)}</div>
-            </div>`;
-        return `
-            <article class="health-view-item config-bm-row config-bm-item${ticked ? ' is-checked' : ''}" data-bm-key="${esc(key)}" tabindex="-1"
-                     role="listitem"${ctx.setSize ? ` aria-posinset="${ctx.posInSet}" aria-setsize="${ctx.setSize}"` : ''}>
-                <label class="config-bm-check">
-                    <input type="checkbox" class="config-bm-tick" data-bm-tick="${esc(key)}" ${ticked ? 'checked' : ''}
-                           aria-label="${esc(this.t('config.selectBookmark', 'Select bookmark'))}">
-                </label>
-                ${feed?.renderIcon?.(iconSrc, esc) || this.renderBookmarkIcon(b)}
-                <div class="health-view-item-body">
-                    <div class="health-view-item-head">
-                        <h3 class="health-view-item-title config-bm-title">${esc(title)}</h3>
-                    </div>
-                    <p class="health-view-item-meta config-bm-meta-primary">
-                        <span>${esc(domain)}</span>
-                        ${metaBits.join('')}
-                        ${inlineTagChips}
-                        <span class="health-check-mode-wrap">
-                            ${feed?.renderCheckModeBadge?.(key, mode, esc, (k, fb) => this.t(k, fb)) || ''}
-                            ${feed?.renderCheckModeMenu?.(key, mode, esc, (k, fb) => this.t(k, fb)) || ''}
-                        </span>
-                    </p>
-                    ${tagRow}
-                    ${categoryLine}
-                    ${noteHtml}
-                    ${feed?.renderActionsBar?.({
-                        key,
-                        escapeHtml: esc,
-                        t: (k, fb) => this.t(k, fb),
-                        showRecheck: false,
-                        moreMenuHtml: this.renderBookmarkRowMenu(b, key),
-                    }) || this.renderBookmarkRowActions(b, key, false)}
-                    ${usageFooter}
-                </div>
-            </article>`;
-    }
 
-    /** The rows themselves, re-rendered on every search/filter/edit change. */
-    renderBookmarksList() {
-        const esc = (v) => this.dash.escapeHtml(v);
-        this._bmDuplicateUrls = null;
-        const dupes = this.ensureDuplicateUrlSet();
-        if (!(this.dash.allBookmarks || []).length) {
-            return `
-                <div class="config-panel-empty config-panel-empty--action">
-                    <p>${esc(this.t('config.noBookmarksYet', 'No bookmarks yet.'))}</p>
-                    <button type="button" class="config-btn config-btn--primary" data-bm-empty-add>${esc(this.t('config.addBookmarkBtn', 'Add bookmark'))}</button>
-                </div>`;
-        }
-        const allRows = this.visibleBookmarks();
-        if (!allRows.length) {
-            const hasFilters = this.bookmarksFiltersActive();
-            return `
-                <div class="config-panel-empty config-panel-empty--action">
-                    <p>${esc(this.t('config.noBookmarksMatch', 'No bookmarks match your search.'))}</p>
-                    ${hasFilters ? `<button type="button" class="config-btn" data-bm-empty-clear>${esc(this.t('config.clearBookmarkFilters', 'Clear filters'))}</button>` : ''}
-                    <button type="button" class="config-btn config-btn--primary" data-bm-empty-add>${esc(this.t('config.addBookmarkBtn', 'Add bookmark'))}</button>
-                </div>`;
-        }
-        const names = this.pageNameIndex();
-        const pageName = (id) => names.get(String(id)) || id;
-        const showPageBadge = !this.bmPageFilter;
-        const limit = Math.max(DashboardConfig.BM_PAGE_SIZE, Number(this.bmVisibleLimit) || DashboardConfig.BM_PAGE_SIZE);
-        const rows = allRows.slice(0, limit);
-        const ctx = { esc, pageName, showPageBadge, isDuplicate: (b) => {
-            const url = String(b.url || '').trim().toLowerCase();
-            return url && dupes.has(url);
-        } };
-        // Position is passed down so each row can carry aria-posinset: with
-        // paging the DOM holds only part of the list, and without setsize a
-        // screen reader would announce "3 of 50" on a library of 500.
-        const items = rows.map((b, i) => this.renderBookmarkRow(b, {
-            ...ctx,
-            isDuplicate: ctx.isDuplicate(b),
-            posInSet: i + 1,
-            setSize: allRows.length,
-        })).join('');
-        const more = allRows.length > rows.length
-            ? `<div class="config-bm-load-sentinel" data-bm-load-more hidden aria-hidden="true"></div>
-               <p class="config-bm-load-hint">${esc(this.t('config.bookmarksLoadMoreHint', '{shown} of {total} shown — scroll for more')
-                   .replace('{shown}', String(rows.length)).replace('{total}', String(allRows.length)))}</p>`
-            : '';
-        return `<div class="health-view-feed config-bm-feed" role="list">${items}${more}</div>`;
-    }
+
 
     /**
      * The full inline editor, carrying every field the old config's detail panel
@@ -11938,6 +13897,7 @@ class DashboardConfig {
                         <input type="text" id="config-bm-shortcut" class="config-text config-bm-shortcut" data-bm-field="shortcut" maxlength="5" value="${esc(b.shortcut || '')}"
                                placeholder="${esc(this.t('config.bookmarkShortcutPlaceholder', 'Y, YS, YC'))}">
                         <p class="config-field-hint config-bm-conflict" data-bm-conflict="shortcut" hidden></p>
+                        <p class="config-field-hint config-bm-shortcut-hint" data-bm-shortcut-hint hidden></p>
                     </div>
 
                     <div class="config-bm-cell">
@@ -12190,7 +14150,41 @@ class DashboardConfig {
     }
 
     toggleBookmarkMenu(key, kind = 'more') {
+        this.fillBookmarkMenu(key, kind);
         return window.BookmarkFeedRow?.toggleMenu?.(key, kind, this.bookmarkListRoot() || document) === true;
+    }
+
+    /**
+     * Build a row's menu the first time it is opened.
+     *
+     * Every row used to carry both menus fully rendered and hidden — the reason a
+     * row costs ~55 DOM nodes, times fifty rows on screen. The shell is what
+     * toggleMenu looks for; this fills it once, and the items are handled by one
+     * delegated listener on the list rather than by handlers bound per row.
+     */
+    fillBookmarkMenu(key, kind) {
+        const root = this.bookmarkListRoot() || document;
+        const menu = root.querySelector(
+            `.health-view-menu[data-menu-for="${CSS.escape(key)}"][data-menu-owner="${CSS.escape(kind)}"]`
+        );
+        if (!menu || menu.dataset.menuLazy !== kind) return;
+        const bookmark = this.findBookmarkByKey(key);
+        if (!bookmark) return;
+        const esc = (v) => this.dash.escapeHtml(v);
+        if (kind === 'check') {
+            const mode = window.CheckMode?.of?.(bookmark) || 'off';
+            const built = window.BookmarkFeedRow?.renderCheckModeMenu?.(key, mode, esc, (k, fb) => this.t(k, fb)) || '';
+            // renderCheckModeMenu returns the whole element; take its inside.
+            const wrap = document.createElement('div');
+            wrap.innerHTML = built;
+            menu.innerHTML = wrap.firstElementChild?.innerHTML || '';
+        } else {
+            const built = this.renderBookmarkRowMenu(bookmark, key);
+            const wrap = document.createElement('div');
+            wrap.innerHTML = built;
+            menu.innerHTML = wrap.firstElementChild?.innerHTML || '';
+        }
+        delete menu.dataset.menuLazy;
     }
 
     syncBookmarkRowBusy(key, busy) {
@@ -12216,6 +14210,182 @@ class DashboardConfig {
             return { pageId, index, record: list[index], bookmark };
         } catch {
             return null;
+        }
+    }
+
+    /**
+     * Swap a field on a row for an input, and write it on Enter.
+     *
+     * Deliberately narrow: name and shortcut are single, short values with an
+     * obvious success state. Anything with a picker — category, tags, checking —
+     * already has its own popover or menu, and reimplementing those here would
+     * be a second copy of each.
+     */
+    startInlineBookmarkEdit(el) {
+        if (!el || el.dataset.editing === 'true') return;
+        const field = el.getAttribute('data-bm-inline');
+        const row = el.closest('.config-bm-row');
+        const key = row?.getAttribute('data-bm-key');
+        if (!key || !field) return;
+
+        const bookmark = this.findBookmarkByKey(key);
+        const current = field === 'shortcut'
+            ? String(bookmark?.shortcut || '')
+            : String(bookmark?.name || '');
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = `config-bm-inline-input config-bm-inline-input--${field}`;
+        input.value = current;
+        if (field === 'shortcut') input.maxLength = 5;
+        input.setAttribute('aria-label', field === 'shortcut'
+            ? this.t('config.bookmarkShortcutAdd', 'Add a shortcut')
+            : this.t('config.bookmarkNameLabel', 'Name'));
+
+        const original = el.innerHTML;
+        el.dataset.editing = 'true';
+        el.innerHTML = '';
+        el.appendChild(input);
+        input.focus();
+        input.select();
+
+        // A shortcut belongs to one bookmark; two claiming it is a conflict the
+        // health view already reports and nothing prevented at the point of
+        // typing. Said here, while the field is still open and the old value is
+        // still one Escape away, rather than as a red row found later.
+        let warning = null;
+        const conflictOf = (value) => (field === 'shortcut'
+            ? this.findShortcutOwner(value, key)
+            : null);
+        const showConflict = (owner) => {
+            if (!owner) {
+                warning?.remove();
+                warning = null;
+                input.classList.remove('is-invalid');
+                return;
+            }
+            input.classList.add('is-invalid');
+            if (!warning) {
+                warning = document.createElement('span');
+                warning.className = 'config-bm-inline-conflict';
+                warning.setAttribute('role', 'alert');
+                el.appendChild(warning);
+            }
+            warning.textContent = this.t('config.bookmarkShortcutTaken', '“{key}” is already {name}')
+                .replace('{key}', String(input.value || '').trim().toUpperCase())
+                .replace('{name}', owner.name || owner.url || '');
+        };
+
+        let done = false;
+        const cleanup = () => {
+            warning?.remove();
+            warning = null;
+        };
+        const restore = () => {
+            if (done) return;
+            done = true;
+            cleanup();
+            el.dataset.editing = 'false';
+            el.innerHTML = original;
+        };
+        const commit = async () => {
+            if (done) return;
+            const next = input.value.trim();
+            if (next === current) {
+                done = true;
+                cleanup();
+                el.dataset.editing = 'false';
+                el.innerHTML = original;
+                return;
+            }
+            const owner = conflictOf(next);
+            if (owner) {
+                // Refused rather than saved: two bookmarks sharing a shortcut
+                // means neither is reachable by it, so accepting the edit would
+                // break the one that already worked.
+                showConflict(owner);
+                input.focus();
+                input.select();
+                return;
+            }
+            done = true;
+            cleanup();
+            el.dataset.editing = 'false';
+            const saved = await this.saveInlineBookmarkField(key, field, next);
+            if (!saved) el.innerHTML = original;
+        };
+
+        input.addEventListener('input', () => showConflict(conflictOf(input.value.trim())));
+        input.addEventListener('keydown', (e) => {
+            e.stopPropagation();
+            if (e.key === 'Enter') { e.preventDefault(); void commit(); }
+            if (e.key === 'Escape') { e.preventDefault(); restore(); }
+        });
+        // Clicking away saves, the way the inline editor on the grid does: an
+        // abandoned edit that silently discarded what you typed is worse than
+        // one that keeps it, and Escape is right there for the other case. A
+        // conflicting value is the exception — it is put back, and said so,
+        // because saving it would break the bookmark that already holds the key.
+        input.addEventListener('blur', () => {
+            const next = input.value.trim();
+            const owner = next !== current ? conflictOf(next) : null;
+            if (owner) {
+                this.notify(this.t('config.bookmarkShortcutTaken', '“{key}” is already {name}')
+                    .replace('{key}', next.toUpperCase())
+                    .replace('{name}', owner.name || owner.url || ''), 'error');
+                restore();
+                return;
+            }
+            void commit();
+        });
+    }
+
+    /**
+     * The bookmark already using a shortcut, or null.
+     *
+     * Across every page, not just this one: the health report counts a conflict
+     * whenever two bookmarks anywhere share a key (shortcutCounts in
+     * handlers.go), and the search resolves a typed shortcut against the whole
+     * collection — so "free on this page" would be a different, wrong rule.
+     */
+    findShortcutOwner(value, exceptKey) {
+        const wanted = String(value || '').trim().toUpperCase();
+        if (!wanted) return null;
+        const all = this.dash.allBookmarks?.length ? this.dash.allBookmarks : (this.dash.bookmarks || []);
+        return all.find((bm) => {
+            if (!bm || String(bm.shortcut || '').trim().toUpperCase() !== wanted) return false;
+            return this.bookmarkKey(bm) !== exceptKey;
+        }) || null;
+    }
+
+    /** Write one field of one bookmark, then repaint the list from the server. */
+    async saveInlineBookmarkField(key, field, value) {
+        const record = await this.findBookmarkRecord(key);
+        if (!record) return false;
+        const { pageId, index } = record;
+        try {
+            const res = await fetch(`/api/bookmarks?page=${encodeURIComponent(pageId)}`);
+            const list = res.ok ? await res.json() : null;
+            if (!Array.isArray(list) || !list[index]) throw new Error('bookmark not found');
+            if (field === 'shortcut') {
+                list[index].shortcut = value.toUpperCase();
+            } else {
+                // An empty name would leave the row showing its URL with no way
+                // back to a name, so an emptied field keeps what was there.
+                if (!value) return false;
+                list[index].name = value;
+            }
+            const saved = await this.writeFetch(`/api/bookmarks?page=${encodeURIComponent(pageId)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(list),
+            });
+            if (!saved.ok) throw new Error(`HTTP ${saved.status}`);
+            await this.refreshBookmarksAfterWrite();
+            return true;
+        } catch {
+            this.notify(this.t('config.bookmarkSaveFailed', 'Could not save this bookmark'), 'error');
+            return false;
         }
     }
 
@@ -12363,7 +14533,11 @@ class DashboardConfig {
         this.closeBookmarkMenus();
         const url = String(b?.url || '').trim();
         if (!url) return;
-        window.open(`https://web.archive.org/web/*/${url}`, '_blank', 'noopener,noreferrer');
+        // Template from settings: a self-hoster may run ArchiveBox or prefer
+        // archive.today over the Wayback Machine.
+        const template = String(this.dash?.settings?.bookmarkArchiveUrl || '').trim()
+            || 'https://web.archive.org/web/*/{url}';
+        window.open(template.replace('{url}', encodeURIComponent(url)), '_blank', 'noopener,noreferrer');
     }
 
     async refreshBookmarkFavicon(key) {
@@ -12552,21 +14726,6 @@ class DashboardConfig {
         }
     }
 
-    renderBookmarkRowActions(b, key, open) {
-        const esc = (v) => this.dash.escapeHtml(v);
-        const editLabel = open
-            ? this.t('config.close', 'Close')
-            : this.t('config.edit', 'Edit');
-        const editKbd = open ? '' : '<kbd>e</kbd>';
-        return `
-            <div class="config-bm-actions">
-                <div class="config-bm-actions-inner">
-                    <button type="button" class="config-bm-action-btn" data-bm-open="${esc(key)}">${esc(this.t('config.openBookmark', 'Open'))}<kbd>Enter</kbd></button>
-                    <button type="button" class="config-bm-action-btn" data-bm-edit="${esc(key)}">${esc(editLabel)}${editKbd}</button>
-                    <button type="button" class="config-bm-action-btn config-bm-action-btn--danger" data-bm-delete="${esc(key)}">${esc(this.t('config.delete', 'Delete'))}<kbd>d</kbd></button>
-                </div>
-            </div>`;
-    }
 
     renderBookmarkKeyboardLegend() {
         const keys = [
@@ -12585,6 +14744,34 @@ class DashboardConfig {
     }
 
     bindBookmarksSection(container) {
+        this.bindSubTabStrip(container, 'data-bm-tab', (tab) => {
+            if (tab === this.bmTab) return;
+            this.bmTab = tab;
+            this.restoreConfigHash();
+            const body = document.getElementById('config-bm-body');
+            if (!body) return;
+            body.innerHTML = this.renderBmTab();
+            // Bind the new body only: re-binding the whole container would stack
+            // a second listener on every tab button.
+            if (tab === 'settings') {
+                this.bindControlPanels(body, 'behavior');
+            } else {
+                this.bindBookmarksListTab(body);
+            }
+            // The strip is not repainted with the body, so the active button has
+            // to be moved by hand — the same call the other strips make.
+            this.syncSubTabStrip('data-bm-tab', tab);
+        });
+        if (this.bmTab === 'settings') {
+            return;
+        }
+        this.bindBookmarksListTab(container);
+    }
+
+    bindBookmarksListTab(container) {
+        // The window follows the scroll, so it has to be watched from the moment
+        // the list is on screen — not only after a repaint.
+        this.bindBookmarkWindowScroll();
         const search = container.querySelector('#config-bm-search');
         if (search) {
             search.addEventListener('input', () => {
@@ -12592,6 +14779,21 @@ class DashboardConfig {
                 this.scheduleBookmarkSearchRepaint();
             });
         }
+        container.querySelectorAll('[data-bm-sort-chip]').forEach((chip) => {
+            chip.addEventListener('click', () => {
+                this.bmSort = chip.getAttribute('data-bm-sort-chip');
+                this.resetBookmarkVisibleLimit();
+                this.render();
+                this.restoreConfigHash();
+            });
+        });
+        container.querySelector('[data-bm-changed-toggle]')?.addEventListener('click', () => {
+            this.bmCleanupFilter = this.bmCleanupFilter === 'changed' ? '' : 'changed';
+            this.resetBookmarkVisibleLimit();
+            this._bmDuplicateUrls = null;
+            this.render();
+            this.restoreConfigHash();
+        });
         this.bindBookmarkFilterChips(container.querySelector('#config-bm-filter-chips'));
         this.bindBookmarkTagCloud(container);
         container.querySelector('[data-cleanup-clear]')?.addEventListener('click', () => {
@@ -12606,6 +14808,9 @@ class DashboardConfig {
             if (!el) return;
             el.addEventListener('change', () => {
                 this[prop] = el.value;
+                // The selection is deliberately kept: narrowing to a second
+                // filter and adding to what you already ticked is the point.
+                // The bulk bar says how many are behind the filter.
                 this.resetBookmarkVisibleLimit();
                 this._bmDuplicateUrls = null;
                 this.repaintBookmarksList();
@@ -12737,8 +14942,35 @@ class DashboardConfig {
     }
 
     /** Row-level handlers, rebound after every list repaint. */
+    /**
+     * The right-click menu on a row, created on first use.
+     *
+     * Lazily rather than in the constructor: config itself is lazy-loaded, and
+     * a session that never opens the Bookmarks section never needs it.
+     */
+    bookmarkContextMenu() {
+        if (this._bmContextMenu) return this._bmContextMenu;
+        if (typeof window.DashboardConfigContextMenu !== 'function') return null;
+        this._bmContextMenu = new window.DashboardConfigContextMenu(this);
+        return this._bmContextMenu;
+    }
+
     bindBookmarkRows(root) {
+        this.bookmarkContextMenu()?.bindList(root);
         const listRoot = root.querySelector('#config-bm-list') || root;
+        // Name and shortcut, edited where they are read. Going through the full
+        // form for a typo or a two-letter shortcut is four clicks and a dialog
+        // over the list you were reading; here the row stays in place, Enter
+        // saves and Escape puts the old value back.
+        listRoot.querySelectorAll('[data-bm-inline]').forEach((el) => {
+            const start = () => this.startInlineBookmarkEdit(el);
+            el.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); start(); });
+            // A shortcut pill is a button, so a single click is the natural way
+            // in; the title is a heading, where a click means "select the row".
+            if (el.getAttribute('data-bm-inline') === 'shortcut') {
+                el.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); start(); });
+            }
+        });
         listRoot.querySelectorAll('[data-feed-action="open"]').forEach((btn) => {
             btn.addEventListener('click', () => {
                 const key = btn.closest('.config-bm-row')?.getAttribute('data-bm-key');
@@ -12771,22 +15003,29 @@ class DashboardConfig {
                 if (key) this.toggleBookmarkMenu(key, 'check');
             });
         });
-        listRoot.querySelectorAll('[data-check-mode]').forEach((item) => {
-            item.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const key = item.closest('.health-view-menu')?.getAttribute('data-menu-for');
-                const mode = item.getAttribute('data-check-mode');
-                if (key && mode) void this.setBookmarkCheckMode(key, mode);
+        // One listener for every row's menu items, on the list itself: the items
+        // do not exist until a menu is opened (see fillBookmarkMenu), and fifty
+        // rows no longer mean a hundred handlers.
+        if (!listRoot.dataset.menuDelegated) {
+            listRoot.dataset.menuDelegated = 'true';
+            listRoot.addEventListener('click', (e) => {
+                const modeItem = e.target.closest?.('[data-check-mode]');
+                if (modeItem && listRoot.contains(modeItem)) {
+                    e.stopPropagation();
+                    const key = modeItem.closest('.health-view-menu')?.getAttribute('data-menu-for');
+                    const mode = modeItem.getAttribute('data-check-mode');
+                    if (key && mode) void this.setBookmarkCheckMode(key, mode);
+                    return;
+                }
+                const actionItem = e.target.closest?.('[data-bm-menu-action]');
+                if (actionItem && listRoot.contains(actionItem)) {
+                    e.stopPropagation();
+                    const key = actionItem.closest('.health-view-menu')?.getAttribute('data-menu-for');
+                    const action = actionItem.getAttribute('data-bm-menu-action');
+                    if (key && action) this.handleBookmarkMenuAction(action, key);
+                }
             });
-        });
-        listRoot.querySelectorAll('[data-bm-menu-action]').forEach((item) => {
-            item.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const key = item.closest('.health-view-menu')?.getAttribute('data-menu-for');
-                const action = item.getAttribute('data-bm-menu-action');
-                if (key && action) this.handleBookmarkMenuAction(action, key);
-            });
-        });
+        }
         listRoot.querySelectorAll('[data-bm-tick]').forEach((box) => {
             box.addEventListener('change', () => {
                 const key = box.getAttribute('data-bm-tick');
@@ -13178,8 +15417,14 @@ class DashboardConfig {
     async ensureCategoryOnPage(pageId, categoryId) {
         if (!pageId || !categoryId) return;
         const res = await fetch(`/api/categories?page=${encodeURIComponent(pageId)}`);
-        const current = res && res.ok ? await res.json() : [];
-        const list = Array.isArray(current) ? current : [];
+        // A failed read must not degrade to an empty list: the POST below sends
+        // the whole list, so treating "could not read" as "there are none"
+        // replaced every category on the page with this single one, and the
+        // server's empty-list guard cannot catch a one-item write.
+        if (!res || !res.ok) throw new Error(`HTTP ${res?.status ?? 'network'}`);
+        const current = await res.json();
+        if (!Array.isArray(current)) throw new Error('categories: unexpected payload');
+        const list = current;
         if (list.some((c) => String(c.id) === String(categoryId))) return;
         const name = this._pendingCategories?.get(categoryId)
             || this.knownCategories(pageId).find((c) => String(c.id) === String(categoryId))?.label
@@ -13207,14 +15452,22 @@ class DashboardConfig {
     }
 
     /**
+     * Longest name accepted for a page, category, tag, finder, theme or
+     * collection. Matches the maxlength the bookmark editor's category field
+     * already carried — that limit existed, it was just applied in only one of
+     * the two places a category can be named.
+     */
+    static NAME_MAX_LENGTH = 60;
+
+    /**
      * Is `name` free, given the names already taken?
      *
      * `taken` is any iterable of existing names. `self` is the entry being
      * renamed, excluded so that re-saving a row without changing its name — or
      * only changing its capitalisation — is not reported as a clash with itself.
      *
-     * An empty name is never treated as a duplicate here; emptiness is a
-     * separate concern handled by the callers that care about it.
+     * An empty name is never treated as a duplicate here; emptiness is rejected
+     * one level up, in guardUniqueName, so every caller gets it.
      */
     static isNameTaken(name, taken, self = null) {
         const key = DashboardConfig.nameKey(name);
@@ -13243,8 +15496,32 @@ class DashboardConfig {
      * the caller is told to abandon the write.
      *
      * Returns true when the name is free and the caller should proceed.
+     *
+     * Emptiness and length are checked here too. They used to be nobody's job:
+     * this guard only asked about duplicates and left the rest to callers that
+     * did not ask, so a cleared name saved as "" — rendering a category header
+     * with no title, a blank row in the theme picker, and a delete-confirm that
+     * named the internal id — while a pasted 500-character name pushed the
+     * Trash buttons off the screen. Two emptied names also stopped colliding
+     * with each other, since "" is never "taken".
      */
     guardUniqueName(input, name, taken, { previous = null, message } = {}) {
+        const trimmed = String(name ?? '').trim();
+        if (!trimmed) {
+            if (input && previous !== null) input.value = previous;
+            this.notify(this.t('config.nameEmpty', 'A name is required.'), 'error');
+            input?.focus?.();
+            input?.select?.();
+            return false;
+        }
+        if (trimmed.length > DashboardConfig.NAME_MAX_LENGTH) {
+            if (input && previous !== null) input.value = previous;
+            this.notify(this.t('config.nameTooLong', 'That name is too long (max {max} characters).')
+                .replace('{max}', String(DashboardConfig.NAME_MAX_LENGTH)), 'error');
+            input?.focus?.();
+            input?.select?.();
+            return false;
+        }
         if (!DashboardConfig.isNameTaken(name, taken, previous)) return true;
         if (input && previous !== null) input.value = previous;
         this.notify(
@@ -13285,9 +15562,19 @@ class DashboardConfig {
             el.textContent = msg || '';
             el.hidden = !msg;
         };
-        show('shortcut', shortcut && others.some((b) => String(b.shortcut || '').toUpperCase() === shortcut)
+        // Two things can make a letter a poor choice: another bookmark already
+        // has it, or the dashboard itself uses it. Only the first was ever said.
+        const taken = shortcut && others.some((b) => String(b.shortcut || '').toUpperCase() === shortcut);
+        const gridNote = window.ShortcutKeys?.gridKeyNote?.(shortcut, (key, fallback) => this.t(key, fallback)) || '';
+        show('shortcut', taken
             ? this.t('config.shortcutConflict', 'Shortcut already in use')
-            : '');
+            : gridNote);
+        const hint = editor.querySelector('[data-bm-shortcut-hint]');
+        if (hint) {
+            hint.textContent = window.ShortcutKeys?.usedShortcutsNote?.(
+                this.dash.allBookmarks, (key, fallback) => this.t(key, fallback), { pageId }) || '';
+            hint.hidden = !hint.textContent;
+        }
         const canon = (u) => window.BookmarkUrlUtils?.canonicalBookmarkURLKey?.(u) ?? String(u || '').trim().toLowerCase();
         show('url', url && others.some((b) => canon(b.url) === canon(url))
             ? this.t('config.urlConflictHint', 'This URL already exists on this page.')
@@ -13411,6 +15698,13 @@ class DashboardConfig {
             };
             const onKey = (e) => {
                 if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); }
+                // aria-modal="true" promises focus stays inside; without a Tab
+                // handler it wandered out to the page behind, including on
+                // "Reset all data". FocusTrapUtils is what modal.js and search
+                // already use.
+                else if (e.key === 'Tab') {
+                    window.FocusTrapUtils?.trapTabKey?.(e, overlay.querySelector('.modal') || overlay);
+                }
             };
             // Capture phase: the config view and the dashboard both listen for
             // Escape, and the dialog has to win while it is open.
@@ -13478,6 +15772,13 @@ class DashboardConfig {
             };
             const onKey = (e) => {
                 if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); }
+                // aria-modal="true" promises focus stays inside; without a Tab
+                // handler it wandered out to the page behind, including on
+                // "Reset all data". FocusTrapUtils is what modal.js and search
+                // already use.
+                else if (e.key === 'Tab') {
+                    window.FocusTrapUtils?.trapTabKey?.(e, overlay.querySelector('.modal') || overlay);
+                }
             };
             document.addEventListener('keydown', onKey, true);
             // The button stays disabled until the word matches, so there is no
@@ -13519,7 +15820,7 @@ class DashboardConfig {
      */
     selectAllBookmarksLabel() {
         const total = this.visibleBookmarks().length;
-        const shown = Math.min(total, Math.max(DashboardConfig.BM_PAGE_SIZE, Number(this.bmVisibleLimit) || DashboardConfig.BM_PAGE_SIZE));
+        const shown = Math.min(total, this.bookmarkVisibleLimit(total));
         if (total > shown) {
             return this.t('config.selectAllBookmarksCount', 'Select all {n}').replace('{n}', String(total));
         }
@@ -13578,7 +15879,7 @@ class DashboardConfig {
             const total = this.visibleBookmarks().length;
             if (this.bmVisibleLimit >= total) return;
             this._bmLoadMoreArmed = false;
-            this.bmVisibleLimit += DashboardConfig.BM_PAGE_SIZE;
+            this.bmVisibleLimit += this.bmPageSize();
             this.repaintBookmarksList();
         }, { root: root || null, rootMargin: '160px' });
         this._bmLoadMoreObserver.observe(sentinel);
@@ -13627,12 +15928,13 @@ class DashboardConfig {
         if (scrollHost) scrollHost.scrollTop = scrollTop;
         else window.scrollTo(0, scrollTop);
         this.setupBookmarkLoadMore(host);
+        this.bindBookmarkWindowScroll();
     }
 
     repaintBulkToolbar() {
         const host = document.getElementById('config-bm-bulk');
         if (!host) return;
-        host.innerHTML = this.renderBulkToolbar();
+        host.innerHTML = this.renderBulkToolbarSafe();
         this.bindBulkToolbar(host);
     }
 
@@ -13686,7 +15988,11 @@ class DashboardConfig {
     async deleteBookmarkByKey(key) {
         const parsed = this.parseBookmarkKey(key);
         if (!parsed) return;
-        if (!await this.confirmAction(this.t('config.deleteBookmarkConfirm', 'Delete this bookmark?'))) return;
+        // Below the threshold the confirm is skipped: the undo toast and the
+        // 30-day trash already cover a misclick, and a cleanup pass should not
+        // cost one Enter per row.
+        if (this.deleteNeedsConfirm(1)
+            && !await this.confirmAction(this.t('config.deleteBookmarkConfirm', 'Delete this bookmark?'))) return;
         try {
             // Snapshot before the write, so the toast can put this row back —
             // same as bulk delete and the :remove command.
@@ -13887,13 +16193,57 @@ class DashboardConfig {
      * Apply a mutation to every ticked bookmark, grouped per page so each page
      * is written exactly once rather than once per bookmark.
      */
+    /**
+     * Apply a change to the selection, and hand back the way to undo it.
+     *
+     * A bulk edit is the one action here with no natural second chance: forty
+     * rows retagged, or pinned, cannot be picked apart by hand afterwards, and
+     * only the delete path offered an undo. The snapshot is the pages as they
+     * were before the write — the same shape the delete undo restores — so
+     * putting it back is one POST per page rather than a reverse of the edit,
+     * which would have to be written for each kind of change and would be wrong
+     * for `replace`.
+     */
     async mutateSelected(picked, mutate) {
+        const snapshots = new Map();
         for (const [pageId, targets] of this.selectionTargetsByPage(picked)) {
+            const before = (this.dash.allBookmarks || [])
+                .filter((b) => String(b.pageId) === String(pageId))
+                .map((b) => ({ ...b }));
+            snapshots.set(pageId, before);
             await this.writePageBookmarks(pageId, (list) => DashboardConfig.withOccurrence(list)
                 .map(({ bookmark, target }) => (targets.has(target) ? mutate({ ...bookmark }) : bookmark)));
         }
         this.bmSelected.clear();
         await this.refreshBookmarksAfterWrite();
+        return snapshots;
+    }
+
+    /**
+     * The undo a bulk edit hands to its toast.
+     *
+     * Restores each page as it was before the write. The rows are sent whole
+     * rather than diffed: the pages are already in memory, and a diff would
+     * have to reason about what "remove these tags" meant on a row that did not
+     * carry them.
+     */
+    bulkUndo(snapshots, doneKey, doneFallback, failKey, failFallback) {
+        if (!snapshots || !snapshots.size) return null;
+        return async () => {
+            try {
+                for (const [pageId, rows] of snapshots) {
+                    await this.writeFetch(`/api/bookmarks?page=${encodeURIComponent(pageId)}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(rows),
+                    });
+                }
+                await this.refreshBookmarksAfterWrite();
+                this.notify(this.t(doneKey, doneFallback), 'success');
+            } catch {
+                this.notify(this.t(failKey, failFallback), 'error');
+            }
+        };
     }
 
     async bulkMove(picked) {
@@ -13956,7 +16306,7 @@ class DashboardConfig {
         const mode = document.getElementById('config-bulk-tags-mode')?.value || 'add';
         const tags = raw.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
         if (!tags.length) return;
-        await this.mutateSelected(picked, (b) => {
+        const snapshots = await this.mutateSelected(picked, (b) => {
             const current = Array.isArray(b.tags) ? b.tags.map((t) => String(t).toLowerCase()) : [];
             let next;
             if (mode === 'replace') next = [...tags];
@@ -13964,34 +16314,47 @@ class DashboardConfig {
             else next = [...new Set([...current, ...tags])];
             return { ...b, tags: next };
         });
-        this.notify(this.t('config.bulkTagsDone', 'Tags updated.'), 'success');
+        this.notify(this.t('config.bulkTagsDone', 'Tags updated.'), 'success', {
+            undoCallback: this.bulkUndo(snapshots, 'config.bulkTagsUndone', 'Tags put back.',
+                'config.bulkUndoFailed', 'Could not undo that.'),
+            duration: 8000,
+        });
     }
 
     async bulkStatus(picked) {
         const mode = document.getElementById('config-bulk-status')?.value || 'off';
-        await this.mutateSelected(picked, (b) => {
+        const snapshots = await this.mutateSelected(picked, (b) => {
             const next = { ...b };
             if (window.CheckMode) {
-                next.monitorIntervalMinutes = window.CheckMode.intervalOf?.(b) || 15;
+                next.monitorIntervalMinutes = window.CheckMode.intervalOf?.(b)
+                    || Number(this.dash?.settings?.defaultMonitorIntervalMinutes) || 15;
                 window.CheckMode.assign(next, mode);
             }
             return next;
         });
-        this.notify(this.t('config.bulkStatusDone', 'Availability checking updated.'), 'success');
+        this.notify(this.t('config.bulkStatusDone', 'Availability checking updated.'), 'success', {
+            undoCallback: this.bulkUndo(snapshots, 'config.bulkStatusUndone', 'Availability checking put back.',
+                'config.bulkUndoFailed', 'Could not undo that.'),
+            duration: 8000,
+        });
     }
 
     async bulkPin(picked) {
         // Mixed selections pin everything rather than flipping each: a toggle
         // that leaves half pinned is not what "toggle pin" is asked to do.
         const allPinned = picked.every((b) => b.pinned === true);
-        await this.mutateSelected(picked, (b) => ({ ...b, pinned: !allPinned }));
-        this.notify(this.t('config.bulkPinDone', 'Pins updated.'), 'success');
+        const snapshots = await this.mutateSelected(picked, (b) => ({ ...b, pinned: !allPinned }));
+        this.notify(this.t('config.bulkPinDone', 'Pins updated.'), 'success', {
+            undoCallback: this.bulkUndo(snapshots, 'config.bulkPinUndone', 'Pins put back.',
+                'config.bulkUndoFailed', 'Could not undo that.'),
+            duration: 8000,
+        });
     }
 
     async bulkDelete(picked) {
         const msg = this.t('config.bulkDeleteConfirm', 'Delete {n} bookmarks?')
             .replace('{n}', String(picked.length));
-        if (!await this.confirmAction(msg)) return;
+        if (this.deleteNeedsConfirm(picked.length) && !await this.confirmAction(msg)) return;
 
         const byPage = [...this.selectionTargetsByPage(picked)];
         // Snapshot each affected page before touching it, so the toast can put
@@ -14051,6 +16414,14 @@ class DashboardConfig {
     }
 
     async bulkFavicons(picked) {
+        // The global refresh asks first because it is slow on a large library;
+        // the bulk one did the same work on any number of rows without a word.
+        const from = Number(this.dash?.settings?.bulkFaviconConfirmFrom) || 0;
+        if (from > 0 && picked.length >= from) {
+            const ask = this.t('config.bulkFaviconConfirm', 'Fetch icons for {n} bookmarks? This can take a while.')
+                .replace('{n}', String(picked.length));
+            if (!await this.confirmAction(ask, { danger: false })) return;
+        }
         let ok = 0;
         for (const b of picked) {
             const key = this.bookmarkKey(b);
@@ -14133,17 +16504,39 @@ class DashboardConfig {
      * collection is made of, and what needs fixing.
      */
     renderStats() {
+        this.invalidateStatsCache();
+        // The renderers for this section live in dashboard-config-stats.js and
+        // arrive with the first visit to it; the shell below is drawn either way
+        // and renderStatsBody fills in once they are here.
+        void this.ensureStatsRenderers();
         const esc = (v) => this.dash.escapeHtml(v);
         const tabs = DashboardConfig.STATS_TABS.map((tab) => {
             const active = tab === this.statsTab;
             return `<button type="button" class="config-subtab${active ? ' is-active' : ''}" role="tab" aria-selected="${active}" tabindex="${active ? 0 : -1}" aria-controls="config-stats-body" data-stats-tab="${esc(tab)}">${esc(this.statsTabLabel(tab))}</button>`;
         }).join('');
 
+        const pages = this.dash.pages || [];
+        // Offered only where there is a choice to make: on a single-page
+        // install every figure is that page's already.
+        const scope = pages.length > 1
+            ? `<label class="config-stats-scope">
+                    <span class="config-stats-scope-label">${esc(this.t('config.statsScopeLabel', 'Showing'))}</span>
+                    <select class="config-select" data-stats-scope>
+                        <option value=""${this.statsPageFilter ? '' : ' selected'}>${esc(this.t('config.statsScopeAll', 'All pages'))}</option>
+                        ${pages.map((p) => `<option value="${esc(String(p.id))}"${String(p.id) === String(this.statsPageFilter) ? ' selected' : ''}>${esc(p.name || `#${p.id}`)}</option>`).join('')}
+                    </select>
+                </label>`
+            : '';
+
         return `
             <p class="config-view-intro">${esc(this.t('config.statsIntroView', 'What is in your dashboard right now. These numbers update as you change things.'))}</p>
-            <div class="config-subtabs" role="tablist">${tabs}</div>
-            <div id="config-stats-body" role="tabpanel" tabindex="0">${this.renderStatsBody()}</div>
-            ${this.renderStatsTimestamp()}
+            <div class="config-stats-head">
+                <div class="config-subtabs" role="tablist">${tabs}</div>
+                ${typeof this.statsPanelLink === 'function' ? this.statsPanelLink(this.statsTab) : ''}
+                ${scope}
+            </div>
+            <div id="config-stats-body" role="tabpanel" tabindex="0">${this.renderStatsBodySafe()}</div>
+            ${this.renderStatsTimestampSafe()}
         `;
     }
 
@@ -14156,106 +16549,74 @@ class DashboardConfig {
      * rather than in the intro: it dates everything above it, including the
      * panels that repaint on a tab switch.
      */
-    renderStatsTimestamp() {
-        const esc = (v) => this.dash.escapeHtml(v);
-        const time = new Intl.DateTimeFormat(this.dash.settings?.language || undefined,
-            { hour: '2-digit', minute: '2-digit' }).format(new Date());
-        return `<p class="config-stats-updated">${esc(this.t('config.statsUpdatedAt', 'Worked out at {time}')
-            .replace('{time}', time))}</p>`;
-    }
-
     /**
-     * One explanation instead of a page of zeroes.
+     * Load the statistics renderers, once.
      *
-     * With nothing to measure, every panel still rendered: five coverage bars
-     * reading "0 / 0 · 0%", a category list with no rows, a cleanup score of 0
-     * out of 100. That reads as something broken rather than as a dashboard
-     * nobody has filled yet, so the whole body is replaced by a single line
-     * saying what to do — except on Inbox, whose numbers come from the server
-     * and mean something even with no bookmarks.
+     * Repaints when they land, so the section fills itself in rather than
+     * waiting for the next click. A failure leaves the placeholder, which says
+     * the numbers could not be drawn — better than an empty panel that looks
+     * like an install with no data.
      */
-    renderStatsEmpty() {
-        const esc = (v) => this.dash.escapeHtml(v);
-        return `
-            <div class="config-panel config-panel--empty-state">
-                <h3 class="config-panel-title">${esc(this.t('config.statsEmptyTitle', 'Nothing to measure yet'))}</h3>
-                <p class="config-panel-note">${esc(this.t('config.statsEmptyBody', 'Statistics fill in as you add bookmarks and start opening them. Add a few and this page will have something to say.'))}</p>
-                <div class="config-actions">
-                    <button type="button" class="config-btn config-btn--primary" data-stats-action="add-bookmark">${esc(this.t('config.addBookmarkBtn', 'Add bookmark'))}</button>
-                </div>
-            </div>`;
+    /**
+     * The section body, or a placeholder while its renderers are on their way.
+     *
+     * One guard rather than a test at every call site: the renderers arrive as a
+     * batch, so the only question is whether the batch is here.
+     */
+    /**
+     * The timestamp foot, or an empty one of the same shape.
+     *
+     * Empty *markup*, not nothing: repaintStatsBody replaces the foot by finding
+     * it, so returning nothing would leave the section without a foot — and
+     * without the export and refresh buttons that live in it — until the whole
+     * view rendered again.
+     */
+    renderStatsTimestampSafe() {
+        if (typeof this.renderStatsTimestamp === 'function') {
+            return this.renderStatsTimestamp();
+        }
+        return '<div class="config-stats-foot"></div>';
     }
 
-    renderStatsBody() {
+    renderStatsBodySafe() {
+        if (typeof this.renderStatsBody === 'function') {
+            return this.renderStatsBody();
+        }
         const esc = (v) => this.dash.escapeHtml(v);
-        const s = this.computeStats();
+        return `<p class="config-panel-note">${esc(this.t('config.statsLoading', 'Working out the numbers…'))}</p>`;
+    }
 
-        // Inbox is server-side and still meaningful on an empty dashboard.
-        if (!s.total && this.statsTab !== 'inbox') {
-            return this.renderStatsEmpty();
-        }
-
-        // The label and the value are separate spans, so a screen reader read
-        // them as two loose strings that only made sense because they happened
-        // to be adjacent. aria-label names the tile as one thing — "Bookmarks:
-        // 102" — and the spans are hidden so it is not then read twice.
-        const tile = (label, value, hint) => `
-            <div class="config-tile" role="listitem" aria-label="${esc(label)}: ${esc(String(value))}${hint ? `. ${esc(hint)}` : ''}">
-                <span class="config-tile-label" aria-hidden="true">${esc(label)}</span>
-                <span class="config-tile-value" aria-hidden="true">${esc(String(value))}</span>
-                ${hint ? `<p class="config-tile-detail" aria-hidden="true">${esc(hint)}</p>` : ''}
-            </div>`;
-
-        switch (this.statsTab) {
-            case 'activity':
-                return this.renderStatsActivity(s)
-                    + this.renderStatsTopLists(s)
-                    + this.renderStatsShortcuts(s)
-                    + `<div id="config-stats-finders">${this.renderStatsFinders()}</div>`;
-            case 'content':
-                return this.renderStatsRatios(s)
-                    + this.renderStatsConcentration(s)
-                    + this.renderStatsCategoryEffectiveness(s)
-                    + this.renderStatsDistributions(s)
-                    + this.renderStatsCleanup(s);
-            case 'inbox':
-                return this.renderStatsInbox();
-            case 'health':
-                return this.renderStatsRot(s)
-                    + this.renderStatsConflicts(s)
-                    + this.renderStatsSearch(s)
-                    + `
-                    <div class="config-panel">
-                        <h3 class="config-panel-title">${esc(this.t('config.statsHealthTitle', 'Link health'))}</h3>
-                        <div id="config-stats-health">${this.renderStatsHealth()}</div>
-                    </div>`;
-            default:
-                return `
-                    <div class="config-actions" style="margin-bottom:16px">
-                        <button type="button" class="config-btn config-btn--small" data-stats-action="export">${esc(this.t('config.statsExportCsv', 'Export as CSV'))}</button>
-                    </div>
-                    <div class="config-tiles config-tiles--overview" role="list">
-                        ${tile(this.t('config.statsBookmarks', 'Bookmarks'), s.total)}
-                        ${tile(this.t('config.statsPages', 'Pages'), s.pages)}
-                        ${tile(this.t('config.statsCategoryCount', 'Categories'), s.categories)}
-                        ${tile(this.t('config.statsTagCount', 'Distinct tags'), s.tagCount)}
-                        ${tile(this.t('config.statsWithShortcut', 'With a shortcut'), s.withShortcut)}
-                        ${tile(this.t('config.statsMonitored', 'Monitored'), s.monitored)}
-                    </div>
-                    ${this.renderStatsHeadline(s)}
-                    ${this.renderStatsInsights(s)}
-                    ${this.renderStatsScore(s)}`;
-        }
+    ensureStatsRenderers() {
+        if (window.DashboardConfigStatsReady) return Promise.resolve(true);
+        if (this._statsRenderersPromise) return this._statsRenderersPromise;
+        this._statsRenderersPromise = window.LazyScript.loadScriptOnce(
+            'js/dashboard/dashboard-config-stats.js',
+            'dashboardConfigStats',
+            () => window.DashboardConfigStatsReady === true
+        ).then(() => {
+            if (this.isActiveView() && this.section === 'stats') this.repaintStatsBody();
+            return true;
+        }).catch(() => false);
+        return this._statsRenderersPromise;
     }
 
     repaintStatsBody() {
+        this.invalidateStatsCache();
         const host = document.getElementById('config-stats-body');
         if (!host) { this.render(); return; }
-        host.innerHTML = this.renderStatsBody();
+        host.innerHTML = this.renderStatsBodySafe();
         // The stamp lives outside the body, so it would otherwise keep claiming
         // the time of the first render while the numbers under it were fresh.
-        const stamp = host.parentElement?.querySelector('.config-stats-updated');
-        if (stamp) stamp.outerHTML = this.renderStatsTimestamp();
+        // The whole foot is replaced, not the line inside it: swapping the line
+        // for a foot nested a second copy of the buttons in the first.
+        const foot = host.parentElement?.querySelector('.config-stats-foot');
+        if (foot) {
+            foot.outerHTML = this.renderStatsTimestampSafe();
+            // Replaced wholesale, so its buttons need binding again — before,
+            // the foot only ever appeared in a full render, which bound them.
+            const panel = document.getElementById('config-section-panel') || document;
+            this.bindStats?.(panel);
+        }
         const container = document.getElementById('dashboard-layout');
         if (container) this.bindStats(container);
     }
@@ -14265,784 +16626,6 @@ class DashboardConfig {
      * costs up to 25, stale-90-days up to 20, duplicate URLs up to 15 and
      * shortcut conflicts up to 10, from a starting 100.
      */
-    renderStatsScore(s) {
-        const esc = (v) => this.dash.escapeHtml(v);
-        if (!s.total) {
-            return `
-                <div class="config-panel">
-                    <h3 class="config-panel-title">${esc(this.t('config.statsScoreTitle', 'Cleanup score'))}</h3>
-                    <p class="config-panel-empty">${esc(this.t('config.noBookmarksYet', 'No bookmarks yet.'))}</p>
-                </div>`;
-        }
-        const { score, details } = s.cleanup;
-        const tone = score >= 80 ? 'good' : (score >= 50 ? 'warn' : 'crit');
-        const rows = details.map((d) => `
-            <li class="config-stat-detail config-stat-detail--${esc(d.type)}">
-                <span>${esc(d.text)}</span>
-                ${d.penalty ? `<span class="config-stat-penalty">−${esc(String(d.penalty))}</span>` : ''}
-            </li>`).join('');
-
-        return `
-            <div class="config-panel">
-                <h3 class="config-panel-title">${esc(this.t('config.statsScoreTitle', 'Cleanup score'))}</h3>
-                <p class="config-panel-note">${esc(this.t('config.statsScoreHint', 'Starts at 100 and loses points for bookmarks you never open, links gone stale, duplicate URLs and clashing shortcuts.'))}</p>
-                <div class="config-score">
-                    <span class="config-score-value config-score-value--${tone}">${esc(String(score))}</span>
-                    <div class="config-bar" role="img" aria-label="${esc(this.t('config.statsScoreTitle', 'Cleanup score'))}: ${score}/100">
-                        <span class="config-bar-fill config-bar-fill--${tone}" style="width:${score}%"></span>
-                    </div>
-                </div>
-                <ul class="config-stat-details">${rows}</ul>
-            </div>`;
-    }
-
-    /**
-     * Opens per bucket as an SVG bar chart. A screen-reader table carries the
-     * same numbers, because a chart that only exists as shapes is unreadable to
-     * anyone not looking at it.
-     */
-    renderStatsActivity(s) {
-        const esc = (v) => this.dash.escapeHtml(v);
-        const a = s.activity;
-        const ranges = DashboardConfig.STATS_RANGES.map((d) => {
-            const on = d === this.statsRange;
-            return `<button type="button" class="config-choice${on ? ' is-active' : ''}" data-stats-range="${d}" aria-pressed="${on}">${esc(this.statsRangeLabel(d))}</button>`;
-        }).join('');
-
-        if (!a.buckets.length) {
-            return `
-                <div class="config-panel">
-                    <h3 class="config-panel-title">${esc(this.t('config.statsActivityTitle', 'Bookmarks used over time'))}</h3>
-                    <div class="config-choices" role="group">${ranges}</div>
-                    <p class="config-panel-empty">${esc(this.t('config.statsNoActivity', 'No bookmarks were used in this period.'))}</p>
-                </div>`;
-        }
-
-        const W = 500;
-        // 108 = the old 72 plus half again, as the bars were too short to compare
-        // neighbouring days by eye.
-        const H = 108;
-        const gap = 3;
-        const n = a.buckets.length;
-        const max = Math.max(...a.buckets, 1);
-        const barW = Math.max(1, Math.floor((W - gap * (n - 1)) / n));
-        const unit = this.statsActivityBucketUnit();
-        const bars = a.buckets.map((val, i) => {
-            const h = Math.round((val / max) * H);
-            const x = i * (barW + gap);
-            const opacity = val === 0 ? 0.15 : (0.75 + (val / max) * 0.25).toFixed(2);
-            const date = a.dateLabels?.[i] || a.labels[i] || '';
-            // The <g> is the hit target, not the painted bar: it spans the full
-            // height and half the gap either side, so a short bar — or an empty
-            // one — is still reachable. Focusable so the values are on keyboard
-            // too, per the same rule that puts them on hover.
-            return `<g class="config-chart-bar" tabindex="0" role="listitem"
-                       data-bar-date="${esc(date)}" data-bar-value="${esc(String(val))}" data-bar-unit="${esc(unit)}"
-                       aria-label="${esc(date)}: ${esc(String(val))} ${esc(this.t('config.statsActivityUsedLabel', 'bookmarks last used'))}">
-                <rect class="config-chart-bar-hit" x="${Math.max(0, x - gap / 2)}" y="0" width="${barW + gap}" height="${H}"></rect>
-                <rect class="config-chart-bar-fill" x="${x}" y="${H - h}" width="${barW}" height="${Math.max(h, val > 0 ? 2 : 0)}" rx="1" fill="var(--accent-color, #4a90d9)" opacity="${opacity}"></rect>
-            </g>`;
-        }).join('');
-        const summary = a.labels.map((l, i) => `${l}: ${a.buckets[i]}`).join(', ');
-        const srRows = a.labels.map((l, i) =>
-            `<tr><th scope="row">${esc(l)}</th><td>${esc(String(a.buckets[i]))}</td></tr>`).join('');
-
-        return `
-            <div class="config-panel">
-                <h3 class="config-panel-title">${esc(this.t('config.statsActivityTitle', 'Bookmarks used over time'))}</h3>
-                <p class="config-panel-note">${esc(this.t('config.statsActivityNote', 'Each bar counts the bookmarks whose last use falls in that period. A bookmark appears once, on the day you last opened it.'))}</p>
-                <div class="config-choices" role="group">${ranges}</div>
-                <div class="config-stat-figures">
-                    <span><strong>${esc(String(a.activeCount))}</strong> ${esc(this.t('config.statsActivityActive', 'bookmarks used'))}</span>
-                    <span title="${esc(this.t('config.statsActivityLifetimeHint', 'Counted over the whole life of these bookmarks, not only this period — nextDash stores a total per bookmark, not a date for every open.'))}"><strong>${esc(String(a.totalOpens))}</strong> ${esc(this.t('config.statsActivityLifetimeOpens', 'opens all-time'))}</span>
-                    ${a.wow !== null ? `<span class="config-stat-trend config-stat-trend--${a.wow >= 0 ? 'up' : 'down'}">${a.wow >= 0 ? '▲' : '▼'} ${esc(String(Math.abs(a.wow)))}% ${esc(this.t('config.statsActivityVsPrev', 'vs previous period'))}</span>` : ''}
-                </div>
-                <div class="config-chart">
-                    <div class="config-chart-plot">
-                        <span class="config-chart-axis-y" aria-hidden="true">
-                            <span class="config-chart-axis-title">${esc(this.t('config.statsAxisBookmarksUsed', 'Bookmarks'))}</span>
-                            <span class="config-chart-axis-ticks">
-                                <span>${esc(String(max))}</span>
-                                <span>0</span>
-                            </span>
-                        </span>
-                        <span class="config-chart-plot-area">
-                            <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="list"
-                                 aria-label="${esc(this.t('config.statsSparklineAriaView', 'Bookmarks last used per period'))}: ${esc(summary)}">${bars}</svg>
-                            <span class="config-chart-ticks" aria-hidden="true">${this.statsActivityTicks(a)}</span>
-                        </span>
-                    </div>
-                    <p class="config-chart-axis-x" aria-hidden="true">${esc(this.statsActivityAxisXLabel())}</p>
-                    <div class="config-chart-tip" role="status" aria-live="polite" hidden></div>
-                </div>
-                <table class="config-sr-only">
-                    <caption>${esc(this.t('config.statsSparklineTableCaptionView', 'Bookmarks last used per period'))}</caption>
-                    <tbody>${srRows}</tbody>
-                </table>
-            </div>`;
-    }
-
-    statsRangeLabel(days) {
-        if (days === 365) return this.t('config.statsRangeYear', '1 year');
-        return this.t('config.statsRangeDays', '{n} days').replace('{n}', String(days));
-    }
-
-    /** The noun for one bucket, used in the tooltip's date line. */
-    statsActivityBucketUnit() {
-        const days = this.statsRange || 30;
-        if (days <= 30) return this.t('config.statsAxisUnitDay', 'day');
-        if (days <= 90) return this.t('config.statsAxisUnitWeek', 'week');
-        return this.t('config.statsAxisUnitMonth', 'month');
-    }
-
-    /**
-     * Dated ticks along the x-axis.
-     *
-     * The axis used to carry only its two end-caps, so a bar in the middle sat
-     * above no date at all. A handful of evenly spaced dates is enough to place
-     * any bar by eye, and the tooltip gives the exact one.
-     *
-     * How many fit depends on how wide they are, not on the bar count: a daily
-     * label is "Jul 6" but a weekly one is "Jul 29 – Aug 4", three times the
-     * width. Six of those ran into each other and off the panel, so the cap is
-     * derived from the longest label rather than fixed.
-     */
-    statsActivityTicks(a) {
-        const esc = (v) => this.dash.escapeHtml(v);
-        const dates = a.dateLabels || [];
-        const n = dates.length;
-        if (!n) return '';
-        // ~500px of plot at roughly 6px per character, plus a gap, is how many
-        // labels of this width can sit side by side without touching.
-        const widest = dates.reduce((w, d) => Math.max(w, String(d).length), 0);
-        const fits = Math.floor(500 / (widest * 6 + 16));
-        const maxTicks = Math.max(2, Math.min(6, fits, n));
-        const step = Math.max(1, Math.round((n - 1) / Math.max(1, maxTicks - 1)));
-        const picked = [];
-        for (let i = 0; i < n; i += step) picked.push(i);
-        // The last bar is the one people look for ("where does it end?"), so it
-        // is always labelled even when the stride would have skipped it.
-        if (picked[picked.length - 1] !== n - 1) picked.push(n - 1);
-        const last = picked.length - 1;
-        return picked.map((i, k) => {
-            const pct = n === 1 ? 50 : (i / (n - 1)) * 100;
-            // Centring every label would push the first one off the left edge
-            // and the last one past the right — visible as a date hanging
-            // outside the panel. The end labels anchor to their own edge
-            // instead; only the middle ones centre on their bar.
-            const edge = k === 0 ? ' config-chart-tick--first'
-                : k === last ? ' config-chart-tick--last' : '';
-            return `<span class="config-chart-tick${edge}" style="left:${pct.toFixed(2)}%">${esc(dates[i])}</span>`;
-        }).join('');
-    }
-
-    /**
-     * What one bar covers, which the selected range decides.
-     *
-     * computeActivity() buckets by day, week or month depending on the range, so
-     * a fixed "Date" would be wrong two times out of three — the whole reason to
-     * name the axis is to say what a bar actually is.
-     */
-    statsActivityAxisXLabel() {
-        const days = this.statsRange || 30;
-        if (days <= 30) return this.t('config.statsAxisPerDay', 'Day (oldest → newest)');
-        if (days <= 90) return this.t('config.statsAxisPerWeek', 'Week (oldest → newest)');
-        return this.t('config.statsAxisPerMonth', 'Month (oldest → newest)');
-    }
-
-    /** Coverage bars: how much of the collection carries tags, shortcuts, notes. */
-    renderStatsRatios(s) {
-        const esc = (v) => this.dash.escapeHtml(v);
-        const bar = (label, count, total, hint) => {
-            const pct = total ? Math.round((count / total) * 100) : 0;
-            return `
-                <div class="config-ratio">
-                    <div class="config-ratio-head">
-                        <span class="config-ratio-label">${esc(label)}</span>
-                        <span class="config-ratio-value">${esc(String(count))} / ${esc(String(total))} · ${pct}%</span>
-                    </div>
-                    <div class="config-bar" role="img" aria-label="${esc(label)}: ${pct}%">
-                        <span class="config-bar-fill" style="width:${pct}%"></span>
-                    </div>
-                    ${hint ? `<p class="config-field-hint">${esc(hint)}</p>` : ''}
-                </div>`;
-        };
-        return `
-            <div class="config-panel">
-                <h3 class="config-panel-title">${esc(this.t('config.statsCoverageTitle', 'Coverage'))}</h3>
-                ${this.statsScaleCaption(this.t('config.statsAxisShareOfCollection',
-                    'Share of all {total} bookmarks — 0% to 100%').replace('{total}', String(s.total)))}
-                ${bar(this.t('config.statsTaggedBookmarks', 'Tagged'), s.tagged, s.total)}
-                ${bar(this.t('config.statsWithShortcut', 'With a shortcut'), s.withShortcut, s.total)}
-                ${bar(this.t('config.statsWithNote', 'With a note'), s.withNote, s.total)}
-                ${bar(this.t('config.statsWithIcon', 'With an icon'), s.withIcon, s.total)}
-                ${bar(this.t('config.statsChecked', 'Availability checked'), s.checked, s.total)}
-            </div>`;
-    }
-
-    /**
-     * Top lists: most opened, most tagged, and what has never been touched.
-     * The ranked lists get the same bar as the distributions — a count is easier
-     * to compare against its neighbours as a length than as a number.
-     */
-    renderStatsTopLists(s) {
-        const esc = (v) => this.dash.escapeHtml(v);
-
-        // axis: [what the rows are, what the bar measures]. The two callers count
-        // different things, so neither the label nor the measure can be hardcoded.
-        const rankedList = (title, rows, emptyText, hint, axis, total) => {
-            if (!rows.length) {
-                return `
-                <div class="config-panel">
-                    <h3 class="config-panel-title">${esc(title)}</h3>
-                    ${hint ? `<p class="config-panel-note">${esc(hint)}</p>` : ''}
-                    <p class="config-panel-empty">${esc(emptyText)}</p>
-                </div>`;
-            }
-            const max = Math.max(...rows.map(([, v]) => Number(v) || 0), 1);
-            const items = rows.map(([label, value]) => {
-                const n = Number(value) || 0;
-                const pct = Math.round((n / max) * 100);
-                return `
-                    <li class="config-dist-row">
-                        <span class="config-dist-label">${esc(label)}</span>
-                        <div class="config-bar config-bar--slim" role="img" aria-label="${esc(label)}: ${esc(String(n))}">
-                            <span class="config-bar-fill" style="width:${pct}%"></span>
-                        </div>
-                        <span class="config-dist-count">${esc(String(n))}</span>
-                    </li>`;
-            }).join('');
-            return `
-                <div class="config-panel">
-                    <h3 class="config-panel-title">${esc(title)}</h3>
-                    ${hint ? `<p class="config-panel-note">${esc(hint)}</p>` : ''}
-                    ${axis ? this.statsListAxisHeader(axis[0], axis[1]) : ''}
-                    <ul class="config-dist-list">${items}</ul>
-                    ${this.statsListTruncationNote(rows.length, total)}
-                </div>`;
-        };
-
-        // Never-opened is a plain list: its second column is a URL, not a count,
-        // so there is nothing to scale a bar against.
-        const plainList = (title, rows, emptyText, hint, total, cleanupKey) => {
-            const items = rows.length
-                ? rows.map(([label, sub]) => `
-                    <li class="config-crud-row">
-                        <div class="config-bm-main">
-                            <span class="config-bm-name">${esc(label)}</span>
-                            <span class="config-bm-url">${esc(sub)}</span>
-                        </div>
-                    </li>`).join('')
-                : '';
-            return `
-                <div class="config-panel">
-                    <h3 class="config-panel-title">${esc(title)}</h3>
-                    ${hint ? `<p class="config-panel-note">${esc(hint)}</p>` : ''}
-                    ${items
-                        ? `<ul class="config-crud-list">${items}</ul>`
-                        : `<p class="config-panel-empty">${esc(emptyText)}</p>`}
-                    ${this.statsListTruncationNote(rows.length, total, cleanupKey)}
-                </div>`;
-        };
-
-        const totals = s.listTotals || {};
-        return rankedList(this.t('config.statsTopOpened', 'Most opened'), s.topOpened,
-                this.t('config.statsNoOpens', 'Nothing has been opened yet.'), '',
-                [this.t('config.statsAxisBookmark', 'Bookmark'), this.t('config.statsAxisOpens', 'Opens')],
-                totals.topOpened)
-            + rankedList(this.t('config.statsTopTags', 'Most used tags'), s.topTags,
-                this.t('config.noTagsYet', 'No tags yet.'), '',
-                [this.t('config.statsAxisTag', 'Tag'), this.t('config.statsAxisBookmarks', 'Bookmarks')],
-                totals.topTags)
-            // 'never' is the cleanup filter that reproduces this list in full,
-            // so the panel can hand off the rows it could not show.
-            + plainList(this.t('config.statsNeverOpenedTitle', 'Never opened'), s.neverOpenedList,
-                this.t('config.statsAllOpened', 'Everything has been opened at least once.'),
-                this.t('config.statsNeverOpenedHint', 'Candidates to tidy up — they have never been used.'),
-                totals.neverOpened, 'never');
-    }
-
-    /**
-     * Column header for the bar lists, naming what the label column and the
-     * measure column hold.
-     *
-     * These lists are not x/y plots, so they have no axes to title — but they
-     * have the same problem an unlabelled axis has: a name, a bar and a number,
-     * with nothing saying what the number counts. This is the equivalent
-     * header, and it doubles as the list's own axis legend.
-     */
-    /**
-     * One-line caption naming the scale a set of full-width bars is drawn on.
-     *
-     * For the panels where every bar shares one axis (coverage is 0–100% of the
-     * collection), so the scale is stated once above them rather than repeated
-     * on each row.
-     */
-    statsScaleCaption(text) {
-        return `<p class="config-chart-scale" aria-hidden="true">${this.dash.escapeHtml(text)}</p>`;
-    }
-
-    /**
-     * The same caption pair for the label/value lists that have no bar column.
-     *
-     * .config-stat-detail is a two-column flex row, not the three-column grid
-     * .config-dist-row uses, so its header has to match that shape or the
-     * measure name lands over the wrong column.
-     */
-    statsPairAxisHeader(labelText, valueText) {
-        const esc = (v) => this.dash.escapeHtml(v);
-        return `
-            <div class="config-dist-axis config-dist-axis--pair" aria-hidden="true">
-                <span>${esc(labelText)}</span>
-                <span>${esc(valueText)}</span>
-            </div>`;
-    }
-
-    /**
-     * "20 of 214 shown" under a list that had to cut off.
-     *
-     * These panels are leaderboards, so cutting off is right — but saying
-     * nothing was not. "Never opened" is the clearest case: it heads itself
-     * "candidates to tidy up", showed twenty rows, and let you believe that was
-     * all, while the cleanup panel beside it counted two hundred.
-     *
-     * Where a cleanup filter can reproduce the list in full, the note carries
-     * the button that does it rather than leaving the rest unreachable.
-     */
-    statsListTruncationNote(shown, total, cleanupKey) {
-        const count = Number(total) || 0;
-        if (!shown || count <= shown) return '';
-        const esc = (v) => this.dash.escapeHtml(v);
-        const text = this.t('config.statsListTruncated', '{shown} of {total} shown')
-            .replace('{shown}', String(shown)).replace('{total}', String(count));
-        const button = cleanupKey && DashboardConfig.CLEANUP_FILTERS[cleanupKey]
-            ? `<button type="button" class="config-btn config-btn--small" data-cleanup-goto="${esc(cleanupKey)}">${esc(this.t('config.statsListShowAll', 'Show all in bookmarks'))}</button>`
-            : '';
-        return `
-            <div class="config-list-truncated">
-                <span>${esc(text)}</span>
-                ${button}
-            </div>`;
-    }
-
-    statsListAxisHeader(labelText, valueText) {
-        const esc = (v) => this.dash.escapeHtml(v);
-        return `
-            <div class="config-dist-axis" aria-hidden="true">
-                <span class="config-dist-axis-label">${esc(labelText)}</span>
-                <span class="config-dist-axis-value">${esc(valueText)}</span>
-            </div>`;
-    }
-
-    /** Where the bookmarks sit: per page, per category. */
-    renderStatsDistributions(s) {
-        const esc = (v) => this.dash.escapeHtml(v);
-        const rows = (pairs) => pairs.map(([label, count]) => {
-            const pct = s.total ? Math.round((count / s.total) * 100) : 0;
-            return `
-                <li class="config-dist-row">
-                    <span class="config-dist-label">${esc(label)}</span>
-                    <div class="config-bar config-bar--slim" role="img" aria-label="${esc(label)}: ${esc(String(count))}">
-                        <span class="config-bar-fill" style="width:${pct}%"></span>
-                    </div>
-                    <span class="config-dist-count">${esc(String(count))}</span>
-                </li>`;
-        }).join('');
-        return `
-            <div class="config-panel">
-                <h3 class="config-panel-title">${esc(this.t('config.statsPerPage', 'Bookmarks per page'))}</h3>
-                ${this.statsListAxisHeader(
-                    this.t('config.statsAxisPage', 'Page'),
-                    this.t('config.statsAxisBookmarks', 'Bookmarks'))}
-                <ul class="config-dist-list">${rows(s.perPage)}</ul>
-            </div>
-            <div class="config-panel">
-                <h3 class="config-panel-title">${esc(this.t('config.statsPerCategory', 'Bookmarks per category'))}</h3>
-                ${this.statsListAxisHeader(
-                    this.t('config.statsAxisCategory', 'Category'),
-                    this.t('config.statsAxisBookmarks', 'Bookmarks'))}
-                <ul class="config-dist-list">${rows(s.perCategory)}</ul>
-            </div>`;
-    }
-
-    /**
-     * Opens per bookmark, per category — which shelves you actually reach for.
-     *
-     * The neighbouring "bookmarks per category" panel measures size, and size
-     * alone hides the interesting case: a category holding twenty links that
-     * nobody opens looks healthy there and empty here. Sorted by the ratio
-     * rather than the total for the same reason.
-     */
-    renderStatsCategoryEffectiveness(s) {
-        const esc = (v) => this.dash.escapeHtml(v);
-        const list = s.categoryEffectiveness || [];
-        if (!list.length) {
-            return '';
-        }
-        const max = Math.max(...list.map((c) => c.perBookmark), 0);
-        const rows = list.map((c) => {
-            const pct = max > 0 ? Math.round((c.perBookmark / max) * 100) : 0;
-            const ratio = c.perBookmark.toFixed(1);
-            const detail = this.t('config.statsCategoryEffDetail', '{opens} opens over {count} bookmarks')
-                .replace('{opens}', String(c.opens))
-                .replace('{count}', String(c.count));
-            return `
-                <li class="config-dist-row">
-                    <span class="config-dist-label" title="${esc(detail)}">${esc(c.label)}</span>
-                    <div class="config-bar config-bar--slim" role="img" aria-label="${esc(c.label)}: ${esc(ratio)}">
-                        <span class="config-bar-fill" style="width:${pct}%"></span>
-                    </div>
-                    <span class="config-dist-count" title="${esc(detail)}">${esc(ratio)}</span>
-                </li>`;
-        }).join('');
-        return `
-            <div class="config-panel">
-                <h3 class="config-panel-title">${esc(this.t('config.statsCategoryEffTitle', 'Opens per bookmark, by category'))}</h3>
-                <p class="config-panel-note">${esc(this.t('config.statsCategoryEffNote', 'How often a bookmark in this category gets opened. A low figure on a large category is one you built but do not use.'))}</p>
-                ${this.statsListAxisHeader(
-                    this.t('config.statsAxisCategory', 'Category'),
-                    this.t('config.statsAxisOpensPerBookmark', 'Opens per bookmark'))}
-                <ul class="config-dist-list">${rows}</ul>
-            </div>`;
-    }
-
-    /**
-     * What share of all opens the busiest bookmarks account for.
-     *
-     * Answers a question none of the per-bookmark figures can: whether the
-     * collection is used broadly or is really a handful of links surrounded by
-     * everything else.
-     */
-    renderStatsConcentration(s) {
-        const esc = (v) => this.dash.escapeHtml(v);
-        const c = s.concentration || {};
-        if (!c.totalOpens) {
-            // Returning '' left a gap between two panels, which reads as a
-            // rendering fault rather than as "you have not opened anything yet".
-            return `
-                <div class="config-panel">
-                    <h3 class="config-panel-title">${esc(this.t('config.statsConcentrationTitle', 'Where your usage sits'))}</h3>
-                    <p class="config-panel-empty">${esc(this.t('config.statsConcentrationEmpty', 'Nothing has been opened yet, so there is no usage to weigh up.'))}</p>
-                </div>`;
-        }
-        const sentence = this.t(
-            'config.statsConcentrationBody',
-            'Your top {top} bookmarks account for {share}% of all {total} opens.'
-        ).replace('{top}', String(c.topCount)).replace('{share}', String(c.share)).replace('{total}', String(c.totalOpens));
-        const rest = Math.max(0, c.usedCount - c.topCount);
-        const restText = this.t('config.statsConcentrationRest', 'The other {n} used bookmarks share the remaining {pct}%.')
-            .replace('{n}', String(rest)).replace('{pct}', String(100 - c.share));
-        return `
-            <div class="config-panel">
-                <h3 class="config-panel-title">${esc(this.t('config.statsConcentrationTitle', 'Where your usage sits'))}</h3>
-                ${this.statsScaleCaption(this.t('config.statsAxisShareOfOpens',
-                    'Share of all {total} opens — 0% to 100%').replace('{total}', String(c.totalOpens)))}
-                <div class="config-ratio">
-                    <div class="config-ratio-head">
-                        <span class="config-ratio-label">${esc(this.t('config.statsConcentrationTop', 'Top {n}').replace('{n}', String(c.topCount)))}</span>
-                        <span class="config-ratio-value">${esc(String(c.topOpens))} / ${esc(String(c.totalOpens))} · ${esc(String(c.share))}%</span>
-                    </div>
-                    <div class="config-bar" role="img" aria-label="${esc(sentence)}">
-                        <span class="config-bar-fill" style="width:${esc(String(c.share))}%"></span>
-                    </div>
-                </div>
-                <p class="config-panel-note">${esc(sentence)}${rest > 0 ? ` ${esc(restText)}` : ''}</p>
-            </div>`;
-    }
-
-    /**
-     * Cleanup candidates, each with a button that opens the list behind it.
-     *
-     * A count on its own is a dead end — the work is always "show me those and
-     * let me fix them", and the bookmarks section already has bulk tagging and
-     * deletion. Rows with nothing to fix are dropped rather than shown as a
-     * zero, so the panel is a to-do list and not a scoreboard.
-     */
-    renderStatsCleanup(s) {
-        const esc = (v) => this.dash.escapeHtml(v);
-        const rows = [
-            ['never', s.neverOpened, this.t('config.statsCleanupNeverHint', 'Added but never used')],
-            ['once', s.openedOnce, this.t('config.statsCleanupOnceHint', 'Tried once, then dropped')],
-            ['untagged', s.untagged, this.t('config.statsCleanupUntaggedHint', 'Harder to find by search')],
-            ['insecure', s.insecure, this.t('config.statsCleanupInsecureHint', 'Plain http, no encryption')],
-            ['noicon', s.missingIcon, this.t('config.statsCleanupNoIconHint', 'Falls back to a letter tile')],
-        ].filter(([, n]) => Number(n) > 0);
-
-        if (!rows.length) {
-            return `
-                <div class="config-panel">
-                    <h3 class="config-panel-title">${esc(this.t('config.statsCleanupTitle', 'Cleanup candidates'))}</h3>
-                    <p class="config-panel-empty">${esc(this.t('config.statsCleanupNone', 'Nothing to tidy up.'))}</p>
-                </div>`;
-        }
-
-        const items = rows.map(([key, n, hint]) => `
-            <li class="config-stat-detail">
-                <span>${esc(this.cleanupFilterLabel(key))} — <span class="config-stat-sub">${esc(hint)}</span></span>
-                <span class="config-cleanup-actions">
-                    <span class="config-stat-penalty">${esc(String(n))}</span>
-                    <button type="button" class="config-btn config-btn--small" data-cleanup-goto="${esc(key)}">${esc(this.t('config.statsCleanupShow', 'Show'))}</button>
-                </span>
-            </li>`).join('');
-
-        return `
-            <div class="config-panel">
-                <h3 class="config-panel-title">${esc(this.t('config.statsCleanupTitle', 'Cleanup candidates'))}</h3>
-                <p class="config-panel-note">${esc(this.t('config.statsCleanupNote', 'Each opens the matching bookmarks, where they can be tagged or removed in bulk.'))}</p>
-                <ul class="config-stat-details">${items}</ul>
-            </div>`;
-    }
-
-    /** Link rot and clashes: stale, duplicates, shortcut conflicts. */
-    renderStatsRot(s) {
-        const esc = (v) => this.dash.escapeHtml(v);
-        const line = (label, n, hint) => `
-            <li class="config-stat-detail${n > 0 ? ' config-stat-detail--warn' : ''}">
-                <span>${esc(label)}${hint ? ` — <span class="config-stat-sub">${esc(hint)}</span>` : ''}</span>
-                <span class="config-stat-penalty">${esc(String(n))}</span>
-            </li>`;
-        return `
-            <div class="config-panel">
-                <h3 class="config-panel-title">${esc(this.t('config.statsRotTitle', 'Link rot & clashes'))}</h3>
-                <ul class="config-stat-details">
-                    ${line(this.t('config.statsNeverOpened', 'Never opened'), s.neverOpened)}
-                    ${line(this.t('config.statsStale90', 'Not opened in 90 days'), s.stale90)}
-                    ${line(this.t('config.statsUntagged', 'Untagged'), s.total - s.tagged)}
-                </ul>
-            </div>`;
-    }
-
-    /**
-     * How this collection is actually used, in one line.
-     *
-     * Everything below already states facts — 94% has a shortcut, 12% is
-     * tagged, the top ten account for 43% of opens — but each sits on a
-     * different tab, so the conclusion they add up to was never drawn anywhere.
-     * This says which way of reaching for a bookmark is yours, which is the one
-     * thing a stats page ought to be able to answer at a glance.
-     *
-     * Deliberately one claim, not a second list: the insights panel underneath
-     * already enumerates, and repeating it louder would not be a summary.
-     */
-    renderStatsHeadline(s) {
-        const esc = (v) => this.dash.escapeHtml(v);
-        const all = this.dash.allBookmarks || [];
-        const total = all.length;
-        if (!total) return '';
-
-        const shortcutPct = Math.round((s.withShortcut / total) * 100);
-        const taggedPct = Math.round((s.tagged / total) * 100);
-        const concentration = s.concentration || {};
-        const share = Number(concentration.share) || 0;
-        const everOpened = Number(concentration.usedCount) || 0;
-
-        // Ordered by how much each says about a habit, so the strongest signal
-        // wins rather than whichever happens to be first.
-        let text;
-        if (everOpened === 0) {
-            text = this.t('config.statsHeadlineUnused',
-                'Nothing has been opened yet, so there is no habit to read from this collection.');
-        } else if (shortcutPct >= 60 && shortcutPct > taggedPct) {
-            text = this.t('config.statsHeadlineShortcuts',
-                'You reach for bookmarks by keystroke: {pct}% carry a shortcut, against {tagPct}% carrying tags.')
-                .replace('{pct}', String(shortcutPct)).replace('{tagPct}', String(taggedPct));
-        } else if (taggedPct >= 60) {
-            text = this.t('config.statsHeadlineTags',
-                'You organise by tag: {pct}% of bookmarks carry one, against {shortcutPct}% carrying a shortcut.')
-                .replace('{pct}', String(taggedPct)).replace('{shortcutPct}', String(shortcutPct));
-        } else if (share >= 50) {
-            text = this.t('config.statsHeadlineNarrow',
-                'A narrow habit on a broad collection: your busiest {top} bookmarks account for {share}% of all opens.')
-                .replace('{top}', String(concentration.topCount)).replace('{share}', String(share));
-        } else {
-            text = this.t('config.statsHeadlineBroad',
-                'Your usage is spread out: {used} of {total} bookmarks have been opened, with no small group dominating.')
-                .replace('{used}', String(everOpened)).replace('{total}', String(total));
-        }
-
-        return `
-            <div class="config-panel">
-                <h3 class="config-panel-title">${esc(this.t('config.statsHeadlineTitle', 'How you use this collection'))}</h3>
-                <p class="config-stats-headline">${esc(text)}</p>
-            </div>`;
-    }
-
-    /**
-     * Personal usage insights: the numbers already on the page, read back as
-     * sentences with somewhere to go next.
-     *
-     * Carried over from the old config, including its thresholds — most-active
-     * page, top bookmark, never-opened share, status coverage, and whether
-     * anything was opened in the last 48 hours.
-     */
-    renderStatsInsights(s) {
-        const esc = (v) => this.dash.escapeHtml(v);
-        const all = this.dash.allBookmarks || [];
-        const total = all.length;
-        if (!total) {
-            return `
-                <div class="config-panel">
-                    <h3 class="config-panel-title">${esc(this.t('config.statsInsightsSection', 'Personal usage insights'))}</h3>
-                    <p class="config-panel-empty">${esc(this.t('config.statsNoData', 'No data yet'))}</p>
-                </div>`;
-        }
-
-        const pageName = (id) => (this.dash.pages || [])
-            .find((p) => String(p.id) === String(id))?.name || String(id);
-        const pageOpens = new Map();
-        all.forEach((b) => {
-            const pid = String(b.pageId);
-            pageOpens.set(pid, (pageOpens.get(pid) || 0) + (Number(b.openCount) || 0));
-        });
-        const topPage = [...pageOpens.entries()].sort((a, b) => b[1] - a[1])[0];
-        const topBm = [...all].sort((a, b) => (Number(b.openCount) || 0) - (Number(a.openCount) || 0))[0];
-        const neverOpened = all.filter((b) => !Number(b.openCount) && !Number(b.lastOpened)).length;
-        const statusCount = all.filter((b) => b.checkStatus === true).length;
-        const recent = all.filter((b) => Number(b.lastOpened || 0) >= Date.now() - 48 * 3600000).length;
-        const pct = (n) => String(Math.round((n / total) * 100));
-
-        const items = [];
-        if (topPage && topPage[1] > 0) {
-            items.push({
-                text: this.t('config.statsInsightTopPage', 'Most activity happens on {page} with {opens} opens.')
-                    .replace('{page}', pageName(topPage[0])).replace('{opens}', String(topPage[1])),
-                tab: 'content',
-            });
-        }
-        if (topBm && Number(topBm.openCount) > 0) {
-            items.push({
-                text: this.t('config.statsInsightTopBookmark', 'Top bookmark is "{name}" with {count} opens.')
-                    .replace('{name}', String(topBm.name || '—')).replace('{count}', String(Number(topBm.openCount))),
-                tab: 'activity',
-            });
-        }
-        if (neverOpened > 0) {
-            items.push({
-                text: this.t('config.statsInsightNeverOpened', '{percent}% ({count}/{total}) of bookmarks are never opened yet.')
-                    .replace('{percent}', pct(neverOpened)).replace('{count}', String(neverOpened)).replace('{total}', String(total)),
-                tab: 'health',
-            });
-        }
-        items.push({
-            text: this.t('config.statsInsightStatusCoverage', 'Status checks are enabled for {percent}% ({count}/{total}) of bookmarks.')
-                .replace('{percent}', pct(statusCount)).replace('{count}', String(statusCount)).replace('{total}', String(total)),
-        });
-        items.push(recent > 0
-            ? {
-                text: this.t('config.statsInsightRecentActivity', '{count} bookmarks were opened in the last 48 hours.')
-                    .replace('{count}', String(recent)),
-                tab: 'activity',
-            }
-            : { text: this.t('config.statsInsightNoRecent', 'No bookmark opens recorded in the last 48 hours.') });
-
-        const rows = items.map((it) => `
-            <li class="config-stat-detail">
-                <span>${esc(it.text)}</span>
-                ${it.tab ? `<button type="button" class="config-btn config-btn--small" data-stats-goto="${esc(it.tab)}">${esc(this.statsTabLabel(it.tab))}</button>` : ''}
-            </li>`).join('');
-
-        return `
-            <div class="config-panel">
-                <h3 class="config-panel-title">${esc(this.t('config.statsInsightsSection', 'Personal usage insights'))}</h3>
-                <p class="config-panel-note">${esc(this.t('config.statsInsightsIntro', 'Quick interpretation of your usage patterns.'))}</p>
-                <ul class="config-stat-details">${rows}</ul>
-            </div>`;
-    }
-
-    /** Shortcut coverage, and which shortcuts actually earn their keystroke. */
-    renderStatsShortcuts(s) {
-        const esc = (v) => this.dash.escapeHtml(v);
-        const all = this.dash.allBookmarks || [];
-        const pageName = (id) => (this.dash.pages || [])
-            .find((p) => String(p.id) === String(id))?.name || String(id);
-        const rows = all
-            .filter((b) => String(b.shortcut || '').trim())
-            .sort((a, b) => (Number(b.openCount) || 0) - (Number(a.openCount) || 0))
-            .slice(0, 20)
-            .map((b) => `
-                <tr>
-                    <th scope="row">${esc(String(b.shortcut).toUpperCase())}</th>
-                    <td>${esc(b.name || '—')}</td>
-                    <td>${esc(String(Number(b.openCount) || 0))}</td>
-                    <td>${esc(pageName(b.pageId))}</td>
-                </tr>`).join('');
-
-        return `
-            <div class="config-panel">
-                <h3 class="config-panel-title">${esc(this.t('config.statsShortcutsTitle', 'Shortcuts'))}</h3>
-                <p class="config-panel-note">${esc(this.t('config.statsShortcutCoverage', '{count} of {total} bookmarks have a shortcut ({pct}%)')
-                    .replace('{count}', String(s.withShortcut))
-                    .replace('{total}', String(s.total))
-                    .replace('{pct}', String(s.total ? Math.round((s.withShortcut / s.total) * 100) : 0)))}</p>
-                ${rows ? `
-                <h4 class="config-theme-group-title">${esc(this.t('config.statsSubTopShortcuts', 'Top shortcuts by opens'))}</h4>
-                <table class="config-stats-table">
-                    <thead><tr>
-                        <th scope="col">${esc(this.t('config.statsColShortcut', 'Shortcut'))}</th>
-                        <th scope="col">${esc(this.t('config.statsColBookmark', 'Bookmark'))}</th>
-                        <th scope="col">${esc(this.t('config.statsColOpens', 'Opens'))}</th>
-                        <th scope="col">${esc(this.t('config.statsColPage', 'Page'))}</th>
-                    </tr></thead>
-                    <tbody>${rows}</tbody>
-                </table>` : `<p class="config-panel-empty">${esc(this.t('config.statsNoData', 'No data yet'))}</p>`}
-            </div>`;
-    }
-
-    /**
-     * Finders, with their use counts. Loaded separately because finders are not
-     * part of the bookmark set the rest of the stats derive from.
-     */
-    renderStatsFinders() {
-        const esc = (v) => this.dash.escapeHtml(v);
-        if (this._statsFinders === undefined) {
-            return `
-                <div class="config-panel">
-                    <h3 class="config-panel-title">${esc(this.t('config.statsFindersTitle', 'Finders'))}</h3>
-                    <p class="config-view-loading">${esc(this.t('config.backupLoading', 'Loading…'))}</p>
-                </div>`;
-        }
-        const finders = this._statsFinders || [];
-        const totalUses = finders.reduce((n, f) => n + (Number(f.useCount) || 0), 0);
-        const withShortcut = finders.filter((f) => String(f.shortcut || '').trim()).length;
-        const rows = [...finders]
-            .sort((a, b) => (Number(b.useCount) || 0) - (Number(a.useCount) || 0))
-            .slice(0, 20)
-            .map((f) => `
-                <tr>
-                    <th scope="row">${esc(f.name || '—')}</th>
-                    <td>${esc(String(f.shortcut || '—'))}</td>
-                    <td>${esc(String(Number(f.useCount) || 0))}</td>
-                </tr>`).join('');
-
-        // One accessible name per tile; see the overview tile for why.
-        const tile = (label, value) => `
-            <div class="config-tile" role="listitem" aria-label="${esc(label)}: ${esc(String(value))}">
-                <span class="config-tile-label" aria-hidden="true">${esc(label)}</span>
-                <span class="config-tile-value" aria-hidden="true">${esc(String(value))}</span>
-            </div>`;
-
-        return `
-            <div class="config-panel">
-                <h3 class="config-panel-title">${esc(this.t('config.statsFindersTitle', 'Finders'))}</h3>
-                <div class="config-tiles" role="list">
-                    ${tile(this.t('config.statsFindersTotal', 'Finders total'), finders.length)}
-                    ${tile(this.t('config.statsFindersUsesTotal', 'Total finder uses'), totalUses)}
-                    ${tile(this.t('config.statsFindersWithShortcut', 'With shortcut'), withShortcut)}
-                </div>
-                ${rows ? `
-                <h4 class="config-theme-group-title">${esc(this.t('config.statsSubTopFinders', 'Top finders by use count'))}</h4>
-                <table class="config-stats-table">
-                    <thead><tr>
-                        <th scope="col">${esc(this.t('config.statsColName', 'Name'))}</th>
-                        <th scope="col">${esc(this.t('config.statsColShortcut', 'Shortcut'))}</th>
-                        <th scope="col">${esc(this.t('config.statsColUses', 'Uses'))}</th>
-                    </tr></thead>
-                    <tbody>${rows}</tbody>
-                </table>` : `<p class="config-panel-empty">${esc(this.t('config.findersEmpty', 'No finders yet.'))}</p>`}
-            </div>`;
-    }
-
-    /** Finders are their own resource, so the stats view fetches them itself. */
     async loadStatsFinders() {
         try {
             const res = await fetch('/api/finders');
@@ -15064,107 +16647,6 @@ class DashboardConfig {
      * which. The old config capped the list at eight and counted the rest, which
      * keeps a badly duplicated install from filling the panel.
      */
-    renderStatsConflicts(s) {
-        const esc = (v) => this.dash.escapeHtml(v);
-        const CAP = 8;
-        const more = (n) => (n > CAP
-            ? this.t('config.statsConflictMore', ' +{count} more').replace('{count}', String(n - CAP))
-            : '');
-
-        const dupes = s.duplicateUrlList || [];
-        const clashes = s.shortcutConflictList || [];
-
-        let detail;
-        if (!dupes.length && !clashes.length) {
-            detail = `<p class="config-panel-empty">${esc(this.t('config.statsNoConflictsFound', 'No conflicts found.'))}</p>`;
-        } else {
-            const parts = [];
-            if (dupes.length) {
-                const labels = dupes.slice(0, CAP).map(([url, c]) => {
-                    const display = url.length > 50 ? `${url.slice(0, 47)}…` : url;
-                    return `${display} (×${c})`;
-                }).join(', ');
-                parts.push(`<p class="config-field-hint">${esc(this.t('config.statsDuplicateUrlsDetail', 'Duplicate URLs: {labels}{more}')
-                    .replace('{labels}', labels).replace('{more}', more(dupes.length)))}</p>`);
-            }
-            if (clashes.length) {
-                const labels = clashes.slice(0, CAP).map(([sc, c]) => `${sc} (×${c})`).join(', ');
-                parts.push(`<p class="config-field-hint">${esc(this.t('config.statsConflictingShortcuts', 'Conflicting shortcuts: {labels}{more}')
-                    .replace('{labels}', labels).replace('{more}', more(clashes.length)))}</p>`);
-            }
-            detail = parts.join('');
-        }
-
-        const line = (label, n) => `
-            <li class="config-stat-detail${n > 0 ? ' config-stat-detail--warn' : ''}">
-                <span>${esc(label)}</span>
-                <span class="config-stat-penalty">${esc(String(n))}</span>
-            </li>`;
-
-        return `
-            <div class="config-panel">
-                <h3 class="config-panel-title">${esc(this.t('config.statsConflictsTitle', 'Conflicts & duplicates'))}</h3>
-                <ul class="config-stat-details">
-                    ${line(this.t('config.statsDuplicateUrls', 'Duplicate URLs'), s.duplicateUrls)}
-                    ${line(this.t('config.statsShortcutConflicts', 'Shortcut conflicts'), s.shortcutConflicts)}
-                </ul>
-                ${detail}
-                ${(dupes.length || clashes.length) ? `
-                <div class="config-actions">
-                    <button type="button" class="config-btn config-btn--small" data-stats-action="open-health">${esc(this.t('config.statsOpenInHealth', 'Open in Health'))}</button>
-                </div>` : ''}
-            </div>`;
-    }
-
-    /**
-     * Search & status: which search behaviours are on, and how much of the
-     * collection opts into availability checking. These are settings rather
-     * than derived counts, so they read from settings directly.
-     */
-    renderStatsSearch(s) {
-        const esc = (v) => this.dash.escapeHtml(v);
-        const set = this.dash.settings || {};
-        const yes = this.t('config.statsYes', 'Yes');
-        const no = this.t('config.statsNo', 'No');
-        const onOff = (v) => (v ? yes : no);
-
-        const row = (label, value) => `
-            <li class="config-stat-detail">
-                <span>${esc(label)}</span>
-                <span class="config-stat-penalty">${esc(String(value))}</span>
-            </li>`;
-
-        // Whether the search component actually loaded — the honest signal, and
-        // the only one there is now that the unused index endpoint is gone.
-        const searchReady = Boolean(this.dash.searchComponent);
-
-        return `
-            <div class="config-panel">
-                <h3 class="config-panel-title">${esc(this.t('config.statsSearchTitle', 'Search & status'))}</h3>
-                <ul class="config-stat-details">
-                    ${row(this.t('config.statsSearchReady', 'Search ready'), onOff(searchReady))}
-                    ${row(this.t('config.statsInterleave', 'Interleave search mode'), onOff(set.interleaveMode))}
-                    ${row(this.t('config.statsFuzzy', 'Fuzzy suggestions'), onOff(set.enableFuzzySuggestions !== false))}
-                    ${row(this.t('config.statsShowStatus', 'Status monitor enabled'), onOff(set.showStatus !== false))}
-                    ${row(this.t('config.statsStatusCheckBookmarks', 'Bookmarks with status check'), s.checked)}
-                    ${row(this.t('config.statsMonitored', 'Monitored'), s.monitored)}
-                </ul>
-            </div>`;
-    }
-
-    /**
-     * Everything derivable from the shell's own bookmark/page copies, including
-     * the cleanup score and the activity buckets.
-     */
-    /**
-     * Labels a `pageId::category` key for the statistics panels.
-     *
-     * knownCategories() is page-scoped — it reads bmPageFilter — so calling it
-     * here would label against whatever filter the Bookmarks section was left
-     * on. This walks every page instead, and only prefixes the page name when
-     * the same category name exists on more than one page: without that, every
-     * row on a single-page install would read "main · Development".
-     */
     statsCategoryLabeller() {
         const labels = new Map();
         const nameCounts = new Map();
@@ -15185,9 +16667,123 @@ class DashboardConfig {
         };
     }
 
-    computeStats() {
+    /**
+     * A URL as duplicate-detection sees it.
+     *
+     * Delegates to the shared canonicaliser (fragment dropped, trailing slash
+     * dropped, host and scheme normalised), which is what handlers.go and the
+     * Health view use. The fallback is the old behaviour, for the case where
+     * the helper has not loaded: a slightly loose count beats none.
+     */
+    /**
+     * A count as a reader reads it: 1.274 rather than 1274.
+     *
+     * Grouping is the locale's own — a Dutch install separates thousands where
+     * an English one does not group the same way — so this goes through Intl
+     * rather than through a hand-rolled regex.
+     */
+    statsNumber(value) {
+        const n = Number(value);
+        if (!Number.isFinite(n)) return String(value ?? '');
+        try {
+            return new Intl.NumberFormat(this.dash.settings?.language || undefined).format(n);
+        } catch {
+            return String(n);
+        }
+    }
+
+    canonicalStatsUrlKey(raw) {
+        const value = String(raw || '').trim();
+        if (!value) return '';
+        const canonical = typeof BookmarkUrlUtils !== 'undefined'
+            && typeof BookmarkUrlUtils.canonicalBookmarkURLKey === 'function'
+            ? BookmarkUrlUtils.canonicalBookmarkURLKey(value)
+            : '';
+        return canonical || value.toLowerCase();
+    }
+
+    /**
+     * The line that says a panel ignores the page filter.
+     *
+     * Two of the five tabs are worked out somewhere the filter cannot reach —
+     * the inbox belongs to no page, and the health report is built by the
+     * server for the whole collection. Saying so is the difference between a
+     * limit and a bug.
+     */
+    statsScopePage() {
+        const id = Number(this.statsPageFilter);
+        if (!Number.isFinite(id) || id <= 0) return null;
+        return (this.dash.pages || []).find((p) => Number(p.id) === id) || null;
+    }
+
+    /**
+     * The bookmarks the figures are worked out from.
+     *
+     * Everything computed on the client narrows with the page filter — counts,
+     * coverage, activity, the cleanup score. What cannot: the inbox, which
+     * belongs to no page, and the health report, which the server builds for
+     * the whole collection. Both say so where they are shown rather than
+     * quietly ignoring the filter.
+     */
+    statsScopedBookmarks() {
         const all = this.dash.allBookmarks || [];
-        const pages = this.dash.pages || [];
+        const page = this.statsScopePage();
+        if (!page) return all;
+        return all.filter((b) => Number(b?.pageId) === Number(page.id));
+    }
+
+    statsScopedPages() {
+        const page = this.statsScopePage();
+        return page ? [page] : (this.dash.pages || []);
+    }
+
+    /**
+     * The figures, computed once per state rather than once per paint.
+     *
+     * This walks every bookmark five times over — tags, categories, opens,
+     * shortcuts, URLs — and it ran on every render: a tab switch, a scope
+     * change, the Overview cards, the export. On a large collection that is the
+     * most expensive thing config does, repeated for a set of numbers that
+     * cannot have changed between two paints of the same data.
+     *
+     * The memo lives for one paint, not for the session. A bookmark's own fields
+     * are edited in place all over the app — an open bumps a count, a check
+     * writes a timestamp — and no key derived from the collection would notice
+     * that reliably. So every render of the section drops it first: within one
+     * paint the six callers share one computation, and the next paint starts
+     * again from the data as it now is. That is where the cost was.
+     */
+    computeStats() {
+        const scope = this.statsScopePage();
+        const key = [
+            (this.dash.allBookmarks || []).length,
+            scope ? scope.id : '',
+            this.bookmarkStaleDays(),
+            // The activity buckets are computed in here too, and they are cut
+            // by the chosen range: without it, switching 30 days to 7 handed
+            // back the same chart.
+            this.statsRange || 30,
+            this.dash.dataRevision ?? this.dash.data?.revision ?? '',
+            this._statsCacheStamp || 0,
+        ].join('|');
+        if (this._statsCache && this._statsCacheKey === key) return this._statsCache;
+
+        const computed = this.computeStatsUncached();
+        this._statsCacheKey = key;
+        this._statsCache = computed;
+        return computed;
+    }
+
+    /** Drop the memoised figures — anything that edits bookmarks calls this. */
+    invalidateStatsCache() {
+        this._statsCache = null;
+        this._statsCacheKey = '';
+        this._statsCacheStamp = (this._statsCacheStamp || 0) + 1;
+    }
+
+    computeStatsUncached() {
+        const all = this.statsScopedBookmarks();
+        const pages = this.statsScopedPages();
         const total = all.length;
 
         const tagCounts = new Map();
@@ -15202,7 +16798,11 @@ class DashboardConfig {
         let checked = 0;
         let neverOpened = 0;
 
-        const cutoff90 = Date.now() - 90 * 86400000;
+        // The threshold is a judgement, not a law: a daily work library is
+        // stale at 30 days, a reference archive is not at 90. It also drives
+        // the cleanup score, so it decides what the overview calls neglected.
+        const staleDays = this.bookmarkStaleDays();
+        const cutoff90 = Date.now() - staleDays * 86400000;
         let stale90 = 0;
         const urlCounts = new Map();
         const shortcutCounts = new Map();
@@ -15210,7 +16810,7 @@ class DashboardConfig {
         all.forEach((b) => {
             const tags = Array.isArray(b.tags) ? b.tags : [];
             tags.forEach((t) => tagCounts.set(t, (tagCounts.get(t) || 0) + 1));
-            if (tags.length) tagged += 1;
+            if (window.BookmarkPredicates.match('tagged', b)) tagged += 1;
             if (b.category) {
                 // Key on page::category, not on the bare category name. The
                 // Categories tile already counted that way, so keying the panels
@@ -15225,16 +16825,23 @@ class DashboardConfig {
             }
             if (b.shortcut) withShortcut += 1;
             if (b.monitor === true) monitored += 1;
-            if (String(b.note || '').trim()) withNote += 1;
-            if (String(b.icon || '').trim()) withIcon += 1;
+            if (window.BookmarkPredicates.match('noted', b)) withNote += 1;
+            if (!window.BookmarkPredicates.match('noicon', b)) withIcon += 1;
             if (b.checkStatus === true || b.monitor === true) checked += 1;
 
-            const opens = Number(b.openCount || 0);
+            // Counted through the same predicates the list filters by, so the
+            // panel's "never opened" and the cleanup filter of that name cannot
+            // mean two different things.
             const last = Number(b.lastOpened || 0);
-            if (!opens && !last) neverOpened += 1;
+            if (window.BookmarkPredicates.match('never', b)) neverOpened += 1;
             if (last > 0 && last < cutoff90) stale90 += 1;
 
-            const url = String(b.url || '').trim().toLowerCase();
+            // The same key Health and the server count duplicates by, rather
+            // than a plain lowercase: that treated a trailing slash or a
+            // fragment as a different link, so this panel and the Health view
+            // reported different numbers for the same library — and the
+            // cleanup score docked points on the looser of the two.
+            const url = this.canonicalStatsUrlKey(b.url);
             if (url) urlCounts.set(url, (urlCounts.get(url) || 0) + 1);
             const sc = String(b.shortcut || '').trim().toLowerCase();
             if (sc) shortcutCounts.set(sc, (shortcutCounts.get(sc) || 0) + 1);
@@ -15309,7 +16916,7 @@ class DashboardConfig {
         };
 
         // Cleanup candidates, each a filter the bookmarks list can reproduce.
-        const openedOnce = all.filter((b) => Number(b.openCount || 0) === 1).length;
+        const openedOnce = all.filter((b) => window.BookmarkPredicates.match('once', b)).length;
         const untagged = all.filter((b) => !(Array.isArray(b.tags) && b.tags.length)).length;
         const insecure = all.filter((b) => /^http:\/\//i.test(String(b.url || ''))).length;
         const missingIcon = all.filter((b) => !String(b.icon || '').trim()).length;
@@ -15503,52 +17110,18 @@ class DashboardConfig {
         return { buckets, labels, dateLabels, activeCount, totalOpens, wow, bucketDays };
     }
 
-    renderStatsHealth() {
-        const esc = (v) => this.dash.escapeHtml(v);
-        const h = this._statsHealth;
-        if (h === undefined) {
-            return `<p class="config-view-loading">${esc(this.t('config.backupLoading', 'Loading…'))}</p>`;
-        }
-        if (h === null) {
-            return `<p class="config-panel-empty">${esc(this.t('config.statsHealthUnavailable', 'Health data is not available.'))}</p>`;
-        }
-        const total = Math.max(1, h.healthy + h.broken + h.unchecked);
-        const pct = Math.round((h.healthy / total) * 100);
-        const line = (label, n, tone) => `
-            <li class="config-stat-detail${tone ? ' config-stat-detail--' + tone : ''}">
-                <span>${esc(label)}</span>
-                <span class="config-stat-penalty">${esc(String(n))}</span>
-            </li>`;
-        return `
-            ${this.statsScaleCaption(this.t('config.statsAxisShareHealthy',
-                'Healthy share of {total} tracked bookmarks — 0% to 100%').replace('{total}', String(total)))}
-            <div class="config-ratio">
-                <div class="config-ratio-head">
-                    <span class="config-ratio-label">${esc(this.t('config.statsHealthy', 'Healthy'))}</span>
-                    <span class="config-ratio-value">${pct}%</span>
-                </div>
-                <div class="config-bar" role="img" aria-label="${esc(this.t('config.statsHealthy', 'Healthy'))}: ${pct}%">
-                    <span class="config-bar-fill config-bar-fill--good" style="width:${pct}%"></span>
-                </div>
-            </div>
-            ${this.statsPairAxisHeader(
-                this.t('config.statsAxisState', 'State'),
-                this.t('config.statsAxisBookmarks', 'Bookmarks'))}
-            <ul class="config-stat-details">
-                ${line(this.t('config.statsHealthy', 'Healthy'), h.healthy, 'good')}
-                ${line(this.t('config.statsBroken', 'Broken'), h.broken, h.broken ? 'bad' : '')}
-                ${line(this.t('config.statsMonitorDown', 'Monitors down'), h.monitorDown, h.monitorDown ? 'bad' : '')}
-                ${line(this.t('config.statsUnchecked', 'Unchecked'), h.unchecked)}
-                ${line(this.t('config.statsStale', 'Stale'), h.stale, h.stale ? 'warn' : '')}
-                ${line(this.t('config.statsDuplicates', 'Duplicates'), h.duplicates, h.duplicates ? 'warn' : '')}
-                ${line(this.t('config.statsShortcutConflicts', 'Shortcut conflicts'), h.shortcutConflicts, h.shortcutConflicts ? 'warn' : '')}
-            </ul>`;
-    }
-
     /**
-     * Inbox figures come from two places: /api/inbox is the current snapshot,
-     * /api/inbox-stats the durable lifetime aggregate that survives items being
-     * triaged away. Neither can be derived from the other, so both are fetched.
+     * The healthy share over time, as a line under the health figures.
+     *
+     * Everything else in this section is a snapshot: true now, with nothing to
+     * say whether it is better or worse than it was. The server has recorded a
+     * point per day all along — the health view draws it above its list — so
+     * this reads the same series rather than starting a second one. It is drawn
+     * here rather than borrowed from the health module because that module is
+     * lazily loaded and reads a report this section does not hold.
+     *
+     * A day with nothing in the collection has no percentage, so it leaves a
+     * gap in the line rather than being plotted as zero.
      */
     async loadStatsInbox() {
         const fetcher = typeof nextDashFetch === 'function' ? nextDashFetch : fetch;
@@ -15586,262 +17159,6 @@ class DashboardConfig {
         return this.t('config.statsInboxMinutesUnit', '{n}m').replace('{n}', String(Math.max(1, Math.round(n / 60000))));
     }
 
-    renderStatsInbox() {
-        const esc = (v) => this.dash.escapeHtml(v);
-        return `
-            <p class="config-view-intro">${esc(this.t('config.statsInboxIntro', 'What is waiting in the inbox, and how much of it you turn into bookmarks.'))}</p>
-            <div id="config-stats-inbox">${this.renderStatsInboxBody()}</div>`;
-    }
-
-    /**
-     * The snapshot and lifetime blocks, using the old config's own figures:
-     * backlog is unread older than 30 days, and conversion is promoted against
-     * everything triaged (promoted + discarded) rather than against everything
-     * ever added, which would never reach 100%.
-     */
-    renderStatsInboxBody() {
-        const esc = (v) => this.dash.escapeHtml(v);
-        if (this._statsInboxItems === undefined) {
-            return `<p class="config-view-loading">${esc(this.t('config.backupLoading', 'Loading…'))}</p>`;
-        }
-        const items = this._statsInboxItems || [];
-        const agg = this._statsInboxAgg || {};
-        const now = Date.now();
-
-        const unread = items.filter((it) => !Number(it?.readAt));
-        const read = items.length - unread.length;
-        const oldestUnreadAt = unread.reduce((min, it) => {
-            const added = Number(it?.addedAt || 0);
-            return added > 0 && added < min ? added : min;
-        }, Number.POSITIVE_INFINITY);
-        const backlogCutoff = now - 30 * 86400000;
-        const backlog = unread.filter((it) =>
-            Number(it?.addedAt || 0) > 0 && Number(it.addedAt) < backlogCutoff).length;
-        const withTags = items.filter((it) =>
-            Array.isArray(it?.tags) && it.tags.some((t) => String(t || '').trim())).length;
-        const withNote = items.filter((it) => String(it?.note || '').trim()).length;
-        const withPreview = items.filter((it) => String(it?.previewImage || '').trim()).length;
-
-        const added = Number(agg.totalAdded || 0);
-        const promoted = Number(agg.totalPromoted || 0);
-        const deleted = Number(agg.totalDeleted || 0);
-        const triaged = promoted + deleted;
-        const pct = triaged > 0 ? Math.round((promoted / triaged) * 100) : 0;
-        const avgRetention = Number(agg.retentionCount || 0) > 0
-            ? Number(agg.sumRetentionMs || 0) / Number(agg.retentionCount)
-            : 0;
-
-        // One accessible name per tile; see the overview tile for why.
-        const tile = (label, value) => `
-            <div class="config-tile" role="listitem" aria-label="${esc(label)}: ${esc(String(value))}">
-                <span class="config-tile-label" aria-hidden="true">${esc(label)}</span>
-                <span class="config-tile-value" aria-hidden="true">${esc(String(value))}</span>
-            </div>`;
-
-        // Inflow per source, current inbox against lifetime, so a source that
-        // has been fully triaged still shows up.
-        const currentBySource = new Map();
-        items.forEach((it) => {
-            const key = String(it?.source || '').trim() || 'unknown';
-            currentBySource.set(key, (currentBySource.get(key) || 0) + 1);
-        });
-        const lifetimeBySource = agg.bySource && typeof agg.bySource === 'object' ? agg.bySource : {};
-        const sourceKeys = [...new Set([...currentBySource.keys(), ...Object.keys(lifetimeBySource)])].sort();
-        const sourceLabel = (key) => this.t(
-            `config.statsInboxSource${key.charAt(0).toUpperCase()}${key.slice(1)}`, key);
-        const sourceRows = sourceKeys.map((key) => `
-            <tr>
-                <th scope="row">${esc(sourceLabel(key))}</th>
-                <td>${esc(String(currentBySource.get(key) || 0))}</td>
-                <td>${esc(String(Number(lifetimeBySource[key]) || 0))}</td>
-            </tr>`).join('');
-
-        const since = Number(agg.firstEventAt || 0) > 0
-            ? `<p class="config-panel-note">${esc(this.t('config.statsInboxSince', 'Lifetime counters since {date}.')
-                .replace('{date}', new Date(Number(agg.firstEventAt)).toLocaleDateString()))}</p>`
-            : '';
-
-        return `
-            ${this.renderStatsInboxTrend(agg)}
-            <div class="config-panel">
-                <h3 class="config-panel-title">${esc(this.t('config.statsInboxSubCurrent', 'Current inbox'))}</h3>
-                <div class="config-tiles" role="list">
-                    ${tile(this.t('config.statsInboxTotal', 'Inbox items'), items.length)}
-                    ${tile(this.t('config.statsInboxUnread', 'Unread'), unread.length)}
-                    ${tile(this.t('config.statsInboxRead', 'Read (kept)'), read)}
-                    ${tile(this.t('config.statsInboxBacklog', 'Unread > 30d'), backlog)}
-                    ${tile(this.t('config.statsInboxOldestUnread', 'Oldest unread'),
-                        Number.isFinite(oldestUnreadAt) ? this.formatDurationShort(now - oldestUnreadAt) : '—')}
-                    ${tile(this.t('config.statsInboxWithTags', 'With tags'), withTags)}
-                    ${tile(this.t('config.statsInboxWithNote', 'With note'), withNote)}
-                    ${tile(this.t('config.statsInboxWithPreview', 'With preview'), withPreview)}
-                </div>
-            </div>
-
-            <div class="config-panel">
-                <h3 class="config-panel-title">${esc(this.t('config.statsInboxSubThroughput', 'Triage throughput'))}</h3>
-                ${since}
-                <div class="config-tiles" role="list">
-                    ${tile(this.t('config.statsInboxAdded', 'Added'), added)}
-                    ${tile(this.t('config.statsInboxPromoted', 'Converted'), promoted)}
-                    ${tile(this.t('config.statsInboxDeleted', 'Discarded'), deleted)}
-                    ${tile(this.t('config.statsInboxAvgRetention', 'Avg. time to triage'), this.formatDurationShort(avgRetention))}
-                </div>
-                <div class="config-ratio" style="margin-top:12px">
-                    <div class="config-bar" role="img" aria-label="${esc(String(pct))}%">
-                        <span class="config-bar-fill" style="width:${pct}%"></span>
-                    </div>
-                    <p class="config-field-hint">${esc(this.t('config.statsInboxConversion',
-                        '{promoted} of {triaged} triaged items converted to bookmarks ({pct}%)')
-                        .replace('{promoted}', String(promoted))
-                        .replace('{triaged}', String(triaged))
-                        .replace('{pct}', String(pct)))}</p>
-                </div>
-            </div>
-
-            ${sourceKeys.length ? `
-            <div class="config-panel">
-                <h3 class="config-panel-title">${esc(this.t('config.statsInboxSubSources', 'Inbox by source'))}</h3>
-                <table class="config-stats-table">
-                    <thead><tr>
-                        <th scope="col">${esc(this.t('config.statsInboxColSource', 'Source'))}</th>
-                        <th scope="col">${esc(this.t('config.statsInboxColCurrent', 'In inbox now'))}</th>
-                        <th scope="col">${esc(this.t('config.statsInboxColLifetime', 'Added (lifetime)'))}</th>
-                    </tr></thead>
-                    <tbody>${sourceRows}</tbody>
-                </table>
-            </div>` : ''}`;
-    }
-
-    /**
-     * Inbox throughput per day: what came in against what was dealt with.
-     *
-     * The server has kept this all along — inbox-stats.json carries dailyBuckets
-     * keyed YYYY-MM-DD, and its own comment says "for the trend chart" — but
-     * nothing ever drew it, so the Inbox tab showed lifetime totals and no sense
-     * of whether the backlog was growing or shrinking.
-     *
-     * It is also the only honest time series in Statistics. The activity chart
-     * can only bucket bookmarks by their single lastOpened; here each day was
-     * genuinely recorded as it happened.
-     *
-     * Two series, so a legend is required rather than optional; triaged stacks
-     * promoted and discarded, since together they are "dealt with" and the split
-     * between them is secondary.
-     */
-    renderStatsInboxTrend(agg) {
-        const esc = (v) => this.dash.escapeHtml(v);
-        const daily = agg?.dailyBuckets && typeof agg.dailyBuckets === 'object' ? agg.dailyBuckets : null;
-        const keys = daily ? Object.keys(daily).sort() : [];
-        if (!keys.length) return '';
-
-        // Days with no events are absent from the map, not zero — without
-        // filling them a quiet week would compress into a misleadingly busy
-        // chart. Bounded by the range the user already picked for activity.
-        const DAY = 86400000;
-        const days = Math.min(this.statsRange || 30, 90);
-        const today = new Date();
-        const iso = (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-        const series = [];
-        for (let i = days - 1; i >= 0; i--) {
-            const date = new Date(today.getTime() - i * DAY);
-            const key = iso(date);
-            const b = daily[key] || {};
-            series.push({
-                key,
-                date,
-                added: Number(b.added || 0),
-                triaged: Number(b.promoted || 0) + Number(b.deleted || 0),
-            });
-        }
-        // Nothing inside the window, even though history exists further back.
-        if (!series.some((d) => d.added || d.triaged)) {
-            return `
-                <div class="config-panel">
-                    <h3 class="config-panel-title">${esc(this.t('config.statsInboxTrendTitle', 'Inbox flow per day'))}</h3>
-                    <p class="config-panel-empty">${esc(this.t('config.statsInboxTrendEmpty', 'No inbox activity in this period.'))}</p>
-                </div>`;
-        }
-
-        const W = 500;
-        const H = 108;
-        const n = series.length;
-        const slot = W / n;
-        const barW = Math.max(1, (slot - 3) / 2);
-        const max = Math.max(...series.map((d) => Math.max(d.added, d.triaged)), 1);
-        const fmt = new Intl.DateTimeFormat(this.dash.settings?.language || undefined,
-            { day: 'numeric', month: 'short' });
-
-        const addedLabel = this.t('config.statsInboxTrendAdded', 'Added');
-        const triagedLabel = this.t('config.statsInboxTrendTriaged', 'Dealt with');
-        const bars = series.map((d, i) => {
-            const x = i * slot;
-            const hA = Math.round((d.added / max) * H);
-            const hT = Math.round((d.triaged / max) * H);
-            const label = `${fmt.format(d.date)}: ${d.added} ${addedLabel}, ${d.triaged} ${triagedLabel}`;
-            return `<g class="config-chart-bar" tabindex="0" role="listitem"
-                       data-bar-date="${esc(fmt.format(d.date))}"
-                       data-bar-value="${esc(String(d.added))}"
-                       data-bar-value2="${esc(String(d.triaged))}"
-                       aria-label="${esc(label)}">
-                <rect class="config-chart-bar-hit" x="${x.toFixed(2)}" y="0" width="${slot.toFixed(2)}" height="${H}"></rect>
-                <rect class="config-chart-bar-fill config-chart-bar-fill--a" x="${x.toFixed(2)}" y="${H - hA}" width="${barW.toFixed(2)}" height="${Math.max(hA, d.added > 0 ? 2 : 0)}" rx="1"></rect>
-                <rect class="config-chart-bar-fill config-chart-bar-fill--b" x="${(x + barW + 2).toFixed(2)}" y="${H - hT}" width="${barW.toFixed(2)}" height="${Math.max(hT, d.triaged > 0 ? 2 : 0)}" rx="1"></rect>
-            </g>`;
-        }).join('');
-
-        const srRows = series.map((d) =>
-            `<tr><th scope="row">${esc(fmt.format(d.date))}</th><td>${esc(String(d.added))}</td><td>${esc(String(d.triaged))}</td></tr>`).join('');
-        const totalAdded = series.reduce((s2, d) => s2 + d.added, 0);
-        const totalTriaged = series.reduce((s2, d) => s2 + d.triaged, 0);
-        const net = totalAdded - totalTriaged;
-
-        return `
-            <div class="config-panel">
-                <h3 class="config-panel-title">${esc(this.t('config.statsInboxTrendTitle', 'Inbox flow per day'))}</h3>
-                <p class="config-panel-note">${esc(this.t('config.statsInboxTrendNote',
-                    'What arrived against what you dealt with. Recorded per day as it happened, so this is real history rather than a snapshot.'))}</p>
-                <div class="config-chart-legend">
-                    <span class="config-chart-legend-item"><span class="config-chart-swatch config-chart-swatch--a"></span>${esc(addedLabel)}</span>
-                    <span class="config-chart-legend-item"><span class="config-chart-swatch config-chart-swatch--b"></span>${esc(triagedLabel)}</span>
-                </div>
-                <div class="config-stat-figures">
-                    <span><strong>${esc(String(totalAdded))}</strong> ${esc(addedLabel.toLowerCase())}</span>
-                    <span><strong>${esc(String(totalTriaged))}</strong> ${esc(triagedLabel.toLowerCase())}</span>
-                    <span class="config-stat-trend config-stat-trend--${net > 0 ? 'down' : 'up'}">${esc(net > 0
-                        ? this.t('config.statsInboxTrendGrowing', 'backlog grew by {n}').replace('{n}', String(net))
-                        : this.t('config.statsInboxTrendShrinking', 'backlog shrank by {n}').replace('{n}', String(Math.abs(net))))}</span>
-                </div>
-                <div class="config-chart">
-                    <div class="config-chart-plot">
-                        <span class="config-chart-axis-y" aria-hidden="true">
-                            <span class="config-chart-axis-title">${esc(this.t('config.statsInboxTrendAxisY', 'Items'))}</span>
-                            <span class="config-chart-axis-ticks"><span>${esc(String(max))}</span><span>0</span></span>
-                        </span>
-                        <span class="config-chart-plot-area">
-                            <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="list"
-                                 aria-label="${esc(this.t('config.statsInboxTrendTitle', 'Inbox flow per day'))}">${bars}</svg>
-                            <span class="config-chart-ticks" aria-hidden="true">${this.statsActivityTicks({
-                                dateLabels: series.map((d) => fmt.format(d.date)),
-                            })}</span>
-                        </span>
-                    </div>
-                    <p class="config-chart-axis-x" aria-hidden="true">${esc(this.t('config.statsAxisPerDay', 'Day (oldest → newest)'))}</p>
-                    <div class="config-chart-tip" role="status" aria-live="polite" hidden></div>
-                </div>
-                <table class="config-sr-only">
-                    <caption>${esc(this.t('config.statsInboxTrendTitle', 'Inbox flow per day'))}</caption>
-                    <thead><tr><th scope="col">${esc(this.t('config.statsAxisPerDay', 'Day'))}</th><th scope="col">${esc(addedLabel)}</th><th scope="col">${esc(triagedLabel)}</th></tr></thead>
-                    <tbody>${srRows}</tbody>
-                </table>
-            </div>`;
-    }
-
-    /**
-     * The health endpoint already aggregates the counts, so read its summary
-     * rather than re-deriving them from the issue list (which only carries the
-     * bookmarks that have something wrong with them).
-     */
     async loadStatsHealth() {
         try {
             const res = await (typeof nextDashFetch === 'function' ? nextDashFetch : fetch)('/api/bookmark-health');
@@ -15857,6 +17174,11 @@ class DashboardConfig {
                 duplicates: sum.duplicateCount || 0,
                 stale: sum.staleCount || 0,
                 shortcutConflicts: sum.shortcutConflictCount || 0,
+                // One point per day, recorded by the server whenever a report
+                // is built. It arrives with the report already; this section
+                // simply never read it, so every figure here was "now" with
+                // nothing to compare it against.
+                trend: Array.isArray(data?.trend) ? data.trend : [],
             };
         } catch {
             this._statsHealth = null;
@@ -15988,11 +17310,42 @@ class DashboardConfig {
         container.querySelectorAll('[data-stats-action]').forEach((btn) => {
             btn.addEventListener('click', () => {
                 const action = btn.getAttribute('data-stats-action');
-                if (action === 'export') this.exportStatsCSV();
+                if (action === 'export') void this.exportStatsCSV();
+                // Recomputed from what is in memory, so this is a repaint
+                // rather than a fetch — except for the two tabs whose figures
+                // come from the server, which are dropped so they are asked for
+                // again.
+                if (action === 'refresh') {
+                    this._statsTrend = undefined;
+                    this._statsHealth = undefined;
+                    this._statsInboxItems = undefined;
+                    this._statsInboxAgg = undefined;
+                    this._statsFinders = undefined;
+                    // Refresh means "work them out again", so the memo goes too
+                    // — otherwise the button would only re-fetch the two
+                    // server-side tabs and hand back the same cached arithmetic
+                    // for the other three.
+                    this.invalidateStatsCache();
+                    this.loadStatsTabData(this.statsTab);
+                    this.repaintStatsBody();
+                }
                 // Duplicates are the actionable half of this panel, and health
                 // is where they can actually be merged.
                 if (action === 'open-health') this.openViewFromTile('health', 'duplicate');
+                // The whole tab, not only its duplicates: broken links and
+                // monitors down were listed here with no way through to the
+                // view that repairs them.
+                if (action === 'open-health-view') this.openViewFromTile('health');
                 if (action === 'add-bookmark') this.openAddBookmarkModal();
+                // The summary's own way through: the shortcut panel it names
+                // lives on Activity, a tab away from where the line is read.
+                if (action === 'shortcuts') {
+                    this.statsTab = 'activity';
+                    this.restoreConfigHash();
+                    this.render();
+                    setTimeout(() => document.getElementById('config-stats-shortcuts')
+                        ?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 80);
+                }
             });
         });
         // Cleanup candidates hand off to the bookmarks list, which is where the
@@ -16013,6 +17366,56 @@ class DashboardConfig {
                 this.openConfigView('bookmarks');
             });
         });
+        // A statistics row that names something the bookmark list can filter by
+        // hands off to it, the way the cleanup panel already does. Same reset of
+        // the other filters, so what lands is the row you clicked and not that
+        // row narrowed by whatever an earlier visit left behind.
+        container.querySelectorAll('[data-stats-goto]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const raw = btn.getAttribute('data-stats-goto') || '';
+                const split = raw.indexOf(':');
+                const kind = split < 0 ? '' : raw.slice(0, split);
+                const value = split < 0 ? '' : raw.slice(split + 1);
+                if (!kind || !value) return;
+
+                this.bmCleanupFilter = '';
+                this.bmQuery = '';
+                this.bmPageFilter = '';
+                this.bmCategoryFilter = '';
+                this.bmTagFilter = kind === 'tag' ? [String(value).toLowerCase()] : [];
+                // A bookmark or a category names a row rather than a tag, so it
+                // arrives as the list's own search — the filter that reproduces
+                // "this row, in the list where I can act on it".
+                if (kind === 'bookmark' || kind === 'category') this.bmQuery = String(value);
+                if (kind === 'category') this.bmCategoryFilter = String(value);
+                this.bmSelected.clear();
+                this.resetBookmarkVisibleLimit();
+                this._bmDuplicateUrls = null;
+                this._trackAction('stats-goto', { kind });
+                this.openConfigView('bookmarks');
+            });
+        });
+
+        // The 🔗 beside a tab's heading, same clipboard path as Help's.
+        container.querySelectorAll('[data-stats-panel-link]').forEach((btn) => {
+            if (btn.dataset.statsLinkBound === '1') return;
+            btn.dataset.statsLinkBound = '1';
+            btn.addEventListener('click', () => {
+                const tab = btn.getAttribute('data-stats-panel-link') || this.statsTab;
+                const url = `${window.location.origin}${window.location.pathname}#config/stats/${tab}`;
+                void navigator.clipboard?.writeText(url)
+                    .then(() => this.notify(this.t('config.helpLinkCopied', 'Link copied'), 'success'))
+                    .catch(() => this.notify(this.t('config.copyFailed', 'Could not copy'), 'error'));
+            });
+        });
+
+        const scopeSelect = container.querySelector('[data-stats-scope]');
+        if (scopeSelect) {
+            scopeSelect.addEventListener('change', () => {
+                this.statsPageFilter = scopeSelect.value || '';
+                this.repaintStatsBody();
+            });
+        }
         container.querySelectorAll('[data-stats-goto]').forEach((btn) => {
             btn.addEventListener('click', () => {
                 const tab = btn.getAttribute('data-stats-goto');
@@ -16027,11 +17430,33 @@ class DashboardConfig {
     }
 
     /** The report as a flat CSV, so it can be worked through in a spreadsheet. */
-    exportStatsCSV() {
+    /**
+     * Every tab's figures, including the two that are not on screen.
+     *
+     * Health and Inbox come from the server and load when their tab is opened —
+     * deliberately, so opening Statistics does not fetch what nobody asked to
+     * see. That left the export carrying three tabs out of five, dressed as a
+     * complete file. It waits for them here instead: the cost lands on the
+     * button that wants them rather than on every visit, and the file says
+     * `inbox_included,0` if a fetch failed rather than quietly dropping rows.
+     */
+    async exportStatsCSV() {
+        await Promise.all([
+            this._statsInboxAgg === undefined ? this.loadStatsInbox() : null,
+            this._statsHealth === undefined ? this.loadStatsHealth() : null,
+        ].filter(Boolean)).catch(() => {});
+        return this.buildAndDownloadStatsCSV();
+    }
+
+    buildAndDownloadStatsCSV() {
         const s = this.computeStats();
         const a = s.activity;
+        const scopePage = this.statsScopePage();
         const rows = [
             ['metric', 'value'],
+            // Named first: a file of counts with no scope in it is a file that
+            // will be misread the week after it was exported.
+            ['scope', scopePage ? (scopePage.name || `#${scopePage.id}`) : 'all pages'],
             ['bookmarks', s.total],
             ['pages', s.pages],
             ['categories', s.categories],
@@ -16043,7 +17468,12 @@ class DashboardConfig {
             ['availability_checked', s.checked],
             ['monitored', s.monitored],
             ['never_opened', s.neverOpened],
-            ['stale_90_days', s.stale90],
+            // The threshold is a setting (7–365 days), so naming the column
+            // after 90 made the export claim something the panel above it did
+            // not: with the setting on 30, both were the same number under two
+            // different names.
+            ['stale_days_threshold', this.bookmarkStaleDays()],
+            ['stale_bookmarks', s.stale90],
             ['duplicate_urls', s.duplicateUrls],
             ['shortcut_conflicts', s.shortcutConflicts],
             ['cleanup_score', s.cleanup.score],
@@ -16069,6 +17499,30 @@ class DashboardConfig {
         // in a spreadsheet rather than only visible on screen.
         (a.dateLabels || []).forEach((d, i) => rows.push([`bookmarks_last_used:${d}`, a.buckets[i]]));
 
+        // Inbox and Health are two of the five tabs and come from the server
+        // rather than from computeStats(). The section loads both on the way in
+        // now, so an export normally carries them — but a download fired before
+        // those answered would otherwise be a complete-looking file with two
+        // tabs silently missing. So the file says which it is: `included,0`
+        // reads as "asked, and it is not in here".
+        const inbox = this._statsInboxAgg;
+        rows.push(['inbox_included', inbox ? 1 : 0]);
+        rows.push(['health_included', this._statsHealth ? 1 : 0]);
+        if (inbox) {
+            rows.push(['inbox_waiting', Number(this._statsInboxItems?.length || 0)]);
+            rows.push(['inbox_added_lifetime', Number(inbox.totalAdded || 0)]);
+            rows.push(['inbox_promoted_lifetime', Number(inbox.totalPromoted || 0)]);
+            rows.push(['inbox_kept_lifetime', Number(inbox.totalKept || 0)]);
+            rows.push(['inbox_deleted_lifetime', Number(inbox.totalDeleted || 0)]);
+        }
+        const health = this._statsHealth;
+        if (health) {
+            rows.push(['health_healthy', Number(health.healthy || 0)]);
+            rows.push(['health_broken', Number(health.broken || 0)]);
+            rows.push(['health_monitors_down', Number(health.monitorDown || 0)]);
+            rows.push(['health_unchecked', Number(health.unchecked || 0)]);
+        }
+
         const esc = (v) => {
             const str = String(v ?? '');
             return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
@@ -16080,7 +17534,17 @@ class DashboardConfig {
 
     /* ── Help (native) ─────────────────────────────────────────────────────── */
 
-    static HELP_TABS = ['start', 'config', 'organizing', 'search', 'health', 'inbox', 'stats', 'data', 'about'];
+    /*
+     * Ten tabs, because two of them were doing too much.
+     *
+     * Health carried nine panels and 23,000 characters against three on Data —
+     * a manual inside a tab — so the monitoring half (uptime, expectations,
+     * certificates, drift, maintenance, alerts) is its own. Tips is new: the
+     * catalogue of 51 already existed in the locales and in ConfigHelpTips,
+     * rendered nowhere in this config, while the Start tab showed eleven of
+     * them under "Everyday keys" and the prose promised the rest were here.
+     */
+    static HELP_TABS = ['start', 'tips', 'config', 'organizing', 'search', 'health', 'monitoring', 'inbox', 'stats', 'data'];
 
     helpTabLabel(tab) {
         const map = {
@@ -16088,17 +17552,53 @@ class DashboardConfig {
             config: ['config.helpTabConfig', 'Configuring'],
             organizing: ['config.helpTabOrganizing', 'Pages & bookmarks'],
             search: ['config.helpTabSearch', 'Search & keyboard'],
+            tips: ['config.helpTabTips', 'Tips'],
             health: ['config.helpTabHealth', 'Health'],
+            monitoring: ['config.helpTabMonitoring', 'Monitoring'],
             inbox: ['config.helpTabInbox', 'Inbox'],
             stats: ['config.helpTabStats', 'Statistics'],
             data: ['config.helpTabData', 'Data & hosting'],
-            about: ['config.helpTabAbout', 'About'],
         };
         const [key, fallback] = map[tab] || [tab, tab];
         return this.t(key, fallback);
     }
 
+    /**
+     * The prose is a locale scope of its own, so check it is actually here.
+     *
+     * Help's text is a third of the translation file and travels separately,
+     * fetched beside the config module. Every panel passes '' as its fallback,
+     * so a fetch that failed, or landed and was then overwritten by a core load
+     * finishing later, leaves a page of headings with nothing under them — and
+     * switching help tabs repaints from the same empty bundle, so it stays that
+     * way for as long as the view is open. Asking the bundle rather than a flag
+     * catches every route into that state; the repaint is what gets the reader
+     * out of it.
+     */
+    ensureHelpProse() {
+        const lang = this.dash?.language;
+        if (typeof lang?.ensureHelpTranslations !== 'function') return;
+        if (this._helpProsePending) return;
+        // One key that only ever ships in the help scope. Present means the
+        // scope is in; absent means it is not, whatever the flag says.
+        if (typeof lang.translations?.config?.helpStartBody === 'string') return;
+        this._helpProsePending = true;
+        lang._helpLoadedFor = null;
+        Promise.resolve(lang.ensureHelpTranslations(lang.currentLanguage))
+            .catch(() => {})
+            .finally(() => {
+                this._helpProsePending = false;
+                if (this.section !== 'help') return;
+                if (typeof lang.translations?.config?.helpStartBody !== 'string') return;
+                const body = document.getElementById('config-help-body');
+                if (!body) { this.render(); return; }
+                body.innerHTML = this.renderHelpBody();
+                this.bindHelpActions(body);
+            });
+    }
+
     renderHelp() {
+        this.ensureHelpProse();
         const esc = (v) => this.dash.escapeHtml(v);
         const tabs = DashboardConfig.HELP_TABS.map((tab) => {
             const active = tab === this.helpTab;
@@ -16121,6 +17621,38 @@ class DashboardConfig {
     }
 
     /**
+     * Everywhere help prose lives, as one list.
+     *
+     * The search used to walk HELP_TABS, which was the same thing until About
+     * stopped being a tab — and then "ko-fi" and "nextdash.cc" answered nothing
+     * found, from a search box three centimetres below the panel that says
+     * both. A source is a tab of Help or a section of config; the search reads
+     * them all and each result says where it came from, so moving prose again
+     * means adding a line here rather than discovering the gap by missing it.
+     * tests/config-help.spec.js fails if a source renders no panels.
+     */
+    static HELP_SEARCH_SOURCES() {
+        return [
+            ...DashboardConfig.HELP_TABS.map((tab) => ({ kind: 'tab', id: tab })),
+            { kind: 'section', id: 'about' },
+        ];
+    }
+
+    /** The panels of one search source, as rendered markup. */
+    renderHelpSourceBody(source) {
+        if (source.kind === 'section') {
+            return source.id === 'about' ? this.renderAbout() : '';
+        }
+        return this.renderHelpBodyFor(source.id);
+    }
+
+    helpSourceLabel(source) {
+        return source.kind === 'section'
+            ? this.sectionLabel(source.id)
+            : this.helpTabLabel(source.id);
+    }
+
+    /**
      * Search across every help tab at once.
      *
      * The tabs exist to keep each topic readable, but they also hide it: someone
@@ -16139,13 +17671,13 @@ class DashboardConfig {
         // when a body changes.
         const parse = new DOMParser();
         const hits = [];
-        for (const tab of DashboardConfig.HELP_TABS) {
-            const doc = parse.parseFromString(this.renderHelpBodyFor(tab), 'text/html');
+        for (const source of DashboardConfig.HELP_SEARCH_SOURCES()) {
+            const doc = parse.parseFromString(this.renderHelpSourceBody(source), 'text/html');
             for (const panel of doc.querySelectorAll('.config-panel')) {
                 const title = panel.querySelector('.config-panel-title')?.textContent?.trim() || '';
                 const text = panel.textContent.replace(/\s+/g, ' ').trim();
                 if (!text.toLowerCase().includes(query)) continue;
-                hits.push({ tab, title, panel: panel.outerHTML });
+                hits.push({ source, title, panel: panel.outerHTML });
             }
         }
 
@@ -16156,8 +17688,11 @@ class DashboardConfig {
 
         return hits.map((hit) => `
             <div class="config-help-result">
-                <button type="button" class="config-help-result-tab" data-help-tab-jump="${esc(hit.tab)}">
-                    ${esc(this.helpTabLabel(hit.tab))}
+                <button type="button" class="config-help-result-tab"
+                        ${hit.source.kind === 'section'
+                            ? `data-help-section-jump="${esc(hit.source.id)}"`
+                            : `data-help-tab-jump="${esc(hit.source.id)}"`}>
+                    ${esc(this.helpSourceLabel(hit.source))}
                 </button>
                 ${hit.panel}
             </div>`).join('');
@@ -16183,38 +17718,668 @@ class DashboardConfig {
      * the old behaviour would send people looking for controls that do not exist.
      */
     renderHelpBody() {
+        this.ensureHelpProse();
         switch (this.helpTab) {
             case 'config': return this.renderHelpConfig();
             case 'organizing': return this.renderHelpOrganizing();
             case 'search': return this.renderHelpSearch();
+            case 'tips': return this.renderHelpTipsTab();
             case 'health': return this.renderHelpHealth();
+            case 'monitoring': return this.renderHelpMonitoring();
             case 'inbox': return this.renderHelpInbox();
             case 'stats': return this.renderHelpStats();
             case 'data': return this.renderHelpData();
-            case 'about': return this.renderHelpAbout();
             default: return this.renderHelpStart();
         }
     }
 
-    /** A help panel whose body is trusted, translator-supplied HTML. */
-    helpPanel(titleKey, titleFallback, bodyKey, bodyFallback, extra = '') {
+    /**
+     * A help panel whose body is trusted, translator-supplied HTML.
+     *
+     * Every panel carries an id taken from its title key, so one topic can be
+     * linked to rather than "open config, Help, the Health tab, scroll". The
+     * link button beside the heading copies #config/help/<tab>/<id>, which
+     * restoreConfigHash writes and openHelpPanelFromHash scrolls to. The state
+     * line, where a panel names a feature that can be switched off, sits under
+     * the heading — see helpFeatureState().
+     */
+    helpPanel(titleKey, titleFallback, bodyKey, bodyFallback, extra = '', titleOverride = '') {
         const esc = (v) => this.dash.escapeHtml(v);
+        const id = DashboardConfig.helpPanelId(titleKey);
         return `
-            <div class="config-panel">
-                <h3 class="config-panel-title">${esc(this.t(titleKey, titleFallback))}</h3>
+            <div class="config-panel config-help-panel" id="help-panel-${esc(id)}" data-help-panel="${esc(id)}">
+                <div class="config-help-panel-head">
+                    <h3 class="config-panel-title">${esc(titleOverride || this.t(titleKey, titleFallback))}</h3>
+                    <button type="button" class="config-help-panel-link" data-help-panel-link="${esc(id)}"
+                            title="${esc(this.t('config.helpCopyLink', 'Copy a link to this topic'))}"
+                            aria-label="${esc(this.t('config.helpCopyLink', 'Copy a link to this topic'))}">🔗</button>
+                </div>
+                ${this.helpFeatureState(titleKey)}
+                ${this.renderHelpArt(titleKey)}
                 <div class="config-help-prose">${this.t(bodyKey, bodyFallback)}</div>
                 ${extra}
+                ${this.renderHelpSeeAlso(titleKey)}
             </div>`;
+    }
+
+    /**
+     * Where a topic is continued, when that is another tab.
+     *
+     * Health and Monitoring answer different questions — what is broken now
+     * against how something behaves over time — and splitting them was right.
+     * But the split left no thread: a reader who arrives at "working through the
+     * list" has no way of knowing that certificates, drift and maintenance
+     * windows are a tab further along, and the tab strip does not say so. Only
+     * pairs that genuinely continue each other get a line; a list of related
+     * reading on every panel is a table of contents nobody asked for.
+     */
+    renderHelpSeeAlso(titleKey) {
+        const links = DashboardConfig.HELP_PANEL_SEE_ALSO[titleKey];
+        if (!Array.isArray(links) || !links.length) return '';
+        const esc = (v) => this.dash.escapeHtml(v);
+        const buttons = links.map((link) => {
+            const label = this.t(link.labelKey, link.label || '');
+            return `<button type="button" class="config-help-see-also-link"
+                    data-help-goto-tab="${esc(link.tab)}" data-help-goto-panel="${esc(link.panel)}">${esc(label)}</button>`;
+        }).join('');
+        return `
+            <p class="config-help-see-also">
+                <span class="config-help-see-also-label">${esc(this.t('config.helpSeeAlso', 'Continues in'))}</span>
+                ${buttons}
+            </p>`;
+    }
+
+    /**
+     * The pairs worth threading, by the panel the reader is on.
+     *
+     * `panel` is the target's own id — the one its link button copies — so a
+     * jump lands on the panel rather than on the top of its tab.
+     */
+    static HELP_PANEL_SEE_ALSO = {
+        'config.helpHealthTitle': [
+            { tab: 'monitoring', panel: 'health-stats', labelKey: 'config.helpHealthStatsTitle', label: 'Uptime, trends & statistics' },
+            { tab: 'monitoring', panel: 'notifications', labelKey: 'config.helpNotificationsTitle', label: 'Alerts & notifications' },
+        ],
+        'config.helpHealthViewTitle': [
+            { tab: 'monitoring', panel: 'health-drift', labelKey: 'config.helpHealthDriftTitle', label: 'Redirect, title & content drift' },
+        ],
+        'config.helpHealthWalkthroughTitle': [
+            { tab: 'monitoring', panel: 'health-expect', labelKey: 'config.helpHealthExpectTitle', label: 'When "up" is not good enough' },
+            { tab: 'monitoring', panel: 'health-maintenance', labelKey: 'config.helpHealthMaintenanceTitle', label: 'Maintenance windows' },
+        ],
+        'config.helpHealthStatsTitle': [
+            { tab: 'health', panel: 'health-view', labelKey: 'config.helpHealthViewTitle', label: 'Working through the list' },
+        ],
+        'config.helpHealthCertTitle': [
+            { tab: 'health', panel: 'health', labelKey: 'config.helpHealthTitle', label: 'Availability & health' },
+        ],
+        'config.helpHealthMaintenanceTitle': [
+            { tab: 'monitoring', panel: 'notifications', labelKey: 'config.helpNotificationsTitle', label: 'Alerts & notifications' },
+        ],
+        'config.helpNotificationsTitle': [
+            { tab: 'health', panel: 'health', labelKey: 'config.helpHealthTitle', label: 'Availability & health' },
+        ],
+    };
+
+    /**
+     * The drawings some help panels open with.
+     *
+     * Help is prose by nature, and several of these panels are about shapes —
+     * how a grid is laid out, what density does to a row, where a pasted link
+     * goes. A paragraph describing a shape is read twice: once to decode, once
+     * to picture. The strip puts the picture first and lets the prose confirm
+     * it, the same way the spread-across-columns tour opens each of its steps.
+     *
+     * Only the panels whose subject is genuinely spatial get one. A drawing
+     * bolted onto "Privacy & analytics" would be decoration, and decoration is
+     * what this is meant to replace.
+     */
+    renderHelpArt(titleKey) {
+        const art = DashboardConfig.HELP_PANEL_ART[titleKey];
+        if (!art || typeof window.SettingArt?.render !== 'function') return '';
+        const esc = (v) => this.dash.escapeHtml(v);
+        const parts = art.map(({ kind, value, captionKey, caption }) => {
+            const drawn = window.SettingArt.render(kind, this.resolveArtLabels(value));
+            if (!drawn) return '';
+            const label = captionKey ? this.t(captionKey, caption || '') : (caption || '');
+            return `<span class="config-help-art-item">${drawn}`
+                + (label ? `<span class="config-help-art-caption">${esc(label)}</span>` : '')
+                + `</span>`;
+        }).filter(Boolean).join('');
+        return parts ? `<div class="config-help-art">${parts}</div>` : '';
+    }
+
+    /**
+     * The words inside a drawing, in the reader's language.
+     *
+     * A chip reading "Bookmark" beside Dutch prose is worse than no chip: it
+     * reads as the name of something rather than as the word. So a label in
+     * HELP_PANEL_ART is written as `{ k, d }` — key and fallback — and resolved
+     * here, beside the other places this view translates. Anything that is not
+     * a word stays as it is: `200 OK`, `Shift + H`, `data/*.json` and the
+     * numbers a meter is drawn from are the same in every language.
+     */
+    resolveArtLabels(value) {
+        if (Array.isArray(value)) return value.map((v) => this.resolveArtLabels(v));
+        if (value && typeof value === 'object') {
+            if (typeof value.k === 'string') return this.t(value.k, value.d || '');
+            const out = {};
+            Object.keys(value).forEach((key) => { out[key] = this.resolveArtLabels(value[key]); });
+            return out;
+        }
+        return value;
+    }
+
+    /**
+     * Whether the thing this panel describes is switched on here.
+     *
+     * Help explains features that can be off, and said the same thing either
+     * way — so a reader could follow a page about the inbox with no idea that
+     * theirs is disabled, and no hint where the switch is. Only panels whose
+     * subject is a single setting get a line; the rest get nothing, which is
+     * the honest answer for a panel about how arrow keys work.
+     */
+    helpFeatureState(titleKey) {
+        const feature = DashboardConfig.HELP_PANEL_FEATURES[titleKey];
+        if (!feature) return '';
+        const esc = (v) => this.dash.escapeHtml(v);
+        const on = feature.isOn(this.dash.settings || {}, this.dash);
+        const label = on
+            ? this.t('config.helpFeatureOn', 'Switched on for you.')
+            : this.t('config.helpFeatureOff', 'Switched off for you.');
+        return `
+            <p class="config-help-state${on ? ' is-on' : ' is-off'}">
+                <span class="config-help-state-dot" aria-hidden="true"></span>
+                <span>${esc(label)}</span>
+                <button type="button" class="config-btn config-btn--small"
+                        data-overview-go='${esc(JSON.stringify(feature.go))}'>${esc(
+                    this.t('config.helpFeatureGo', 'Open the setting'))}</button>
+            </p>`;
+    }
+
+    /**
+     * The drawings that open a help panel, by the panel's title key.
+     *
+     * Kept as data rather than spread through the render methods so the set
+     * stays reviewable: one place says which topics are spatial enough to be
+     * worth a picture, and every drawing comes from the same small vocabulary
+     * as the ones in the config panels — so a reader meets the grid, the
+     * spacing and the margins here in exactly the shape they will meet them
+     * under Appearance.
+     */
+    static HELP_PANEL_ART = {
+        // ── Getting started ────────────────────────────────────────────────
+        'config.helpVersionTitle': [
+            {
+                kind: 'flow',
+                value: [
+                    { k: 'config.helpArtLifeCapture', d: 'Capture' },
+                    { k: 'config.helpArtLifeCheck', d: 'Check' },
+                    { k: 'config.helpArtLifeTidy', d: 'Tidy' },
+                    { k: 'config.feedsTitle', d: 'Fresh' },
+                ],
+                captionKey: 'config.helpArtLifeOfLink', caption: 'The life of a link',
+            },
+        ],
+        'config.helpStartTitle': [
+            {
+                kind: 'flow',
+                value: [
+                    { k: 'config.page', d: 'Page' },
+                    { k: 'config.category', d: 'Category' },
+                    { k: 'config.detailBookmarkFallback', d: 'Bookmark' },
+                ],
+                captionKey: 'config.helpArtStack', caption: 'How it is stacked',
+            },
+            { kind: 'keys', value: ['>', '+', '/'], captionKey: 'config.helpArtStartKeys', caption: 'Search, add, tags' },
+        ],
+        'config.helpFirstHourTitle': [
+            {
+                kind: 'steps',
+                value: [
+                    { k: 'config.helpArtStepImport', d: 'Import' },
+                    { k: 'config.helpArtStepPages', d: 'Split across pages' },
+                    { k: 'config.helpArtStepShortcuts', d: 'Give shortcuts' },
+                    { k: 'config.helpArtStepChecks', d: 'Turn on checks' },
+                ],
+            },
+        ],
+        'config.helpStartDailyTitle': [
+            {
+                kind: 'keys', value: ['>', 'Ctrl + V', '?', 'Shift + E'],
+                captionKey: 'config.helpArtDailyKeys', caption: 'A day in four keys',
+            },
+        ],
+
+        // ── Statistics ─────────────────────────────────────────────────────
+        'config.helpStatsTitle': [
+            {
+                kind: 'bars', value: { values: [0.5, 0.95, 0.4, 0.7, 0.3, 0.55], mark: 1 },
+                captionKey: 'config.helpArtStatsBars', caption: 'What you open, ranked',
+            },
+        ],
+        'config.helpStatsReadingTitle': [
+            {
+                kind: 'meter', value: { fill: 0.78 },
+                captionKey: 'config.helpArtConcentration', caption: 'Concentration',
+            },
+            {
+                kind: 'spark', value: [0.3, 0.42, 0.35, 0.6, 0.55, 0.8],
+                captionKey: 'config.helpArtTrend', caption: 'The direction it moved',
+            },
+        ],
+        'config.helpStatsUsageTitle': [
+            {
+                kind: 'flow',
+                value: [
+                    { k: 'config.helpArtOpenBookmark', d: 'Open a bookmark' },
+                    '+1',
+                    { k: 'config.helpArtTimestamp', d: 'Time stamped' },
+                ],
+                captionKey: 'config.helpArtCountMechanism', caption: 'The whole mechanism',
+            },
+        ],
+        'config.helpStatsPrivacyTitle': [
+            {
+                kind: 'boundary',
+                value: {
+                    label: { k: 'config.helpArtYourServer', d: 'Your server' },
+                    inside: [
+                        { k: 'config.statsBookmarks', d: 'Bookmarks' },
+                        { k: 'config.helpArtCounts', d: 'Counts' },
+                    ],
+                    out: null,
+                },
+                captionKey: 'config.helpArtNothingLeaves', caption: 'None of it is sent anywhere',
+            },
+        ],
+
+        // ── Configuring ────────────────────────────────────────────────────
+        'config.helpConfigTitle': [
+            { kind: 'panelMap', value: 'rail', captionKey: 'config.helpArtConfigRail', caption: 'Sections down the left' },
+            { kind: 'keys', value: ['Shift + S', 'Esc'], captionKey: 'config.helpArtConfigKeys', caption: 'In and out' },
+        ],
+        'config.helpBehaviorTitle': [
+            { kind: 'panelMap', value: 'tabs', captionKey: 'config.helpArtBehaviorTabs', caption: 'Five sub-tabs' },
+            {
+                kind: 'toggles', value: [true, false, true],
+                captionKey: 'config.helpArtSavesInstantly', caption: 'Saved the moment you change it',
+            },
+        ],
+        'config.helpAppearanceTitle': [
+            { kind: 'spacing', value: 'snug', captionKey: 'config.categorySpacingSnug', caption: 'Snug' },
+            { kind: 'spacing', value: 'airy', captionKey: 'config.categorySpacingAiry', caption: 'Airy' },
+            { kind: 'margins', value: 'balanced', captionKey: 'config.sideMarginLabel', caption: 'Page margins' },
+            { kind: 'density', value: 'dense', captionKey: 'config.densityDense', caption: 'Dense' },
+        ],
+        'config.helpThemesTitle': [
+            {
+                kind: 'swatches', value: ['light', 'dark'],
+                captionKey: 'config.helpArtThemePair', caption: 'A light and a dark half',
+            },
+            {
+                kind: 'swatches', value: ['accent', 'light', 'dark'],
+                captionKey: 'config.helpArtThemeEditor', caption: 'Or recolour any of them',
+            },
+        ],
+
+        // ── Pages & bookmarks ──────────────────────────────────────────────
+        'config.helpWorkspaceTitle': [
+            { kind: 'grid', value: 2, captionKey: 'config.helpArtColumns2', caption: '2 columns' },
+            { kind: 'grid', value: 3, captionKey: 'config.helpArtColumns3', caption: '3 columns' },
+            { kind: 'grid', value: 5, captionKey: 'config.helpArtColumns5', caption: '5 columns' },
+        ],
+        'config.helpBookmarksTitle': [
+            {
+                kind: 'bookmarkRow', value: ['icon', 'tag', 'key', 'dot'],
+                captionKey: 'config.helpArtRowCarries', caption: 'Icon, name, tags, shortcut, availability',
+            },
+        ],
+        'config.helpTagsTitle': [
+            {
+                kind: 'query', value: [['token', 'tag:'], ['text', 'work']],
+                captionKey: 'config.helpArtTagFilter', caption: 'Filters without rearranging the grid',
+            },
+            { kind: 'keys', value: ['/'], captionKey: 'config.helpArtTagCloud', caption: 'The tag cloud' },
+        ],
+
+        // ── Search & keyboard ──────────────────────────────────────────────
+        'config.helpSearchTitle': [
+            { kind: 'keys', value: ['>', ':', '?'], captionKey: 'config.helpArtThreeModes', caption: 'Three modes, one overlay' },
+            {
+                kind: 'query',
+                value: [['prefix', '>'], ['text', { k: 'config.helpArtSearchQuery', d: 'status page' }]],
+            },
+        ],
+        'config.helpFindersTitle': [
+            {
+                kind: 'query', value: [['prefix', '?'], ['token', 'g'], ['text', 'nextdash']],
+                captionKey: 'config.helpArtFinderExample', caption: 'Google, without opening Google first',
+            },
+        ],
+        'config.helpCommandsTitle': [
+            {
+                kind: 'query', value: [['prefix', ':'], ['text', 'layout modern']],
+                captionKey: 'config.helpArtCommandExample', caption: 'Actions, not destinations',
+            },
+        ],
+        'config.helpKeyboardTitle': [
+            {
+                kind: 'keys', value: ['>', '?', ':', '+', '!', '/'],
+                captionKey: 'config.helpArtOverlayKeys', caption: 'The overlays',
+            },
+            {
+                kind: 'keys', value: ['Shift + H', 'Shift + I', 'Shift + S'],
+                captionKey: 'config.helpArtViewKeys', caption: 'The views',
+            },
+            {
+                kind: 'keys', value: ['j', 'k', 'g', 'G'],
+                captionKey: 'config.helpArtMoveKeys', caption: 'Moving around',
+            },
+        ],
+        'config.helpConfigKeyboardTitle': [
+            { kind: 'panelMap', value: 'body', captionKey: 'config.helpArtConfigLayer', caption: 'Its own keyboard layer' },
+            { kind: 'keys', value: ['j', 'k', 'g', 'G', '!'] },
+        ],
+
+        // ── Health ─────────────────────────────────────────────────────────
+        'config.helpHealthTitle': [
+            {
+                kind: 'states',
+                value: [
+                    ['off', { k: 'config.checkModeOff', d: 'Off' }],
+                    ['idle', { k: 'config.checkModePeriodic', d: 'Periodic' }],
+                    ['ok', { k: 'config.checkModeMonitor', d: 'Monitor' }],
+                ],
+                captionKey: 'config.helpArtCheckModes', caption: 'Three availability modes',
+            },
+        ],
+        'config.helpHealthViewTitle': [
+            {
+                kind: 'states',
+                value: [
+                    ['bad', { k: 'config.statsBroken', d: 'Broken' }],
+                    ['warn', { k: 'config.statsDuplicates', d: 'Duplicates' }],
+                    ['idle', { k: 'config.statsStale', d: 'Stale' }],
+                    ['off', { k: 'config.statsUnchecked', d: 'Unchecked' }],
+                ],
+                captionKey: 'config.helpArtHealthTiles', caption: 'The tiles that filter the list',
+            },
+            { kind: 'keys', value: ['Shift + H'] },
+        ],
+        'config.helpHealthWalkthroughTitle': [
+            {
+                kind: 'steps',
+                value: [
+                    { k: 'config.checkModeMonitor', d: 'Monitor' },
+                    { k: 'config.monitorInterval', d: 'Check every' },
+                    { k: 'config.helpArtStepExpected', d: 'Expected response' },
+                    { k: 'config.maintenanceTitle', d: 'Maintenance windows' },
+                ],
+            },
+        ],
+
+        // ── Monitoring ─────────────────────────────────────────────────────
+        'config.helpHealthStatsTitle': [
+            {
+                kind: 'bars', value: { values: [1, 1, 1, 0.25, 1, 1, 1], mark: 3, tone: 'bad' },
+                captionKey: 'config.helpArtHeartbeat', caption: 'The last checks, one bar each',
+            },
+            {
+                kind: 'spark', value: [0.35, 0.4, 0.38, 0.5, 0.45, 0.42],
+                captionKey: 'config.helpArtResponseTime', caption: 'Response time',
+            },
+            {
+                kind: 'meter', value: { fill: 0.99, tone: 'ok' },
+                captionKey: 'config.helpArtUptime', caption: 'Uptime over 24 hours',
+            },
+        ],
+        'config.helpHealthExpectTitle': [
+            {
+                kind: 'flow',
+                value: [
+                    '200 OK',
+                    { k: 'config.helpArtExpectText', d: 'Contains “Login”' },
+                    { k: 'config.statsHealthy', d: 'Healthy' },
+                ],
+                captionKey: 'config.helpArtExpectTwoTests', caption: 'Answering is not the same as working',
+            },
+        ],
+        'config.helpHealthCertTitle': [
+            {
+                kind: 'meter', value: { fill: 0.86, mark: 0.72, tone: 'warn' },
+                captionKey: 'config.helpArtCertMeter', caption: 'Warned before it expires, not after',
+            },
+        ],
+        'config.helpHealthDriftTitle': [
+            {
+                kind: 'flow',
+                value: [
+                    '200 OK',
+                    { k: 'config.helpArtDriftChanged', d: 'Title changed' },
+                    { k: 'config.helpArtDriftFlagged', d: 'Flagged' },
+                ],
+                captionKey: 'config.helpArtDrift', caption: 'Answering fine, no longer your page',
+            },
+        ],
+        'config.helpFreshTitle': [
+            {
+                kind: 'bookmarkRow', value: ['icon', 'key'],
+                captionKey: 'config.helpArtFreshRow', caption: 'A count on the row',
+            },
+            {
+                kind: 'flow',
+                value: [
+                    { k: 'config.helpArtFreshPreview', d: 'Link preview' },
+                    { k: 'config.helpArtFreshFeed', d: 'Feed address' },
+                    '304',
+                ],
+                captionKey: 'config.helpArtFreshCost', caption: 'Found once, then asked cheaply',
+            },
+        ],
+        'config.helpHealthMaintenanceTitle': [
+            {
+                kind: 'dayWindow', value: { from: 3, to: 4 },
+                captionKey: 'config.helpArtWindowNightly', caption: 'A nightly window is not an incident',
+            },
+        ],
+        'config.helpNotificationsTitle': [
+            {
+                kind: 'flow',
+                value: [
+                    { k: 'config.helpArtDown', d: 'Down' },
+                    { k: 'config.helpArtAlert', d: 'Push or webhook' },
+                    { k: 'config.helpArtYourDevices', d: 'Your devices' },
+                ],
+            },
+        ],
+
+        // ── Inbox ──────────────────────────────────────────────────────────
+        'config.helpInboxTitle': [
+            {
+                kind: 'flow',
+                value: [
+                    'Ctrl + V',
+                    { k: 'config.helpTabInbox', d: 'Inbox' },
+                    { k: 'config.detailBookmarkFallback', d: 'Bookmark' },
+                ],
+                captionKey: 'config.helpArtInboxRoute', caption: 'Where a pasted link goes',
+            },
+            { kind: 'keys', value: ['Shift + I', '0'] },
+        ],
+        'config.helpInboxWorkTitle': [
+            {
+                kind: 'states',
+                value: [
+                    ['idle', { k: 'config.statsInboxUnread', d: 'Unread' }],
+                    ['off', { k: 'config.helpArtSnoozed', d: 'Snoozed' }],
+                    ['ok', { k: 'config.statsInboxWithNote', d: 'With note' }],
+                ],
+                captionKey: 'config.helpArtInboxFilters', caption: 'The filters, each with its count',
+            },
+        ],
+        'config.helpInboxTriageTitle': [
+            {
+                kind: 'keys', value: ['j', 'k', 't', 'z'],
+                captionKey: 'config.helpArtTriageKeys', caption: 'One link at a time, no mouse',
+            },
+            {
+                kind: 'flow',
+                value: [
+                    { k: 'config.helpArtTriageOne', d: 'One link' },
+                    { k: 'config.helpArtTriageDecide', d: 'Keep or drop' },
+                    { k: 'config.helpArtTriageNext', d: 'Next' },
+                ],
+            },
+        ],
+        'config.helpInboxSettingsTitle': [
+            {
+                kind: 'toggles', value: [true, false],
+                captionKey: 'config.helpArtInboxSwitch', caption: 'One switch turns the whole inbox off',
+            },
+        ],
+        'config.helpInboxTourTitle': [
+            {
+                kind: 'steps', value: ['', '', '', '', '', '', ''],
+                captionKey: 'config.helpArtTourSteps', caption: 'Seven steps, shown once',
+            },
+        ],
+        'config.helpCaptureTitle': [
+            {
+                kind: 'flow',
+                value: [
+                    { k: 'config.helpArtShareSheet', d: 'Share sheet' },
+                    '/add',
+                    { k: 'config.helpTabInbox', d: 'Inbox' },
+                ],
+                captionKey: 'config.helpArtCaptureRoute', caption: 'From a phone, with nothing installed',
+            },
+        ],
+
+        // ── Data & hosting ─────────────────────────────────────────────────
+        'config.helpDataTitle': [
+            {
+                kind: 'flow',
+                value: [
+                    { k: 'config.helpArtBackup', d: 'Backup' },
+                    'ZIP',
+                    { k: 'config.trashRestore', d: 'Restore' },
+                ],
+                captionKey: 'config.helpArtRestoreSafety', caption: 'A restore copies what is there first',
+            },
+        ],
+        'config.helpServerLogTitle': [
+            {
+                kind: 'states',
+                value: [
+                    ['off', { k: 'config.helpArtLogOff', d: 'Off by default' }],
+                    ['idle', { k: 'config.helpArtLogInfo', d: 'Info' }],
+                    ['warn', { k: 'config.helpArtLogWarn', d: 'Warning' }],
+                    ['bad', { k: 'config.helpArtLogError', d: 'Error' }],
+                ],
+            },
+        ],
+        'config.helpSelfHostingTitle': [
+            {
+                kind: 'boundary',
+                value: {
+                    label: { k: 'config.helpArtYourServer', d: 'Your server' },
+                    inside: [{ k: 'config.helpArtSingleBinary', d: 'One binary' }, 'data/*.json'],
+                    out: null,
+                },
+                captionKey: 'config.helpArtNoDatabase', caption: 'Plain files, no database',
+            },
+        ],
+    };
+
+    /**
+     * Panels whose subject is one switch, and where that switch lives.
+     *
+     * Deliberately short: a state line is worth having where it answers "is
+     * this on for me", and noise anywhere else. `go` is the shape
+     * handleOverviewGo already understands.
+     */
+    static HELP_PANEL_FEATURES = {
+        'config.helpInboxTitle': {
+            isOn: (s) => s.inboxEnabled !== false,
+            go: { section: 'behavior', behaviorTab: 'search' },
+        },
+        'config.helpHealthTitle': {
+            isOn: (s) => s.showStatus === true || s.healthAutoRecheckEnabled === true,
+            go: { section: 'behavior', behaviorTab: 'status' },
+        },
+        'config.helpNotificationsTitle': {
+            isOn: (s) => s.monitorNotifyEnabled === true,
+            go: { section: 'behavior', behaviorTab: 'status' },
+        },
+        'config.helpPrivacyTitle': {
+            isOn: (s) => s.analyticsOptIn === true,
+            go: { section: 'behavior', behaviorTab: 'privacy' },
+        },
+        // Both are off on a fresh install, which is exactly when a reader is
+        // most likely to follow the prose and find nothing where it says.
+        'config.helpServerLogTitle': {
+            isOn: (s) => s.serverLogEnabled === true,
+            go: { section: 'data-backups', dbTab: 'logs' },
+        },
+        'config.helpFreshTitle': {
+            isOn: (s) => s.feedsEnabled === true,
+            go: { section: 'behavior', behaviorTab: 'fresh' },
+        },
+    };
+
+    /** `config.helpHealthCertTitle` → `health-cert`: short, stable, URL-safe. */
+    static helpPanelId(titleKey) {
+        return String(titleKey)
+            .replace(/^config\.help/, '')
+            .replace(/Title$/, '')
+            .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+            .toLowerCase() || 'panel';
+    }
+
+    /**
+     * The version panel's heading, from the release index rather than by hand.
+     *
+     * It was a translated string carrying the number — four files to edit every
+     * release, and it read "nextDash 1.1.0" for two releases after 1.1.0 because
+     * nobody remembered the fourth. The tag comes from the same index the ★
+     * modal and Overview → Latest update read, so all three agree by
+     * construction; the plain product name is what shows if that has not
+     * loaded, which is never wrong, only less specific.
+     */
+    helpVersionHeading() {
+        const tag = String(this._latestRelease?.tag || '').trim().replace(/^v/i, '');
+        if (!tag) {
+            // Not loaded yet on a first visit that opened straight into Help.
+            this.ensureLatestReleaseForHelp();
+            return '';
+        }
+        return `nextDash ${tag}`;
+    }
+
+    /** Fetch the release index once, then repaint Help so the heading fills in. */
+    ensureLatestReleaseForHelp() {
+        if (this._latestRelease || this._latestReleaseForHelpPending) return;
+        this._latestReleaseForHelpPending = true;
+        void this.loadLatestRelease().finally(() => {
+            this._latestReleaseForHelpPending = false;
+            if (this.section !== 'help' || this.helpTab !== 'start' || !this._latestRelease) return;
+            const body = document.getElementById('config-help-body');
+            if (!body) return;
+            body.innerHTML = this.renderHelpBody();
+            this.bindHelpActions(body);
+        });
     }
 
     renderHelpStart() {
         const esc = (v) => this.dash.escapeHtml(v);
         const tips = this.helpTips().map((tip) => `<li class="config-help-tip">${tip}</li>`).join('');
-        return this.helpPanel('config.helpVersionTitle', 'nextDash 1.0',
+        return this.helpPanel('config.helpVersionTitle', 'nextDash',
             'config.helpVersionBody', '',
             `<div class="config-actions">
                 <button type="button" class="config-btn" data-help-action="whats-new">${esc(this.t('config.helpVersionWhatsNew', "See what's new"))}</button>
-            </div>`)
+            </div>`,
+            this.helpVersionHeading())
             + this.helpPanel('config.helpStartTitle', 'Getting started',
             'config.helpStartBody', '',
             `<div class="config-actions">
@@ -16263,8 +18428,15 @@ class DashboardConfig {
     }
 
     renderHelpOrganizing() {
+        const esc = (v) => this.dash.escapeHtml(v);
+        // The walkthrough the corner card offers, kept reachable after the card
+        // has been dismissed — which is the state most readers of this page are
+        // in. Same pattern as the cheat sheet button above it.
         return this.helpPanel('config.helpWorkspaceTitle', 'Pages & categories',
-            'config.helpWorkspaceBody', '')
+            'config.helpWorkspaceBody', '',
+            `<div class="config-actions">
+                <button type="button" class="config-btn" data-help-action="spread-tour">${esc(this.t('config.helpSpreadTour', 'Walk me through spreading a category'))}</button>
+            </div>`)
             + this.helpPanel('config.helpBookmarksTitle', 'Bookmarks',
                 'config.helpBookmarksBody', '')
             + this.helpPanel('config.helpTagsTitle', 'Tags & collections',
@@ -16303,8 +18475,22 @@ class DashboardConfig {
             'config.helpHealthBody', '')
             + this.helpPanel('config.helpHealthViewTitle', 'Working through the list',
                 'config.helpHealthViewBody', '')
-            + this.helpPanel('config.helpHealthStatsTitle', 'Uptime, trends & statistics',
-                'config.helpHealthStatsBody', '')
+            + this.helpPanel('config.helpHealthWalkthroughTitle', 'Setting up one monitored bookmark, start to finish',
+                'config.helpHealthWalkthroughBody', '');
+    }
+
+    /**
+     * The monitoring half, which is a different question.
+     *
+     * Health answers "what is broken and how do I fix it"; these six answer
+     * "how do I watch something over time". They sat in the same tab, which is
+     * how it came to hold nine panels against three on Data — the longest tab
+     * in help by a factor of seven, and the one people scrolled past.
+     */
+    renderHelpMonitoring() {
+        const esc = (v) => this.dash.escapeHtml(v);
+        return this.helpPanel('config.helpHealthStatsTitle', 'Uptime, trends & statistics',
+            'config.helpHealthStatsBody', '')
             + this.helpPanel('config.helpHealthExpectTitle', 'When "up" is not good enough',
                 'config.helpHealthExpectBody', '')
             + this.helpPanel('config.helpHealthCertTitle', 'Certificate expiry',
@@ -16313,10 +18499,64 @@ class DashboardConfig {
                 'config.helpHealthDriftBody', '')
             + this.helpPanel('config.helpHealthMaintenanceTitle', 'Maintenance windows',
                 'config.helpHealthMaintenanceBody', '')
+            // Fresh sat in a paragraph of the Behavior article, which is where
+            // its switch is rather than where its subject is: it is a thing the
+            // dashboard does with a bookmark, like everything else on this tab.
+            + this.helpPanel('config.helpFreshTitle', 'Fresh',
+                'config.helpFreshBody', '',
+                `<div class="config-actions">
+                    <button type="button" class="config-btn" data-help-action="fresh-tour">${esc(this.t('config.helpFreshTour', 'Walk me through Fresh'))}</button>
+                </div>`)
             + this.helpPanel('config.helpNotificationsTitle', 'Alerts & notifications',
-                'config.helpNotificationsBody', '')
-            + this.helpPanel('config.helpHealthWalkthroughTitle', 'Setting up one monitored bookmark, start to finish',
-                'config.helpHealthWalkthroughBody', '');
+                'config.helpNotificationsBody', '');
+    }
+
+    /**
+     * Every tip, grouped, on a tab of its own.
+     *
+     * The catalogue has lived in the locales and in ConfigHelpTips all along —
+     * the old config rendered it into #help-tips-body, an element this view does
+     * not have, so it rendered nowhere. Meanwhile the Start tab showed eleven
+     * hand-picked keys and the prose promised the full list was here. Built from
+     * the shared groups rather than a second copy, so the rotating tip above the
+     * footer and this page cannot drift apart.
+     */
+    renderHelpTipsTab() {
+        const esc = (v) => this.dash.escapeHtml(v);
+        const groups = window.ConfigHelpTips?.TIP_GROUPS || [];
+        if (!groups.length) {
+            return `<div class="config-panel"><p class="config-panel-empty">${
+                esc(this.t('config.helpTipsUnavailable', 'The tips are not available.'))}</p></div>`;
+        }
+        const panels = groups.map((group) => {
+            // Tips are our own markup (they carry <code> keys), never user input.
+            const items = (group.tips || [])
+                .map((key) => this.t(`config.${key}`, ''))
+                .filter((tip) => tip && !tip.startsWith('config.'))
+                .map((tip) => `<li class="config-help-tip" data-tip-row>${tip}</li>`)
+                .join('');
+            if (!items) return '';
+            return `
+                <div class="config-panel" data-tip-group>
+                    <h3 class="config-panel-title">${esc(this.t(`config.${group.titleKey}`, group.titleFallback))}</h3>
+                    <ul class="config-help-tips">${items}</ul>
+                </div>`;
+        }).join('');
+        // A filter of its own, beside the one in the header: help's search
+        // returns whole panels, and a panel here is a group of up to eight tips
+        // — which is the wrong grain when you are looking for the one key that
+        // does the thing. This narrows to the line.
+        const filter = `
+            <div class="config-help-tips-filter">
+                <input type="search" class="config-text" id="config-tips-filter"
+                       placeholder="${esc(this.t('config.helpTipsFilterPlaceholder', 'Filter tips…'))}"
+                       aria-label="${esc(this.t('config.helpTipsFilterLabel', 'Filter tips'))}"
+                       value="${esc(this.tipsQuery || '')}">
+                <span class="config-help-tips-count" data-tips-count aria-live="polite"></span>
+            </div>`;
+        return `<p class="config-view-intro">${esc(this.t('config.helpTipsIntro',
+            'Small things that save a keystroke, grouped by what you are doing. The dashboard shows one of these above the buttons when you switch that on.'))}</p>${filter}${panels}
+            <p class="config-panel-empty" data-tips-empty hidden>${esc(this.t('config.helpTipsFilterNone', 'No tip matches that.'))}</p>`;
     }
 
     /**
@@ -16334,7 +18574,78 @@ class DashboardConfig {
             + this.helpPanel('config.helpInboxTriageTitle', 'Triage mode',
                 'config.helpInboxTriageBody', '')
             + this.helpPanel('config.helpInboxSettingsTitle', 'Settings behind the scenes',
-                'config.helpInboxSettingsBody', '');
+                'config.helpInboxSettingsBody', '')
+            // Last, not first: someone reading this page has already found the
+            // documentation, so what the tour said is a footnote for them. It
+            // is here for the reader who skipped or dismissed it and wants to
+            // know what they walked past.
+            + this.renderCapturePanel()
+            + this.helpPanel('config.helpInboxTourTitle', 'The one-time tour',
+                'config.helpInboxTourBody', '');
+    }
+
+    /**
+     * Saving a link from outside nextDash: the share sheet and the bookmarklet.
+     *
+     * The bookmarklet is built here rather than printed in the manual, because
+     * the useful half of it is this install's own address — and a token, if this
+     * one asks for one. A line someone has to edit before it works is a line
+     * most people never use.
+     */
+    renderCapturePanel() {
+        const esc = (v) => this.dash.escapeHtml(v);
+        const origin = window.location.origin;
+        const token = String(this._captureToken || '').trim();
+        const suffix = token ? `&token=${encodeURIComponent(token)}` : '';
+        const bookmarklet = `javascript:(function(){window.open('${origin}/add?url='`
+            + `+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title)`
+            + `+'${suffix}','_blank');})();`;
+
+        return `
+            <div class="config-panel">
+                <h3 class="config-panel-title">${esc(this.t('config.helpCaptureTitle', 'Saving a link from anywhere'))}</h3>
+                ${this.renderHelpArt('config.helpCaptureTitle')}
+                <div class="config-help-prose">${this.t('config.helpCaptureBody', '')}</div>
+                <label class="config-field">
+                    <span class="config-field-label">${esc(this.t('config.helpCaptureTokenLabel', 'Capture token (only if this install has one)'))}</span>
+                    <input type="text" class="config-input" data-capture-token value="${esc(token)}"
+                           autocomplete="off" spellcheck="false"
+                           placeholder="${esc(this.t('config.helpCaptureTokenPlaceholder', 'leave empty when there is none'))}">
+                </label>
+                <label class="config-field">
+                    <span class="config-field-label">${esc(this.t('config.helpCaptureBookmarklet', 'Drag this to your bookmarks bar, or copy it'))}</span>
+                    <textarea class="config-input config-capture-bookmarklet" rows="3" readonly
+                              data-capture-bookmarklet>${esc(bookmarklet)}</textarea>
+                </label>
+                <div class="config-actions">
+                    <a class="config-btn" href="${esc(bookmarklet)}" data-capture-drag
+                       onclick="return false">${esc(this.t('config.helpCaptureDrag', 'Save to nextDash'))}</a>
+                    <button type="button" class="config-btn" data-capture-copy>${esc(this.t('config.helpCaptureCopy', 'Copy the bookmarklet'))}</button>
+                </div>
+            </div>`;
+    }
+
+    /** Rebuild the bookmarklet when the token field changes, and copy on request. */
+    bindCapturePanel(container) {
+        const tokenInput = container.querySelector('[data-capture-token]');
+        tokenInput?.addEventListener('input', () => {
+            this._captureToken = tokenInput.value;
+            const body = document.getElementById('config-view-body');
+            if (body) {
+                body.innerHTML = this.renderSection();
+                this.bindHelp?.(body);
+                // Focus returns to the field being typed in, which the repaint
+                // replaced under the cursor.
+                document.querySelector('[data-capture-token]')?.focus();
+            }
+        });
+        container.querySelector('[data-capture-copy]')?.addEventListener('click', () => {
+            const text = container.querySelector('[data-capture-bookmarklet]')?.value || '';
+            if (!text) return;
+            void navigator.clipboard?.writeText(text)
+                .then(() => this.notify(this.t('config.helpCaptureCopied', 'Bookmarklet copied'), 'success'))
+                .catch(() => this.notify(this.t('config.copyFailed', 'Could not copy'), 'error'));
+        });
     }
 
     renderHelpData() {
@@ -16346,25 +18657,51 @@ class DashboardConfig {
                 'config.helpSelfHostingBody', '');
     }
 
-    renderHelpAbout() {
+    /**
+     * About: a section of its own, last in the rail.
+     *
+     * It was a tab of Help, which is where a reader looks for how something
+     * works — not for what this thing is, who wrote it, or where the release
+     * notes are. Those are a colophon, so they get their own entry under Help
+     * rather than a ninth tab inside it.
+     */
+    renderAbout() {
+        const esc = (v) => this.dash.escapeHtml(v);
+        return `
+            <p class="config-view-intro">${esc(this.t('config.aboutIntro',
+                'What nextDash is, what changed recently, and where it comes from.'))}</p>
+            ${this.renderAboutPanels()}`;
+    }
+
+    renderAboutPanels() {
         const esc = (v) => this.dash.escapeHtml(v);
         // No version line: the nextdash-app-version meta is an asset fingerprint
         // for cache-busting (see appVersionToken in html_etag.go), not a release
         // number, so printing it as "Version" showed people a meaningless hash.
         // The real one is served by /api/version if this is ever wanted here.
+        // No what's-new panel: the release notes are already one button away in
+        // Help → Getting started and again beside the onboarding switches in
+        // Behavior, and a third copy on the colophon added a panel rather than a
+        // way in.
         return `
             <div class="config-panel">
-                <h3 class="config-panel-title">${esc(this.t('config.helpWhatsNewTitle', 'What’s new'))}</h3>
-                <p class="config-panel-note">${esc(this.t('config.helpWhatsNewHint', 'See what changed in the most recent releases.'))}</p>
-                <div class="config-actions">
-                    <button type="button" class="config-btn" data-help-action="whats-new">${esc(this.t('config.showWhatsNew', 'Show what’s new'))}</button>
-                </div>
-            </div>
-            <div class="config-panel">
                 <h3 class="config-panel-title">${esc(this.t('config.helpAboutTitle', 'About nextDash'))}</h3>
+                <!-- The wordmark on its own dark plate rather than on the panel:
+                     it is bright green on transparent, which a light theme
+                     would leave barely legible. The plate is the same near-black
+                     the printable cheat sheet uses, so the two pieces of
+                     nextDash that carry the logo look like each other. -->
+                <div class="help-about-mark">
+                    <!-- 680px wide for a mark shown at most 340: the 2065px
+                         original was 104 KB of a 340px panel. -->
+                    <img src="/static/nextdash-wordmark.png" alt="nextDash"
+                        width="680" height="185" loading="lazy" decoding="async">
+                </div>
                 <div class="config-help-prose">${this.t('config.helpAboutBody', '')}</div>
                 <div class="config-actions">
                     <a class="config-btn" href="https://github.com/jordibrouwer/nextDash" target="_blank" rel="noopener noreferrer">${esc(this.t('config.helpGithub', 'Project on GitHub'))}</a>
+                    <a class="config-btn" href="https://nextdash.cc" target="_blank" rel="noopener noreferrer">${esc(this.t('config.helpSiteProject', 'nextdash.cc'))}</a>
+                    <a class="config-btn" href="https://jordibrw.nl" target="_blank" rel="noopener noreferrer">${esc(this.t('config.helpSiteAuthor', 'jordibrw.nl'))}</a>
                 </div>
                 ${this.renderKofiSupport()}
             </div>`;
@@ -16377,6 +18714,9 @@ class DashboardConfig {
      * only the surrounding block needed porting into config-view.css.
      */
     renderKofiSupport() {
+        // The jordibrw.nl sign-off that used to close this block is a button in
+        // the About row now, beside nextdash.cc — one place per address, rather
+        // than the author's twice and the project's own not at all.
         const esc = (v) => this.dash.escapeHtml(v);
         const stars = '<span class="wn-kofi-star"></span>'.repeat(4);
         return `
@@ -16387,8 +18727,7 @@ class DashboardConfig {
                     <svg class="wn-kofi-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M23.881 8.948c-.773-4.085-4.859-4.593-4.859-4.593H.723c-.604 0-.679.798-.679.798s-.082 5.702 0 8.732c.483 4.918 3.919 5.023 6.782 5.139 2.81.114 3.325.12 3.325.12s.747.468 1.5.654a7.5 7.5 0 0 0 3.56-.468s5.698-1.094 7.035-5.7c.222-.778.35-1.574.35-2.373 0-.888-.098-1.83-.715-2.309zm-3.585 2.39c-.583 2.4-3.11 2.947-3.11 2.947l-1.8-.434c-.016-.003-.033.003-.043.016l-.847 1.067a.15.15 0 0 1-.265-.046l-.522-1.947a.15.15 0 0 0-.102-.107l-1.956-.517a.15.15 0 0 1-.046-.267l3.184-2.304c.016-.011.026-.03.024-.049l-.098-.832a2.617 2.617 0 0 1 2.602-2.944c1.444 0 2.618 1.174 2.618 2.618 0 .295-.049.582-.14.854l.501-.068s.564 1.006-.0 2.013z"/></svg>
                     <span class="wn-kofi-label">${esc(this.t('config.helpSupportKofi', 'Support me on Ko-fi'))}</span>
                 </a>
-            </div>
-            <p class="help-signature"><a href="https://jordibrw.nl" target="_blank" rel="noopener noreferrer" class="help-signature-link">jordibrw.nl</a></p>`;
+            </div>`;
     }
 
     /**
@@ -16406,6 +18745,7 @@ class DashboardConfig {
             kbd('+', this.t('config.tipAddBookmark', 'Add a bookmark')),
             kbd('Shift + B', this.t('config.tipAddBookmarkShift', 'Open the new-bookmark form')),
             kbd('.', this.t('config.tipCollapseAll', 'Collapse or expand every category')),
+            kbd('Shift + W', this.t('config.tipCategoryWidth', 'Set how many columns the focused category covers')),
             kbd('Shift + H', this.t('config.tipHealth', 'Open the health view')),
             kbd('Shift + I', this.t('config.tipInbox', 'Open the inbox')),
             kbd('Shift + S', this.t('config.tipConfig', 'Open config')),
@@ -16413,6 +18753,7 @@ class DashboardConfig {
     }
 
     bindHelp(container) {
+        this.bindCapturePanel(container);
         this.bindSubTabStrip(container, 'data-help-tab', (tab) => {
             {
                 if (tab === this.helpTab) return;
@@ -16434,6 +18775,51 @@ class DashboardConfig {
         });
         this.bindHelpSearch(container);
         this.bindHelpActions(container);
+    }
+
+    /**
+     * The Tips tab's own filter.
+     *
+     * Hides rows rather than re-rendering: the tips carry markup we wrote, the
+     * list is short enough to filter in the DOM, and keeping the nodes means the
+     * field never loses focus mid-word. A group with nothing left goes with its
+     * rows, so the page does not fill with empty headings.
+     */
+    bindTipsFilter(container) {
+        const field = container.querySelector('#config-tips-filter');
+        if (!field || field.dataset.tipsFilterBound === '1') return;
+        field.dataset.tipsFilterBound = '1';
+
+        const apply = () => {
+            const query = String(field.value || '').trim().toLowerCase();
+            this.tipsQuery = field.value;
+            let shown = 0;
+            let total = 0;
+            container.querySelectorAll('[data-tip-group]').forEach((group) => {
+                let visible = 0;
+                group.querySelectorAll('[data-tip-row]').forEach((row) => {
+                    total += 1;
+                    const hit = !query || row.textContent.toLowerCase().includes(query);
+                    row.hidden = !hit;
+                    if (hit) visible += 1;
+                });
+                group.hidden = visible === 0;
+                shown += visible;
+            });
+            const count = container.querySelector('[data-tips-count]');
+            if (count) {
+                count.textContent = query
+                    ? this.t('config.helpTipsFilterCount', '{shown} of {total}')
+                        .replace('{shown}', String(shown)).replace('{total}', String(total))
+                    : '';
+            }
+            const empty = container.querySelector('[data-tips-empty]');
+            if (empty) empty.hidden = !(query && shown === 0);
+        };
+
+        field.addEventListener('input', apply);
+        field.addEventListener('search', apply);
+        if (this.tipsQuery) apply();
     }
 
     /** The help search field, and the tab buttons on each result. */
@@ -16476,7 +18862,60 @@ class DashboardConfig {
     }
 
     /** "Open this tab" on a search result. */
+    /**
+     * Copy a link that reopens this one topic.
+     *
+     * The address is the config hash with the panel appended, so it survives a
+     * paste into a chat window and lands on the panel rather than on the tab it
+     * happens to live in this month.
+     */
+    async copyHelpPanelLink(panelId) {
+        if (!panelId) return;
+        const url = `${window.location.origin}${window.location.pathname}#config/help/${this.helpTab}/${panelId}`;
+        try {
+            await navigator.clipboard.writeText(url);
+            this.notify(this.t('config.helpLinkCopied', 'Link to this topic copied.'), 'success');
+        } catch {
+            // Clipboard access is refused outside a secure context, which is
+            // every plain-http install — so the address goes in the bar instead,
+            // where it can be copied by hand.
+            window.location.hash = `config/help/${this.helpTab}/${panelId}`;
+            this.notify(this.t('config.helpLinkInAddressBar', 'The link is in the address bar.'), 'info');
+        }
+    }
+
+    /**
+     * Scroll to the panel a #config/help/<tab>/<panel> hash names.
+     *
+     * Runs after the body is in the DOM, and flashes the panel rather than only
+     * scrolling: arriving at a wall of prose with no idea which part was linked
+     * to is barely better than arriving at the top.
+     */
+    openHelpPanelFromHash() {
+        const panelId = DashboardConfig.helpPanelFromHash(window.location.hash);
+        if (!panelId) return;
+        const el = document.getElementById(`help-panel-${panelId}`);
+        if (!el) return;
+        el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        el.classList.add('is-linked');
+        setTimeout(() => el.classList.remove('is-linked'), 2000);
+    }
+
+    /** The third segment of #config/help/<tab>/<panel>, if there is one. */
+    static helpPanelFromHash(hash) {
+        if (typeof hash !== 'string') return null;
+        const match = hash.replace(/^#/, '').match(/^config\/help\/[a-z-]+\/([a-z0-9-]+)$/);
+        return match ? match[1] : null;
+    }
+
     bindHelpResultJumps(body) {
+        // A hit from another section leaves Help altogether.
+        body.querySelectorAll('[data-help-section-jump]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                this.helpQuery = '';
+                void this.openConfigView(btn.getAttribute('data-help-section-jump'));
+            });
+        });
         body.querySelectorAll('[data-help-tab-jump]').forEach((btn) => {
             btn.addEventListener('click', () => {
                 this.helpTab = btn.getAttribute('data-help-tab-jump');
@@ -16490,6 +18929,36 @@ class DashboardConfig {
     }
 
     bindHelpActions(container) {
+        this.bindTipsFilter(container);
+        // The state lines carry the same data-overview-go the Overview cards
+        // use, but that handler is bound to the overview body and returns early
+        // anywhere else — so the button would render and do nothing.
+        container.querySelectorAll('[data-overview-go]').forEach((btn) => {
+            if (btn.dataset.helpGoBound === '1') return;
+            btn.dataset.helpGoBound = '1';
+            btn.addEventListener('click', () => this.handleOverviewGo(btn));
+        });
+        container.querySelectorAll('[data-help-panel-link]').forEach((btn) => {
+            if (btn.dataset.helpLinkBound === '1') return;
+            btn.dataset.helpLinkBound = '1';
+            btn.addEventListener('click', () => this.copyHelpPanelLink(btn.getAttribute('data-help-panel-link')));
+        });
+        // "Continues in": the hash carries the destination, so arriving by the
+        // link and arriving by the button land in exactly the same place.
+        container.querySelectorAll('[data-help-goto-tab]').forEach((btn) => {
+            if (btn.dataset.helpGotoBound === '1') return;
+            btn.dataset.helpGotoBound = '1';
+            btn.addEventListener('click', () => {
+                const tab = btn.getAttribute('data-help-goto-tab');
+                const panel = btn.getAttribute('data-help-goto-panel');
+                this.helpQuery = '';
+                this.helpTab = tab;
+                window.location.hash = `config/help/${tab}/${panel}`;
+                this.render();
+                // After the body is in the DOM, or there is nothing to scroll to.
+                setTimeout(() => this.openHelpPanelFromHash(), 60);
+            });
+        });
         container.querySelectorAll('[data-help-action]').forEach((btn) => {
             btn.addEventListener('click', () => {
                 const action = btn.getAttribute('data-help-action');
@@ -16500,6 +18969,13 @@ class DashboardConfig {
                     // view first or it would open behind it.
                     this.closeConfigView();
                     this.dash.showKeyboardCheatSheet?.();
+                } else if (action === 'fresh-tour') {
+                    window.FreshTutorial?.open?.();
+                } else if (action === 'spread-tour') {
+                    // Config is a view on this same page and the walkthrough is
+                    // a modal over it, so this one can stay where it is — the
+                    // reader lands back on this panel when it closes.
+                    window.SpreadTutorial?.open?.();
                 }
             });
         });

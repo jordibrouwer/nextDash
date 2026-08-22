@@ -405,7 +405,6 @@ class DashboardInlineEdit {
 
 
     async confirmInlineEditBeforeNavigation() {
-        const d = this.dash;
         if (!this.isInlineEditActive()) {
             return true;
         }
@@ -461,6 +460,13 @@ class DashboardInlineEdit {
     }
 
 
+    /**
+     * Open the inline editor for the row the keyboard is on — or the row Tab
+     * focused (an `.bookmark-open` anchor), or a smart-collection row, which has
+     * no `data-bookmark-index` to resolve through.
+     *
+     * @returns {boolean} whether an editor was opened
+     */
     tryOpenInlineBookmarkEdit() {
         const d = this.dash;
         const kn = d.keyboardNavigation;
@@ -514,11 +520,6 @@ class DashboardInlineEdit {
         this.openBookmarkInlineEditor(el, bookmarkRef);
         return true;
     }
-
-    /**
-     * Long-press (not on reorder handle) opens inline editor. Uses AbortController on row to drop listeners on rebuild.
-     * @param {AbortSignal} signal
-     */
 
     isPointerInsideInlineEdit(event) {
         const editingRow = document.querySelector('.bookmark-link.bookmark-inline-editing');
@@ -848,8 +849,19 @@ class DashboardInlineEdit {
         const syncShortcutConflict = (value) => {
             const normalized = String(value || '').trim();
             const conflict = Boolean(normalized) && this.hasShortcutConflict(normalized, bookmarkRef);
-            shortcutConflictHint.hidden = !conflict;
             shortcutInput.classList.toggle('field-conflict', conflict);
+            if (conflict) {
+                shortcutConflictHint.textContent = d.language?.t('config.shortcutConflict') || 'Shortcut already in use';
+                shortcutConflictHint.hidden = false;
+                return;
+            }
+            // Not a conflict but worth knowing: with a row selected the grid
+            // claims c, g, j, k and x, so a bookmark on one of them answers only
+            // part of the time — and on c, never.
+            const note = window.ShortcutKeys?.gridKeyNote?.(
+                normalized, (key, fallback) => d.language?.t(key) || fallback) || '';
+            shortcutConflictHint.textContent = note;
+            shortcutConflictHint.hidden = !note;
         };
         shortcutInput.addEventListener('input', (e) => {
             e.target.value = e.target.value.toUpperCase().replace(/[^A-Z]/g, '');
@@ -1624,11 +1636,27 @@ class DashboardInlineEdit {
         }
 
         try {
-            const response = await (typeof nextDashFetch === 'function' ? nextDashFetch : fetch)('/api/bookmarks/add', {
+            const post = (allowDuplicate) => (typeof nextDashFetch === 'function' ? nextDashFetch : fetch)('/api/bookmarks/add', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ page: pageId, bookmark }),
+                body: JSON.stringify({ page: pageId, bookmark, allowDuplicate: Boolean(allowDuplicate) }),
             });
+            let response = await post(false);
+            // Same question the bookmark form and quick add ask: the link is
+            // already filed somewhere else, and a second copy is sometimes the
+            // point. Declining leaves the form as it was rather than erroring.
+            if (response.status === 409) {
+                const raw = await response.text().catch(() => '');
+                const conflict = window.DuplicateBookmarkPrompt?.parse(raw);
+                if (conflict && !conflict.samePage) {
+                    if (!(await window.DuplicateBookmarkPrompt.confirmSecondCopy(conflict.bookmark))) {
+                        d.showNotification(
+                            window.DuplicateBookmarkPrompt.locationMessage(conflict.bookmark), 'info');
+                        return;
+                    }
+                    response = await post(true);
+                }
+            }
             if (!response.ok) {
                 throw new Error(d.formatDashboardLabel('errorCreatingBookmark', {}, 'Could not create bookmark.'));
             }
@@ -1826,7 +1854,6 @@ class DashboardInlineEdit {
 
 
     async uploadBookmarkIconFromUrl(iconUrl) {
-        const d = this.dash;
         try {
             const response = await dashFetch('/api/icon/from-url', {
                 method: 'POST',
@@ -1847,7 +1874,6 @@ class DashboardInlineEdit {
 
 
     async uploadBookmarkIconFile(file) {
-        const d = this.dash;
         const formData = new FormData();
         formData.append('icon', file);
         try {
@@ -1867,7 +1893,6 @@ class DashboardInlineEdit {
 
 
     deriveFaviconFromBookmarkUrl(bookmarkUrl) {
-        const d = this.dash;
         const safeUrl = String(bookmarkUrl || '').trim();
         if (!safeUrl) {
             return '';
@@ -1885,7 +1910,6 @@ class DashboardInlineEdit {
 
 
     async fetchAndAssignFaviconForUrl(bookmarkUrl) {
-        const d = this.dash;
         const safeUrl = String(bookmarkUrl || '').trim();
         if (!safeUrl) {
             return '';
@@ -1920,11 +1944,6 @@ class DashboardInlineEdit {
         }
     }
 
-    /**
-     * Open inline edit for keyboard-selected row, Tab-focused row (e.g. .bookmark-open), or smart list row without data-bookmark-index.
-     * @returns {boolean} true if editor opened
-     */
-
     _shouldSyncBookmarkMutation(bookmarkRef, candidate, previousUrlTrimmed) {
         const d = this.dash;
         if (!bookmarkRef || !candidate) {
@@ -1942,7 +1961,6 @@ class DashboardInlineEdit {
 
 
     _applyBookmarkMutationFields(target, source) {
-        const d = this.dash;
         if (!target || !source) {
             return;
         }
@@ -1980,7 +1998,6 @@ class DashboardInlineEdit {
 
 
     async deleteBookmarkInline(bookmarkRef, options = {}) {
-        const d = this.dash;
         if (!bookmarkRef?.bookmark) {
             return;
         }
@@ -2199,7 +2216,12 @@ class DashboardInlineEdit {
         try {
             if (row) {
                 row.classList.add('bookmark-move-out');
-                await new Promise(resolve => setTimeout(resolve, 320));
+                // Skipped under reduced motion: the animation is collapsed to a
+                // frame there, so waiting its full length was a dead pause on
+                // every cross-page move with nothing to show for it.
+                if (typeof prefersReducedMotion !== 'function' || !prefersReducedMotion()) {
+                    await new Promise(resolve => setTimeout(resolve, ANIM.BOOKMARK_MOVE_OUT));
+                }
             }
 
             // No ensureBookmarkMutationSnapshot() here: that sets
@@ -2219,7 +2241,10 @@ class DashboardInlineEdit {
             const addRes = await dashFetch('/api/bookmarks/add', {
                 method: 'POST',
                 headers,
-                body: JSON.stringify({ page: targetPageId, bookmark: { ...bookmarkState } }),
+                // allowDuplicate: a move is an add followed by a delete, so
+                // between the two the URL is on both pages by design. Without
+                // this the cross-page duplicate check would refuse every move.
+                body: JSON.stringify({ page: targetPageId, bookmark: { ...bookmarkState }, allowDuplicate: true }),
             });
             if (!addRes.ok) {
                 let message = 'Failed to save target page bookmarks.';
@@ -2281,8 +2306,15 @@ class DashboardInlineEdit {
     }
 
 
+    /**
+     * Long-press (not on the reorder handle) opens the inline editor.
+     *
+     * Listeners are hung on an AbortController owned by the row, so a rebuild
+     * drops them all at once rather than leaving them on a detached node.
+     *
+     * @param {AbortSignal} signal
+     */
     attachBookmarkRowLongPress(row, openLink, bookmarkRef, signal) {
-        const d = this.dash;
         const longMs = DashboardInlineEdit.ROW_LONG_PRESS_MS;
         const slop = 8;
         let timer = null;
@@ -2402,6 +2434,5 @@ class DashboardInlineEdit {
 }
 
 DashboardInlineEdit.ROW_LONG_PRESS_MS = 500;
-DashboardInlineEdit.CLICK_OUTSIDE_DELAY_MS = 500;
 
 window.DashboardInlineEdit = DashboardInlineEdit;

@@ -16,19 +16,34 @@
             titleKey: 'tipsGroupEveryday',
             titleFallback: 'Everyday',
             tips: [
+                // What the dashboard does with a keystroke, before which key
+                // does what: this is the question every other tip assumes an
+                // answer to.
+                'tipEverydayTyping',
+                'tipEverydayGridLetters',
                 'tipEverydayModes',
                 'tipEverydayPages',
                 'tipEverydayArrows',
                 'tipEverydayEsc',
                 'tipEverydayOverview',
                 'tipEverydayViews',
+                'tipEverydayGridFilter',
+                'tipEverydayScrollBack',
                 'tipEverydayCheatsheet',
             ],
         },
         {
             titleKey: 'tipsGroupAdding',
             titleFallback: 'Adding bookmarks',
-            tips: ['tipAddPaste', 'tipAddQuickAdd', 'tipAddAnywhere', 'tipAddFullModal', 'tipAddShortcut'],
+            tips: [
+                'tipAddPaste',
+                'tipAddQuickAdd',
+                'tipAddAnywhere',
+                'tipAddCapture',
+                'tipAddDuplicate',
+                'tipAddFullModal',
+                'tipAddShortcut',
+            ],
         },
         {
             titleKey: 'tipsGroupEditing',
@@ -38,21 +53,33 @@
                 'tipEditQuickActions',
                 'tipEditUndo',
                 'tipEditDrag',
+                'tipEditMoveCategory',
+                'tipEditSelectionActions',
                 'tipEditRenamePage',
                 'tipEditPageTabDot',
                 'tipEditCopyUrl',
+                'tipEditCategorySpread',
             ],
         },
         {
             titleKey: 'tipsGroupFinding',
             titleFallback: 'Finding things',
-            tips: ['tipFindFilters', 'tipFindAllPages', 'tipFindFinders', 'tipFindTagCloud', 'tipFindRecent'],
+            tips: [
+                'tipFindFilters',
+                'tipFindShortcutMode',
+                'tipFindAllPages',
+                'tipFindFinders',
+                'tipFindTagCloud',
+                'tipFindRecent',
+            ],
         },
         {
             titleKey: 'tipsGroupMaintenance',
             titleFallback: 'Keeping it healthy',
             tips: [
                 'tipMaintHealth',
+                'tipMaintReview',
+                'tipMaintRotReport',
                 'tipMaintMerge',
                 'tipMaintMonitorStats',
                 'tipMaintCert',
@@ -71,13 +98,14 @@
                 'tipTuneTheme',
                 'tipTunePreview',
                 'tipTuneSmartCollections',
+                'tipTuneFresh',
                 'tipTuneCommands',
             ],
         },
         {
             titleKey: 'tipsGroupConfig',
             titleFallback: 'Config',
-            tips: ['tipConfigKeyboard'],
+            tips: ['tipConfigKeyboard', 'tipConfigFindValue'],
         },
     ];
 

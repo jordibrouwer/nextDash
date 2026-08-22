@@ -80,7 +80,12 @@ type Bookmark struct {
 	// The baseline the drift checks compare against, recorded on the first check
 	// after WatchDrift is switched on. Empty means "no baseline yet", which reads
 	// as unknown rather than as drift.
-	DriftURL         string `json:"driftUrl,omitempty"`
+	DriftURL string `json:"driftUrl,omitempty"`
+	// BrokenSince is when the current run of failures started, kept across
+	// checks so a link that died months ago does not read like one that broke
+	// this morning. Cleared the moment a check succeeds, so it is always "how
+	// long has it been failing", never "when did it last fail".
+	BrokenSince      int64  `json:"brokenSince,omitempty"`
 	DriftTitle       string `json:"driftTitle,omitempty"`
 	DriftFingerprint string `json:"driftFingerprint,omitempty"`
 	// DriftNoticed is what the last check found, as one of the kinds in
@@ -121,7 +126,9 @@ type Finder struct {
 }
 
 type CollectionRule struct {
-	Field    string `json:"field"`    // "tag", "category", "shortcut"
+	// "tag", "category", "shortcut", plus the ones that are a question on
+	// their own: "pinned", "untagged", "notOpenedDays", "changedDays".
+	Field    string `json:"field"`
 	Operator string `json:"operator"` // "includes", "excludes"
 	Value    string `json:"value"`
 }
@@ -140,6 +147,7 @@ type Category struct {
 	OriginalID string `json:"originalId,omitempty"` // Track original ID for renames
 	Icon       string `json:"icon,omitempty"`       // Custom icon for category
 	SortMode   string `json:"sortMode,omitempty"`   // Bookmark sort within category: order, az, recent
+	Spread     bool   `json:"spread,omitempty"`     // May run across several grid columns; how many follows from the item limit
 }
 
 type Page struct {
@@ -160,120 +168,147 @@ type PageOrder struct {
 }
 
 type Settings struct {
-	CurrentPage                   int                          `json:"currentPage"` // Numeric ID of the current page
-	Theme                         string                       `json:"theme"`       // "light" or "dark"
-	OpenInNewTab                  bool                         `json:"openInNewTab"`
-	ColumnsPerRow                 int                          `json:"columnsPerRow"`
-	FontSize                      string                       `json:"fontSize"` // xs, s, sm, m, lg, l, xl (legacy: small/medium/large normalized on load/save)
-	ShowBackgroundDots            bool                         `json:"showBackgroundDots"`
-	ShowTitle                     bool                         `json:"showTitle"`
-	ShowDate                      bool                         `json:"showDate"`
-	ShowTime                      bool                         `json:"showTime"`
-	TimeFormat                    string                       `json:"timeFormat"`          // 24h or 12h
-	DateFormat                    string                       `json:"dateFormat"`          // Date format: short-slash, short-dash, long-weekday
-	ShowWeatherWithDate           bool                         `json:"showWeatherWithDate"` // Show weather info next to date
-	WeatherSource                 string                       `json:"weatherSource"`       // manual or browser
-	WeatherLocation               string                       `json:"weatherLocation"`     // Manual location query (city)
-	WeatherUnit                   string                       `json:"weatherUnit"`         // celsius or fahrenheit
-	WeatherRefreshMinutes         int                          `json:"weatherRefreshMinutes"`
-	ShowConfigButton              bool                         `json:"showConfigButton"`
-	ShowHealthDashboard           bool                         `json:"showHealthDashboard"`
-	ShowSearchButton              bool                         `json:"showSearchButton"`
-	ShowAddBookmarkButton         bool                         `json:"showAddBookmarkButton"`
-	ShowFindersButton             bool                         `json:"showFindersButton"`
-	ShowCommandsButton            bool                         `json:"showCommandsButton"`
-	ShowRecentButton              bool                         `json:"showRecentButton"`
-	ShowTagCloudButton            bool                         `json:"showTagCloudButton"`                      // Dashboard / key: horizontal tag cloud toggle
-	TagCloudDefaultMigrated       bool                         `json:"tagCloudDefaultMigrated,omitempty"`       // one-time: enable tag cloud for existing installs
-	LinkPreviewCardsOffMigrated   bool                         `json:"linkPreviewCardsOffMigrated,omitempty"`   // one-time: default hover preview cards to off
-	ConfigButtonDefaultOnMigrated bool                         `json:"configButtonDefaultOnMigrated,omitempty"` // one-time: restore config header icon after visibility fix
-	ShowSearchFlowBanner          bool                         `json:"showSearchFlowBanner"`
-	ShowCheatSheetButton          bool                         `json:"showCheatSheetButton"`
-	ShowCollapseAllButton         bool                         `json:"showCollapseAllButton"`
-	ShowSearchButtonText          bool                         `json:"showSearchButtonText"`
-	ShowFindersButtonText         bool                         `json:"showFindersButtonText"`
-	ShowCommandsButtonText        bool                         `json:"showCommandsButtonText"`
-	ShowStatus                    bool                         `json:"showStatus"`
-	ColorizeStatus                bool                         `json:"colorizeStatus"`  // Keep online/offline/checking color changes on bookmark rows
-	MonitorEmphasis               string                       `json:"monitorEmphasis"` // How much monitored bookmarks stand out on the dashboard: problems, always, never
-	ShowPing                      bool                         `json:"showPing"`
-	ShowStatusLoading             bool                         `json:"showStatusLoading"`
-	SkipFastPing                  bool                         `json:"skipFastPing"`
-	StatusOfflineRetries          int                          `json:"statusOfflineRetries"`         // Failed pings per check before marking offline (1-10)
-	StatusOfflineRetryDelayMs     int                          `json:"statusOfflineRetryDelayMs"`    // Delay between retry pings in ms (100-3000)
-	StatusRecheckIntervalMinutes  int                          `json:"statusRecheckIntervalMinutes"` // Background re-check interval in minutes (1-60)
-	GlobalShortcuts               bool                         `json:"globalShortcuts"`              // Use shortcuts from all pages
-	HyprMode                      bool                         `json:"hyprMode"`                     // Launcher mode for PWA usage
-	AnimationsEnabled             bool                         `json:"animationsEnabled"`            // Enable or disable animations globally
-	EnableCustomTitle             bool                         `json:"enableCustomTitle"`            // Enable custom page title
-	CustomTitle                   string                       `json:"customTitle"`                  // Custom page title
-	ShowPageInTitle               bool                         `json:"showPageInTitle"`              // Show current page name in title
-	ShowPageNamesInTabs           bool                         `json:"showPageNamesInTabs"`          // Show page names in tabs instead of numbers
-	EnableCustomFavicon           bool                         `json:"enableCustomFavicon"`          // Enable custom favicon
-	CustomFaviconPath             string                       `json:"customFaviconPath"`            // Path to custom favicon file
-	EnableCustomFont              bool                         `json:"enableCustomFont"`             // Enable custom font
-	CustomFontPath                string                       `json:"customFontPath"`               // Path to custom font file
-	Language                      string                       `json:"language"`                     // Language code, e.g., "en" or "es"
-	InterleaveMode                bool                         `json:"interleaveMode"`               // Interleave mode for search (/ for shortcuts, direct input for fuzzy)
-	ShowPageTabs                  bool                         `json:"showPageTabs"`                 // Show page navigation tabs
-	AlwaysCollapseCategories      bool                         `json:"alwaysCollapseCategories"`     // Always collapse categories on load
-	HideEmptyCategories           bool                         `json:"hideEmptyCategories"`          // Hide categories with no bookmarks
-	HideEmptyCategoriesMigrated   bool                         `json:"hideEmptyCategoriesMigrated"`  // Migration marker for hide-empty default-on
-	EnableFuzzySuggestions        bool                         `json:"enableFuzzySuggestions"`       // Enable fuzzy suggestions in shortcut search
-	FuzzySuggestionsStartWith     bool                         `json:"fuzzySuggestionsStartWith"`    // Fuzzy suggestions start with query instead of contains
-	KeepSearchOpenWhenEmpty       bool                         `json:"keepSearchOpenWhenEmpty"`      // Keep search interface open when query is empty
-	ShowIcons                     bool                         `json:"showIcons"`                    // Show bookmark icons
-	ShowLinkPreviewCards          bool                         `json:"showLinkPreviewCards"`         // Show link preview cards on hover
-	LinkPreviewHoverDelayMs       int                          `json:"linkPreviewHoverDelayMs"`      // Hover delay before preview card appears
-	ShowShortcuts                 bool                         `json:"showShortcuts"`                // Show bookmark shortcuts
-	ShowPinIcon                   bool                         `json:"showPinIcon"`                  // Show pin icon next to pinned bookmarks
-	ShowNoteIcon                  bool                         `json:"showNoteIcon"`                 // Show note icon next to bookmarks with a note
-	IncludeFindersInSearch        bool                         `json:"includeFindersInSearch"`       // Include finders in normal search
-	SortMethod                    string                       `json:"sortMethod,omitempty"`         // Legacy global sort (migrated to per-category sortMode)
-	CategorySortModes             map[string]map[string]string `json:"categorySortModes,omitempty"`  // Per-page sort for uncategorized/orphan categories
-	CategorySortModesMigrated     bool                         `json:"categorySortModesMigrated"`    // Legacy sortMethod migrated to per-category modes
-	LayoutPreset                  string                       `json:"layoutPreset"`                 // Dashboard layout preset
-	LayoutVersion                 string                       `json:"layoutVersion"`                // Dashboard layout version: classic, modern
-	DensityMode                   string                       `json:"densityMode"`                  // Dashboard density mode: comfortable, compact, dense
-	CategorySpacing               string                       `json:"categorySpacing"`              // Vertical space between category rows: snug, balanced, airy
-	SideMargin                    string                       `json:"sideMargin"`                   // Left/right page margin on the dashboard: snug, balanced, airy
-	PackedColumns                 bool                         `json:"packedColumns"`                // Stack categories in vertical columns (round-robin) to reduce empty space
-	LauncherIconSize              string                       `json:"launcherIconSize"`             // Launcher tile icon size: small, normal, large
-	CalendarUrl                   string                       `json:"calendarUrl"`                  // URL for calendar link in date popover (empty = hidden)
-	ButtonBarPosition             string                       `json:"buttonBarPosition"`            // Button bar position: bottom, bottom-left, bottom-right, side-left, side-right
-	ShowDockLayoutSelector        bool                         `json:"showDockLayoutSelector"`       // Show layout selector button in side-dock
-	BackgroundOpacity             float64                      `json:"backgroundOpacity"`            // Background opacity (0.0-1.0)
-	FontWeight                    string                       `json:"fontWeight"`                   // Font weight: normal, 600, bold
-	FontPreset                    string                       `json:"fontPreset"`                   // UI font preset: source-code-pro, jetbrains-mono, etc.
-	AutoDarkMode                  bool                         `json:"autoDarkMode"`                 // Auto-detect dark mode from system
-	RandomThemeOnRefresh          bool                         `json:"randomThemeOnRefresh"`         // Legacy: migrated to randomThemeMode
-	RandomThemeMode               string                       `json:"randomThemeMode"`              // off, refresh, or view
-	ShowSmartRecentCollection     bool                         `json:"showSmartRecentCollection"`    // Show smart recently opened collection
-	ShowSmartTodayCollection      bool                         `json:"showSmartTodayCollection"`     // Show smart start "today" collection
-	ShowSmartStaleCollection      bool                         `json:"showSmartStaleCollection"`     // Show smart stale bookmarks collection
-	ShowSmartMostUsedCollection   bool                         `json:"showSmartMostUsedCollection"`  // Show smart most used bookmarks collection
-	SmartTodayLimit               int                          `json:"smartTodayLimit"`              // Max items in smart today (0 = unlimited)
-	SmartRecentLimit              int                          `json:"smartRecentLimit"`             // Max items in smart recently opened (0 = unlimited)
-	SmartStaleLimit               int                          `json:"smartStaleLimit"`              // Max items in smart stale bookmarks (0 = unlimited)
-	SmartMostUsedLimit            int                          `json:"smartMostUsedLimit"`           // Max items in smart most used (0 = unlimited)
-	CategoryItemLimit             int                          `json:"categoryItemLimit"`            // Max bookmarks shown per category before a "show more" toggle (0 = unlimited)
-	SmartTodayWorkKeywords        string                       `json:"smartTodayWorkKeywords"`       // Comma-separated work-hour keyword boosts
-	SmartTodayEveningKeywords     string                       `json:"smartTodayEveningKeywords"`    // Comma-separated evening keyword boosts
-	SmartTodayWeekendKeywords     string                       `json:"smartTodayWeekendKeywords"`    // Comma-separated weekend keyword boosts
-	SmartTodayPageIds             []int                        `json:"smartTodayPageIds"`            // Page IDs where smart today is enabled (empty = all)
-	SmartRecentPageIds            []int                        `json:"smartRecentPageIds"`           // Page IDs where smart recent is enabled (empty = all)
-	SmartStalePageIds             []int                        `json:"smartStalePageIds"`            // Page IDs where smart stale is enabled (empty = all)
-	SmartMostUsedPageIds          []int                        `json:"smartMostUsedPageIds"`         // Page IDs where smart most used is enabled (empty = all)
-	ArchivedPageIds               []int                        `json:"archivedPageIds"`              // Archived pages hidden from active management flows
-	Collections                   []Collection                 `json:"collections,omitempty"`        // User-defined dynamic collections
-	ShowTagCollections            bool                         `json:"showTagCollections"`           // Auto-generate a collection per tag
-	TagCollectionsMinCount        int                          `json:"tagCollectionsMinCount"`       // Minimum bookmarks per tag to show collection (0 = all)
-	FaviconRefreshPolicy          string                       `json:"faviconRefreshPolicy"`         // Favicon policy: manual, on-save
-	OnboardingCompleted           bool                         `json:"onboardingCompleted"`
-	AnalyticsOptIn                bool                         `json:"analyticsOptIn"`       // Privacy-friendly Umami analytics — opt-in, off until the user turns it on in Config → General
-	EnableSessionTips             bool                         `json:"enableSessionTips"`    // Occasional cheat-sheet tip toast, rate-limited by discoverabilityState.tipsNotBefore (default on, opt-out in Config → General)
-	ShowShortcutTooltips          bool                         `json:"showShortcutTooltips"` // Keyboard-shortcut popovers on toolbar and header icons (default on, opt-out in Config → Behavior or `:shortcuts off`)
-	QuickStart                    QuickStartState              `json:"quickStart"`           // First-run quick-start progress (server-side, per-user)
+	CurrentPage                     int    `json:"currentPage"` // Numeric ID of the current page
+	Theme                           string `json:"theme"`       // "light" or "dark"
+	OpenInNewTab                    bool   `json:"openInNewTab"`
+	ColumnsPerRow                   int    `json:"columnsPerRow"`
+	FontSize                        string `json:"fontSize"` // xs, s, sm, m, lg, l, xl (legacy: small/medium/large normalized on load/save)
+	ShowBackgroundDots              bool   `json:"showBackgroundDots"`
+	ShowTitle                       bool   `json:"showTitle"`
+	ShowDate                        bool   `json:"showDate"`
+	ShowTime                        bool   `json:"showTime"`
+	TimeFormat                      string `json:"timeFormat"`          // 24h or 12h
+	DateFormat                      string `json:"dateFormat"`          // Date format: short-slash, short-dash, long-weekday
+	ShowWeatherWithDate             bool   `json:"showWeatherWithDate"` // Show weather info next to date
+	WeatherSource                   string `json:"weatherSource"`       // manual or browser
+	WeatherLocation                 string `json:"weatherLocation"`     // Manual location query (city)
+	WeatherUnit                     string `json:"weatherUnit"`         // celsius or fahrenheit
+	WeatherRefreshMinutes           int    `json:"weatherRefreshMinutes"`
+	ShowConfigButton                bool   `json:"showConfigButton"`
+	ShowHealthDashboard             bool   `json:"showHealthDashboard"`
+	ShowSearchButton                bool   `json:"showSearchButton"`
+	ShowAddBookmarkButton           bool   `json:"showAddBookmarkButton"`
+	ShowFindersButton               bool   `json:"showFindersButton"`
+	ShowCommandsButton              bool   `json:"showCommandsButton"`
+	ShowRecentButton                bool   `json:"showRecentButton"`
+	ShowTagCloudButton              bool   `json:"showTagCloudButton"`                        // Dashboard / key: horizontal tag cloud toggle
+	TagCloudDefaultMigrated         bool   `json:"tagCloudDefaultMigrated,omitempty"`         // one-time: enable tag cloud for existing installs
+	LinkPreviewCardsOffMigrated     bool   `json:"linkPreviewCardsOffMigrated,omitempty"`     // one-time: default hover preview cards to off
+	ShortcutTooltipsOffMigrated     bool   `json:"shortcutTooltipsOffMigrated,omitempty"`     // one-time: default the toolbar shortcut hints to off
+	ShortcutOpenModeInstantMigrated bool   `json:"shortcutOpenModeInstantMigrated,omitempty"` // one-time: undo v1.2.0's "Enter opens" default
+	ConfigButtonDefaultOnMigrated   bool   `json:"configButtonDefaultOnMigrated,omitempty"`   // one-time: restore config header icon after visibility fix
+	ShowSearchFlowBanner            bool   `json:"showSearchFlowBanner"`
+	ShowCheatSheetButton            bool   `json:"showCheatSheetButton"`
+	ShowCollapseAllButton           bool   `json:"showCollapseAllButton"`
+	ShowSearchButtonText            bool   `json:"showSearchButtonText"`
+	ShowFindersButtonText           bool   `json:"showFindersButtonText"`
+	ShowCommandsButtonText          bool   `json:"showCommandsButtonText"`
+	ShowStatus                      bool   `json:"showStatus"`
+	ColorizeStatus                  bool   `json:"colorizeStatus"`  // Keep online/offline/checking color changes on bookmark rows
+	MonitorEmphasis                 string `json:"monitorEmphasis"` // How much monitored bookmarks stand out on the dashboard: problems, always, never
+	ShowPing                        bool   `json:"showPing"`
+	ShowStatusLoading               bool   `json:"showStatusLoading"`
+	SkipFastPing                    bool   `json:"skipFastPing"`
+	StatusOfflineRetries            int    `json:"statusOfflineRetries"`         // Failed pings per check before marking offline (1-10)
+	StatusOfflineRetryDelayMs       int    `json:"statusOfflineRetryDelayMs"`    // Delay between retry pings in ms (100-3000)
+	StatusRecheckIntervalMinutes    int    `json:"statusRecheckIntervalMinutes"` // Background re-check interval in minutes (1-60)
+	GlobalShortcuts                 bool   `json:"globalShortcuts"`              // Use shortcuts from all pages
+	HyprMode                        bool   `json:"hyprMode"`                     // Launcher mode for PWA usage
+	AnimationsEnabled               bool   `json:"animationsEnabled"`            // Enable or disable animations globally
+	EnableCustomTitle               bool   `json:"enableCustomTitle"`            // Enable custom page title
+	CustomTitle                     string `json:"customTitle"`                  // Custom page title
+	ShowPageInTitle                 bool   `json:"showPageInTitle"`              // Show current page name in title
+	ShowPageNamesInTabs             bool   `json:"showPageNamesInTabs"`          // Show page names in tabs instead of numbers
+	EnableCustomFavicon             bool   `json:"enableCustomFavicon"`          // Enable custom favicon
+	CustomFaviconPath               string `json:"customFaviconPath"`            // Path to custom favicon file
+	EnableCustomFont                bool   `json:"enableCustomFont"`             // Enable custom font
+	CustomFontPath                  string `json:"customFontPath"`               // Path to custom font file
+	Language                        string `json:"language"`                     // Language code, e.g., "en" or "es"
+	InterleaveMode                  bool   `json:"interleaveMode"`               // Interleave mode for search (/ for shortcuts, direct input for fuzzy)
+	ShowPageTabs                    bool   `json:"showPageTabs"`                 // Show page navigation tabs
+	AlwaysCollapseCategories        bool   `json:"alwaysCollapseCategories"`     // Always collapse categories on load
+	HideEmptyCategories             bool   `json:"hideEmptyCategories"`          // Hide categories with no bookmarks
+	HideEmptyCategoriesMigrated     bool   `json:"hideEmptyCategoriesMigrated"`  // Migration marker for hide-empty default-on
+	EnableFuzzySuggestions          bool   `json:"enableFuzzySuggestions"`       // Enable fuzzy suggestions in shortcut search
+	FuzzySuggestionsStartWith       bool   `json:"fuzzySuggestionsStartWith"`    // Fuzzy suggestions start with query instead of contains
+	KeepSearchOpenWhenEmpty         bool   `json:"keepSearchOpenWhenEmpty"`      // Keep search interface open when query is empty
+	ShowIcons                       bool   `json:"showIcons"`                    // Show bookmark icons
+	ShowLinkPreviewCards            bool   `json:"showLinkPreviewCards"`         // Show link preview cards on hover. Kept in step with LinkPreviewMode, which is the field that decides
+	// LinkPreviewMode is how the card is reached: "off", "hover" or
+	// "keyboard". Some people want what the card says and not a panel
+	// appearing under the pointer, and their only answer used to be off —
+	// throwing away the whole feature to avoid one behaviour of it.
+	LinkPreviewMode string `json:"linkPreviewMode"`
+	// LinkPreviewParts names the rows the card may draw, from the set in
+	// normalizeLinkPreviewParts. Absent means all of them; someone who writes
+	// no notes never needs the note row.
+	LinkPreviewParts            []string                     `json:"linkPreviewParts,omitempty"`
+	LinkPreviewHoverDelayMs     int                          `json:"linkPreviewHoverDelayMs"`     // Hover delay before preview card appears
+	ShowShortcuts               bool                         `json:"showShortcuts"`               // Show bookmark shortcuts
+	ShowPinIcon                 bool                         `json:"showPinIcon"`                 // Show pin icon next to pinned bookmarks
+	ShowNoteIcon                bool                         `json:"showNoteIcon"`                // Show note icon next to bookmarks with a note
+	IncludeFindersInSearch      bool                         `json:"includeFindersInSearch"`      // Include finders in normal search
+	SortMethod                  string                       `json:"sortMethod,omitempty"`        // Legacy global sort (migrated to per-category sortMode)
+	CategorySortModes           map[string]map[string]string `json:"categorySortModes,omitempty"` // Per-page sort for uncategorized/orphan categories
+	CategorySortModesMigrated   bool                         `json:"categorySortModesMigrated"`   // Legacy sortMethod migrated to per-category modes
+	LayoutPreset                string                       `json:"layoutPreset"`                // Dashboard layout preset
+	LayoutVersion               string                       `json:"layoutVersion"`               // Dashboard layout version: classic, modern
+	DensityMode                 string                       `json:"densityMode"`                 // Dashboard density mode: comfortable, compact, dense
+	CategorySpacing             string                       `json:"categorySpacing"`             // Vertical space between category rows: snug, balanced, airy
+	SideMargin                  string                       `json:"sideMargin"`                  // Left/right page margin on the dashboard: snug, balanced, airy
+	PackedColumns               bool                         `json:"packedColumns"`               // Stack categories in vertical columns (round-robin) to reduce empty space
+	DefaultCategorySpread       bool                         `json:"defaultCategorySpread"`       // New categories may run across columns
+	CategorySpreadResetScope    string                       `json:"categorySpreadResetScope"`    // What "turn spreading off everywhere" covers: page, all
+	CategorySpreads             map[string]map[string]bool   `json:"categorySpreads,omitempty"`   // Per-page switch for uncategorized/smart collections, which have no stored category
+	LauncherIconSize            string                       `json:"launcherIconSize"`            // Launcher tile icon size: small, normal, large
+	CalendarUrl                 string                       `json:"calendarUrl"`                 // URL for calendar link in date popover (empty = hidden)
+	ButtonBarPosition           string                       `json:"buttonBarPosition"`           // Button bar position: bottom, bottom-left, bottom-right, side-left, side-right
+	ShowDockLayoutSelector      bool                         `json:"showDockLayoutSelector"`      // Show layout selector button in side-dock
+	BackgroundOpacity           float64                      `json:"backgroundOpacity"`           // Background opacity (0.0-1.0)
+	FontWeight                  string                       `json:"fontWeight"`                  // Font weight: normal, 600, bold
+	FontPreset                  string                       `json:"fontPreset"`                  // UI font preset: source-code-pro, jetbrains-mono, etc.
+	AutoDarkMode                bool                         `json:"autoDarkMode"`                // Auto-detect dark mode from system
+	RandomThemeOnRefresh        bool                         `json:"randomThemeOnRefresh"`        // Legacy: migrated to randomThemeMode
+	RandomThemeMode             string                       `json:"randomThemeMode"`             // off, refresh, or view
+	ShowSmartRecentCollection   bool                         `json:"showSmartRecentCollection"`   // Show smart recently opened collection
+	ShowSmartTodayCollection    bool                         `json:"showSmartTodayCollection"`    // Show smart start "today" collection
+	ShowSmartStaleCollection    bool                         `json:"showSmartStaleCollection"`    // Show smart stale bookmarks collection
+	ShowSmartMostUsedCollection bool                         `json:"showSmartMostUsedCollection"` // Show smart most used bookmarks collection
+	SmartTodayLimit             int                          `json:"smartTodayLimit"`             // Max items in smart today (0 = unlimited)
+	SmartRecentLimit            int                          `json:"smartRecentLimit"`            // Max items in smart recently opened (0 = unlimited)
+	SmartStaleLimit             int                          `json:"smartStaleLimit"`             // Max items in smart stale bookmarks (0 = unlimited)
+	SmartMostUsedLimit          int                          `json:"smartMostUsedLimit"`          // Max items in smart most used (0 = unlimited)
+	ShowSmartAddedCollection    bool                         `json:"showSmartAddedCollection"`    // Show smart recently added collection
+	SmartAddedLimit             int                          `json:"smartAddedLimit"`             // Max items in smart recently added (0 = unlimited)
+	SmartAddedPageIds           []int                        `json:"smartAddedPageIds"`           // Page IDs where smart recently added is enabled (empty = all)
+	ShowRowTags                 bool                         `json:"showRowTags"`                 // Show tag chips on dashboard bookmark rows
+	RowTagsMax                  int                          `json:"rowTagsMax"`                  // Chips shown before a "+N" (rest collapse)
+	CategoryItemLimit           int                          `json:"categoryItemLimit"`           // Max bookmarks shown per category before a "show more" toggle (0 = unlimited)
+	SmartTodayWorkKeywords      string                       `json:"smartTodayWorkKeywords"`      // Comma-separated work-hour keyword boosts
+	SmartTodayEveningKeywords   string                       `json:"smartTodayEveningKeywords"`   // Comma-separated evening keyword boosts
+	SmartTodayWeekendKeywords   string                       `json:"smartTodayWeekendKeywords"`   // Comma-separated weekend keyword boosts
+	SmartTodayPageIds           []int                        `json:"smartTodayPageIds"`           // Page IDs where smart today is enabled (empty = all)
+	SmartRecentPageIds          []int                        `json:"smartRecentPageIds"`          // Page IDs where smart recent is enabled (empty = all)
+	SmartStalePageIds           []int                        `json:"smartStalePageIds"`           // Page IDs where smart stale is enabled (empty = all)
+	SmartMostUsedPageIds        []int                        `json:"smartMostUsedPageIds"`        // Page IDs where smart most used is enabled (empty = all)
+	Collections                 []Collection                 `json:"collections,omitempty"`       // User-defined dynamic collections
+	ShowTagCollections          bool                         `json:"showTagCollections"`          // Auto-generate a collection per tag
+	TagCollectionsMinCount      int                          `json:"tagCollectionsMinCount"`      // Minimum bookmarks per tag to show collection (0 = all)
+	FaviconRefreshPolicy        string                       `json:"faviconRefreshPolicy"`        // Favicon policy: manual, on-save
+	OnboardingCompleted         bool                         `json:"onboardingCompleted"`
+	AnalyticsOptIn              bool                         `json:"analyticsOptIn"`       // Privacy-friendly Umami analytics — opt-in, off until the user turns it on in Config → General
+	EnableSessionTips           bool                         `json:"enableSessionTips"`    // Occasional cheat-sheet tip toast, rate-limited by discoverabilityState.tipsNotBefore (default on, opt-out in Config → General)
+	ShowShortcutTooltips        bool                         `json:"showShortcutTooltips"` // Keyboard-shortcut popovers on toolbar and header icons (default on, opt-out in Config → Behavior or `:shortcuts off`)
+	ShowGridKeyLegend           bool                         `json:"showGridKeyLegend"`
+	ShortcutOpenMode            string                       `json:"shortcutOpenMode,omitempty"`
+	RememberScrollPosition      bool                         `json:"rememberScrollPosition"` // Return to where you were on a page instead of the top, after a page switch or a trip through Health, Inbox or config
+	DetectSoftNotFound          bool                         `json:"detectSoftNotFound"`     // Judge whether a monitored page answering 200 is really a "page not found" template. Costs one bounded body read per check, which is why it is a choice
+	CertWarnDays                int                          `json:"certWarnDays,omitempty"` // How many days before expiry a certificate starts warning. 0 means the built-in 30; clamped to 3–120 on save. The two tighter marks follow it // What typing a bookmark shortcut does: "instant" (default, opens the moment it matches), "delay" (opens after a short pause with no further key), "enter" (Enter opens). Empty reads as "instant"; installs carrying the v1.2.0 default are moved once, see migrateShortcutOpenModeDefaultInstant
+	// HealthCheckTimeoutSeconds is how long one availability check may take.
+	// 0 means the built-in default (3s), which is what every install had before
+	// this was a choice. Clamped to 2–30 on save.
+	HealthCheckTimeoutSeconds int             `json:"healthCheckTimeoutSeconds,omitempty"` // Short key legend under the bookmark grid. On for a fresh install; an existing settings.json without the key keeps the zero value, so nobody has it appear under a dashboard they already know
+	QuickStart                QuickStartState `json:"quickStart"`                          // First-run quick-start progress (server-side, per-user)
 	// ConfigGeneralLayer is the last Essentials/Advanced/all layer used in
 	// Config → General. Empty means "never chosen", which starts on Essentials.
 	// Stored here rather than localStorage so the choice follows the user across
@@ -296,18 +331,35 @@ type Settings struct {
 	BackgroundGradient             string                           `json:"backgroundGradient"` // preset name used when type="gradient"
 	BackgroundImageUrl             string                           `json:"backgroundImageUrl"` // URL used when type="image"
 	ThemeIconStyling               map[string]ThemeIconStylingEntry `json:"themeIconStyling,omitempty"`
-	PasteUrlQuickAdd               bool                             `json:"pasteUrlQuickAdd"`               // Enable paste URL to quick-add bookmark on dashboard
-	InboxEnabled                   bool                             `json:"inboxEnabled"`                   // Enable inbox page and paste-to-inbox flow
-	PasteDestination               string                           `json:"pasteDestination"`               // ask, bookmark, or inbox when pasting a URL
-	InboxDedupeUrls                bool                             `json:"inboxDedupeUrls"`                // Skip duplicate URLs in inbox
-	InboxMaxItems                  int                              `json:"inboxMaxItems"`                  // Max inbox items (0 = unlimited)
-	InboxShowInPageTabs            bool                             `json:"inboxShowInPageTabs"`            // Show Inbox tab in page navigation
-	InboxDeleteAfterPromote        bool                             `json:"inboxDeleteAfterPromote"`        // Remove inbox item after promote to bookmark
-	AllowLocalBookmarks            bool                             `json:"allowLocalBookmarks"`            // Allow http(s) bookmarks to localhost and private hosts
-	AutoBackupEnabled              bool                             `json:"autoBackupEnabled"`              // Automatically create a weekly local backup (keeps the latest 3)
-	HealthAutoRecheckEnabled       bool                             `json:"healthAutoRecheckEnabled"`       // Periodically re-ping status-checked bookmarks in the background
-	HealthAutoRecheckIntervalHours int                              `json:"healthAutoRecheckIntervalHours"` // Hours between background rechecks (min 1, default 24)
-	ServerLogRetentionHours        int                              `json:"serverLogRetentionHours"`        // Hours of server log to keep in "time" mode (0 = until cleared, max 90 days)
+	PasteUrlQuickAdd               bool                             `json:"pasteUrlQuickAdd"`        // Enable paste URL to quick-add bookmark on dashboard
+	InboxEnabled                   bool                             `json:"inboxEnabled"`            // Enable inbox page and paste-to-inbox flow
+	PasteDestination               string                           `json:"pasteDestination"`        // ask, bookmark, or inbox when pasting a URL
+	InboxDedupeUrls                bool                             `json:"inboxDedupeUrls"`         // Skip duplicate URLs in inbox
+	InboxMaxItems                  int                              `json:"inboxMaxItems"`           // Max inbox items (0 = unlimited)
+	InboxShowInPageTabs            bool                             `json:"inboxShowInPageTabs"`     // Show Inbox tab in page navigation
+	InboxDeleteAfterPromote        bool                             `json:"inboxDeleteAfterPromote"` // Remove inbox item after promote to bookmark
+	AllowLocalBookmarks            bool                             `json:"allowLocalBookmarks"`     // Allow http(s) bookmarks to localhost and private hosts
+	AutoBackupEnabled              bool                             `json:"autoBackupEnabled"`       // Automatically create a local backup (keeps the latest few)
+	// AutoBackupIntervalDays is how often that runs. 0 means the built-in
+	// weekly default, which is what every install carried before this was a
+	// choice — so an absent key keeps the old behaviour rather than reading as
+	// "never".
+	AutoBackupIntervalDays         int  `json:"autoBackupIntervalDays,omitempty"`
+	HealthAutoRecheckEnabled       bool `json:"healthAutoRecheckEnabled"`       // Periodically re-ping status-checked bookmarks in the background
+	HealthAutoRecheckIntervalHours int  `json:"healthAutoRecheckIntervalHours"` // Hours between background rechecks (min 1, default 24)
+	// FeedsEnabled turns on feed polling: a bookmark whose page advertises a
+	// feed can then say when it has published something since you last opened
+	// it. Off by default because it is the only thing here that reaches out to
+	// the internet on a schedule without a bookmark having asked for it —
+	// discovery happens regardless, so switching this on needs no re-fetch.
+	FeedsEnabled bool `json:"feedsEnabled"`
+	// FeedsMarkQuiet puts a mark on a row whose page publishes but has nothing
+	// new. Off by default and deliberately so: most of those rows are silent
+	// most of the time, and a mark on twenty of them is the noise Fresh exists
+	// to avoid. It is here for the reader who wants to see which bookmarks are
+	// taking part at a glance rather than one at a time in the editor.
+	FeedsMarkQuiet          bool `json:"feedsMarkQuiet"`
+	ServerLogRetentionHours int  `json:"serverLogRetentionHours"` // Hours of server log to keep in "time" mode (0 = until cleared, max 90 days)
 	// Which cap applies: "time" uses ServerLogRetentionHours and ignores the
 	// entry count, "count" uses ServerLogMaxEntries and ignores the age. The
 	// two are deliberately exclusive — a log capped both ways silently drops
@@ -347,6 +399,32 @@ type Settings struct {
 	PushNotifyRelease    bool                  `json:"pushNotifyRelease"`              // Deprecated: release updates use in-app toast only
 	UpdateCheckEnabled   bool                  `json:"updateCheckEnabled"`             // Poll GitHub for newer releases (on by default)
 	DiscoverabilityState *DiscoverabilityState `json:"discoverabilityState,omitempty"` // Cross-browser what's-new and tips state
+	SavedSearches        []SavedSearch         `json:"savedSearches,omitempty"`        // Named queries from the search bar
+
+	// Config → Bookmarks. The list view had no settings of its own; these are
+	// the choices it used to make on the user's behalf.
+	ConfigBookmarksSort       string `json:"configBookmarksSort"`           // Sort the list opens on: page/name/recent/lastOpened/opens/pinned
+	ConfigBookmarksPageSize   int    `json:"configBookmarksPageSize"`       // Rows added per "load more" step
+	BookmarkDeleteConfirmFrom int    `json:"bookmarkDeleteConfirmFrom"`     // Ask before deleting this many rows or more (1 = always)
+	DefaultMonitorIntervalMin int    `json:"defaultMonitorIntervalMinutes"` // Interval a bookmark gets when switched to Monitor
+	NewBookmarkCheckMode      string `json:"newBookmarkCheckMode"`          // Availability a quick-added bookmark starts on: off/periodic/monitor
+	NewBookmarkPinned         bool   `json:"newBookmarkPinned"`             // Quick-add pins by default
+	NewBookmarkCategory       string `json:"newBookmarkCategory"`           // Category id a quick-added bookmark lands in ("" = none)
+	BookmarkStaleDays         int    `json:"bookmarkStaleDays"`             // "Not opened in N days" in the cleanup score and stats
+	BulkFaviconConfirmFrom    int    `json:"bulkFaviconConfirmFrom"`        // Ask before refreshing icons for this many rows (0 = never)
+	BookmarkArchiveUrl        string `json:"bookmarkArchiveUrl"`            // Archive service, {url} replaced with the bookmark's address
+}
+
+// SavedSearch is a query the user named and kept from the search bar.
+//
+// Stored in settings.json rather than localStorage, which is where they used to
+// live: :save and :saved are a documented feature, but the entries survived
+// neither a cleared cache nor a move to another browser, and — the part that
+// mattered — they were in no backup at all, so a reassuring ZIP did not contain
+// them.
+type SavedSearch struct {
+	Name  string `json:"name"`
+	Query string `json:"query"`
 }
 
 // DiscoverabilityState persists UI discoverability progress in settings.json (shared across browsers).
@@ -362,10 +440,10 @@ type DiscoverabilityState struct {
 
 // defaultThemeID is the theme a fresh install starts on. Existing dashboards
 // keep whatever they already have.
-const defaultThemeID = "moss-stone-dark"
+const defaultThemeID = "retro-crt-dark"
 
 // defaultThemeLightID is the light counterpart auto dark mode switches to.
-const defaultThemeLightID = "moss-stone-light"
+const defaultThemeLightID = "retro-crt-light"
 
 type ThemeIconStylingEntry struct {
 	Enabled   bool    `json:"enabled"`
@@ -374,13 +452,13 @@ type ThemeIconStylingEntry struct {
 }
 
 // defaultThemeIconStyling switches favicon harmonisation on for the default
-// theme of a fresh install, so mismatched site favicons blend with Moss & Stone
+// theme of a fresh install, so mismatched site favicons blend with Retro CRT
 // out of the box. Existing installs keep whatever map they already stored.
 //
 // Both variants are listed because the setting is keyed by the *displayed*
 // theme id, and auto dark mode (also on by default) swaps between the dark and
-// light Moss & Stone. With only one entry, harmonisation would silently apply
-// for half the day.
+// light Retro CRT. With only one entry, harmonisation would silently apply for
+// half the day.
 //
 // Values match the fallback the config UI assumes for an absent entry, so the
 // form shows the same style and intensity it would have defaulted to.
@@ -520,6 +598,9 @@ type Store interface {
 	MergePrefetchBookmarkIcons(pageID int, updates []PrefetchIconUpdate) int
 	// GetDataRevision returns a fingerprint of on-disk data for client cache invalidation.
 	GetDataRevision() string
+	// GetSettingsRevision fingerprints only what decides how the app looks and
+	// behaves, so a polling client can tell a config change from a data change.
+	GetSettingsRevision() string
 	// InvalidateReadCache drops in-memory read caches after out-of-band disk writes (import/restore).
 	InvalidateReadCache()
 	// Inbox
@@ -644,7 +725,11 @@ func (fs *FileStore) initializeDefaultFiles() {
 			OpenInNewTab:                 true,
 			AnalyticsOptIn:               false,
 			EnableSessionTips:            true,
-			ShowShortcutTooltips:         true,
+			ShowShortcutTooltips:         false,
+			ShowGridKeyLegend:            true,
+			ShortcutOpenMode:             "instant",
+			RememberScrollPosition:       true,
+			DetectSoftNotFound:           true,
 			ColumnsPerRow:                3,
 			FontSize:                     "m",
 			ShowBackgroundDots:           true,
@@ -668,7 +753,7 @@ func (fs *FileStore) initializeDefaultFiles() {
 			ShowTagCloudButton:           true,
 			ShowSearchFlowBanner:         true,
 			ShowCheatSheetButton:         false,
-			ShowCollapseAllButton:        true,
+			ShowCollapseAllButton:        false,
 			ShowSearchButtonText:         true,
 			ShowFindersButtonText:        true,
 			ShowCommandsButtonText:       true,
@@ -701,8 +786,9 @@ func (fs *FileStore) initializeDefaultFiles() {
 			FuzzySuggestionsStartWith:    false,
 			KeepSearchOpenWhenEmpty:      false,
 			ShowIcons:                    true,
-			ShowLinkPreviewCards:         false,
-			LinkPreviewHoverDelayMs:      150,
+			ShowLinkPreviewCards:         true,
+			LinkPreviewMode:              "hover",
+			LinkPreviewHoverDelayMs:      250,
 			ShowShortcuts:                true,
 			ShowPinIcon:                  false,
 			ShowNoteIcon:                 true,
@@ -730,11 +816,22 @@ func (fs *FileStore) initializeDefaultFiles() {
 			SmartRecentPageIds:           []int{},
 			SmartStalePageIds:            []int{},
 			SmartMostUsedPageIds:         []int{},
-			ArchivedPageIds:              []int{},
+			SmartAddedPageIds:            []int{},
+			SmartAddedLimit:              20,
+			RowTagsMax:                   2,
 			FaviconRefreshPolicy:         "on-save",
 			OnboardingCompleted:          false,
+			ConfigBookmarksSort:          defaultConfigBookmarksSort,
+			ConfigBookmarksPageSize:      defaultConfigBookmarksPageSize,
+			BookmarkDeleteConfirmFrom:    defaultBookmarkDeleteConfirmFrom,
+			DefaultMonitorIntervalMin:    defaultMonitorIntervalMinutes,
+			NewBookmarkCheckMode:         defaultNewBookmarkCheckMode,
+			BookmarkStaleDays:            defaultBookmarkStaleDays,
+			BookmarkArchiveUrl:           defaultBookmarkArchiveUrl,
 			ThemeIconStyling:             defaultThemeIconStyling(),
 			PackedColumns:                true,
+			DefaultCategorySpread:        false,
+			CategorySpreadResetScope:     defaultCategorySpreadResetScope,
 			// Was omitted here while both other Settings constructions set it,
 			// so a fresh install was served "" for a field whose documented
 			// default is "none". Harmless to the rendering, which treats an
@@ -795,6 +892,8 @@ func (fs *FileStore) initializeDefaultFiles() {
 	// One-time migration: remove existing custom themes and reset active custom theme to dark.
 	fs.migrateCustomThemesToUserManaged()
 	fs.migrateLinkPreviewCardsDefaultOff()
+	fs.migrateShortcutTooltipsDefaultOff()
+	fs.migrateShortcutOpenModeDefaultInstant()
 	fs.migrateHideEmptyCategoriesDefaultOn()
 	fs.migrateConfigButtonDefaultOn()
 
@@ -844,9 +943,118 @@ func (fs *FileStore) migrateLinkPreviewCardsDefaultOff() {
 			return
 		}
 	}
+	// An install created since link previews grew a mode has already answered
+	// this question — with "hover", the default it was installed with. Without
+	// this check the migration would switch the cards off on every new install
+	// the first time it starts.
+	if _, ok := raw["linkPreviewMode"]; ok {
+		raw["linkPreviewCardsOffMigrated"] = json.RawMessage(`true`)
+		if out, err := json.MarshalIndent(raw, "", "  "); err == nil {
+			_ = writeFileAtomic(fs.settingsFile, out, 0644)
+		}
+		return
+	}
 
 	raw["showLinkPreviewCards"] = json.RawMessage(`false`)
+	raw["linkPreviewMode"] = json.RawMessage(`"off"`)
 	raw["linkPreviewCardsOffMigrated"] = json.RawMessage(`true`)
+
+	out, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = writeFileAtomic(fs.settingsFile, out, 0644)
+}
+
+// migrateShortcutTooltipsDefaultOff turns the toolbar shortcut hints off once,
+// for everyone.
+//
+// Unlike the fresh-install defaults changed elsewhere, this one reaches
+// existing dashboards on purpose: the setting has been on since it existed and
+// is written into every stored settings file, so a default change alone would
+// have left every current install exactly as it was.
+//
+// The marker is what keeps it a one-time event. Without it the flip would run
+// on every start and nobody could ever switch the hints back on — which is the
+// difference between changing a default and taking a choice away.
+func (fs *FileStore) migrateShortcutTooltipsDefaultOff() {
+	fs.mutex.Lock()
+	defer fs.mutex.Unlock()
+
+	fs.ensureDataDir()
+
+	data, err := os.ReadFile(fs.settingsFile)
+	if err != nil {
+		return
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return
+	}
+	if migrated, ok := raw["shortcutTooltipsOffMigrated"]; ok {
+		var done bool
+		if json.Unmarshal(migrated, &done) == nil && done {
+			return
+		}
+	}
+
+	raw["showShortcutTooltips"] = json.RawMessage(`false`)
+	raw["shortcutTooltipsOffMigrated"] = json.RawMessage(`true`)
+
+	out, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = writeFileAtomic(fs.settingsFile, out, 0644)
+}
+
+// migrateShortcutOpenModeDefaultInstant undoes v1.2.0's "Enter opens" default,
+// once, for everyone still carrying it.
+//
+// v1.2.0 made typing stop opening anything: the list narrowed and Enter opened
+// the top result. It was defensible on paper and wrong in the hand — a shortcut
+// is a shortcut, and asking for a second key to finish it takes away the reason
+// to have one. The default is "instant" again.
+//
+// A default change alone would reach nobody: the field is written into every
+// settings file v1.2.0 touched. So installs still on "enter" — the value nobody
+// chose, because it arrived as the default — are moved over. "delay" is left
+// exactly as it is: that one can only be there because someone picked it.
+//
+// The marker keeps it a one-time event. Without it, anyone who preferred Enter
+// and set it back would have it taken away again on the next restart, which is
+// the difference between changing a default and removing a choice.
+func (fs *FileStore) migrateShortcutOpenModeDefaultInstant() {
+	fs.mutex.Lock()
+	defer fs.mutex.Unlock()
+
+	fs.ensureDataDir()
+
+	data, err := os.ReadFile(fs.settingsFile)
+	if err != nil {
+		return
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return
+	}
+	if migrated, ok := raw["shortcutOpenModeInstantMigrated"]; ok {
+		var done bool
+		if json.Unmarshal(migrated, &done) == nil && done {
+			return
+		}
+	}
+
+	mode := ""
+	if stored, ok := raw["shortcutOpenMode"]; ok {
+		_ = json.Unmarshal(stored, &mode)
+	}
+	if mode == "" || mode == "enter" {
+		raw["shortcutOpenMode"] = json.RawMessage(`"instant"`)
+	}
+	raw["shortcutOpenModeInstantMigrated"] = json.RawMessage(`true`)
 
 	out, err := json.MarshalIndent(raw, "", "  ")
 	if err != nil {
@@ -1504,6 +1712,12 @@ func (fs *FileStore) SaveFinders(finders []Finder) error {
 
 	fs.ensureDataDir()
 
+	// Names arrive unvalidated: nothing trimmed or capped them, so a finder
+	// could be stored with an empty or 500-character name.
+	for i := range finders {
+		finders[i].Name = clampEntityName(finders[i].Name)
+	}
+
 	filePath := fmt.Sprintf("%s/finders.json", fs.dataDir)
 	return fs.writeStoreJSONFile(filePath, finders, 0)
 }
@@ -1557,6 +1771,9 @@ func (fs *FileStore) GetCategoriesByPage(pageID int) []Category {
 // SaveCategoriesByPage saves categories inside bookmarks-{pageID}.json, creating the file if needed
 // It also updates bookmarks to use the new category IDs when category names change
 func (fs *FileStore) SaveCategoriesByPage(pageID int, categories []Category) error {
+	for i := range categories {
+		categories[i].Name = clampEntityName(categories[i].Name)
+	}
 	fs.mutex.Lock()
 	defer fs.mutex.Unlock()
 
@@ -1870,9 +2087,139 @@ func defaultPageName(id int) string {
 	return fmt.Sprintf("Page %d", id)
 }
 
+// Defaults for the Config → Bookmarks settings. Kept together so the two
+// default blocks below and the clamps in SaveSettings cannot drift apart.
+const (
+	defaultConfigBookmarksSort       = "page"
+	defaultConfigBookmarksPageSize   = 50
+	defaultBookmarkDeleteConfirmFrom = 1
+	defaultNewBookmarkCheckMode      = "off"
+	defaultBookmarkStaleDays         = 90
+	defaultBookmarkArchiveUrl        = "https://web.archive.org/web/*/{url}"
+	defaultCategorySpreadResetScope  = "page"
+)
+
+// categorySpreadResetScopes are the reaches "turn spreading off" offers.
+var categorySpreadResetScopes = map[string]bool{"page": true, "all": true}
+
+// configBookmarksSortModes are the orders the Config bookmark list can open on.
+var configBookmarksSortModes = map[string]bool{
+	"page": true, "name": true, "url": true, "category": true,
+	"recent": true, "lastOpened": true, "opens": true, "pinned": true,
+}
+
+// newBookmarkCheckModes mirrors the availability modes CheckMode understands.
+var newBookmarkCheckModes = map[string]bool{"off": true, "periodic": true, "monitor": true}
+
+// clampCategoryLayoutSettings keeps the spread settings inside what the
+// controls offer, and drops entries that carry no switch.
+//
+// The map holds the switch for categories that have no stored Category record —
+// uncategorized and the smart collections — keyed page id, then category id, the
+// same shape CategorySortModes uses. Without the pruning below it would grow an
+// entry per category the user ever touched, including the ones they turned back
+// off.
+func clampCategoryLayoutSettings(s *Settings) {
+	if !categorySpreadResetScopes[s.CategorySpreadResetScope] {
+		s.CategorySpreadResetScope = defaultCategorySpreadResetScope
+	}
+	if s.CategorySpreads == nil {
+		return
+	}
+	for pageKey, spreads := range s.CategorySpreads {
+		for categoryID, on := range spreads {
+			if !on {
+				delete(spreads, categoryID)
+			}
+		}
+		if len(spreads) == 0 {
+			delete(s.CategorySpreads, pageKey)
+		}
+	}
+	if len(s.CategorySpreads) == 0 {
+		s.CategorySpreads = nil
+	}
+}
+
+// clampBookmarkSettings keeps the Config → Bookmarks settings inside the range
+// their controls offer. The API is reachable without the browser, and a value
+// outside the range would otherwise be stored and then silently ignored by the
+// code that reads it — which is exactly the "said Saved, did nothing" shape
+// these settings were added to avoid.
+func clampBookmarkSettings(s *Settings) {
+	if !configBookmarksSortModes[s.ConfigBookmarksSort] {
+		s.ConfigBookmarksSort = defaultConfigBookmarksSort
+	}
+	if s.ConfigBookmarksPageSize < 10 {
+		s.ConfigBookmarksPageSize = 10
+	}
+	if s.ConfigBookmarksPageSize > 500 {
+		s.ConfigBookmarksPageSize = 500
+	}
+	if s.BookmarkDeleteConfirmFrom < 1 {
+		s.BookmarkDeleteConfirmFrom = 1
+	}
+	if s.DefaultMonitorIntervalMin < minMonitorIntervalMinutes {
+		s.DefaultMonitorIntervalMin = minMonitorIntervalMinutes
+	}
+	if s.DefaultMonitorIntervalMin > maxMonitorIntervalMinutes {
+		s.DefaultMonitorIntervalMin = maxMonitorIntervalMinutes
+	}
+	if !newBookmarkCheckModes[s.NewBookmarkCheckMode] {
+		s.NewBookmarkCheckMode = defaultNewBookmarkCheckMode
+	}
+	if s.BookmarkStaleDays < 7 {
+		s.BookmarkStaleDays = 7
+	}
+	if s.BookmarkStaleDays > 365 {
+		s.BookmarkStaleDays = 365
+	}
+	// 0 stays 0: it means "the built-in default", which is what an install that
+	// never chose an interval has. Anything else is held between daily and
+	// monthly — a backup less often than that is not a safety net, and more
+	// often than daily fills the rotation within a day.
+	if s.AutoBackupIntervalDays != 0 {
+		if s.AutoBackupIntervalDays < 1 {
+			s.AutoBackupIntervalDays = 1
+		}
+		if s.AutoBackupIntervalDays > 30 {
+			s.AutoBackupIntervalDays = 30
+		}
+	}
+	if s.RowTagsMax < 1 {
+		s.RowTagsMax = 1
+	}
+	if s.RowTagsMax > 5 {
+		s.RowTagsMax = 5
+	}
+	if s.BulkFaviconConfirmFrom < 0 {
+		s.BulkFaviconConfirmFrom = 0
+	}
+	s.BookmarkArchiveUrl = strings.TrimSpace(s.BookmarkArchiveUrl)
+	// Must be a template that can carry the address, and must not be a
+	// javascript: or data: URL — this string is handed to window.open.
+	if !strings.Contains(s.BookmarkArchiveUrl, "{url}") || !strings.HasPrefix(s.BookmarkArchiveUrl, "http") {
+		s.BookmarkArchiveUrl = defaultBookmarkArchiveUrl
+	}
+}
+
+// NameMaxLength caps a page, category, finder, theme or collection name.
+// Mirrors DashboardConfig.NAME_MAX_LENGTH: the browser is where the limit is
+// explained, this is where it is enforced, since the API is reachable without
+// it (the extension, a script, a second client).
+const NameMaxLength = 60
+
+// clampEntityName trims a user-entered name and cuts it to NameMaxLength.
+// Rune-wise via truncateRunes, so a name ending in a multi-byte character is
+// not cut mid-character.
+func clampEntityName(name string) string {
+	return truncateRunes(strings.TrimSpace(name), NameMaxLength)
+}
+
 func normalizePageMeta(page Page, fileID int) Page {
 	page.ID = fileID
-	if strings.TrimSpace(page.Name) == "" {
+	page.Name = clampEntityName(page.Name)
+	if page.Name == "" {
 		page.Name = defaultPageName(fileID)
 	}
 	return page
@@ -2230,7 +2577,11 @@ func (fs *FileStore) GetSettings() Settings {
 			OpenInNewTab:                   true,
 			AnalyticsOptIn:                 false,
 			EnableSessionTips:              true,
-			ShowShortcutTooltips:           true,
+			ShowShortcutTooltips:           false,
+			ShowGridKeyLegend:              true,
+			ShortcutOpenMode:               "instant",
+			RememberScrollPosition:         true,
+			DetectSoftNotFound:             true,
 			ColumnsPerRow:                  3,
 			FontSize:                       "m",
 			ShowBackgroundDots:             true,
@@ -2253,7 +2604,7 @@ func (fs *FileStore) GetSettings() Settings {
 			ShowRecentButton:               true,
 			ShowSearchFlowBanner:           true,
 			ShowCheatSheetButton:           true,
-			ShowCollapseAllButton:          true,
+			ShowCollapseAllButton:          false,
 			ShowSearchButtonText:           true,
 			ShowFindersButtonText:          true,
 			ShowCommandsButtonText:         true,
@@ -2286,8 +2637,9 @@ func (fs *FileStore) GetSettings() Settings {
 			FuzzySuggestionsStartWith:      false,
 			KeepSearchOpenWhenEmpty:        false,
 			ShowIcons:                      true,
-			ShowLinkPreviewCards:           false,
-			LinkPreviewHoverDelayMs:        150,
+			ShowLinkPreviewCards:           true,
+			LinkPreviewMode:                "hover",
+			LinkPreviewHoverDelayMs:        250,
 			ShowShortcuts:                  true,
 			ShowPinIcon:                    false,
 			ShowNoteIcon:                   true,
@@ -2310,14 +2662,25 @@ func (fs *FileStore) GetSettings() Settings {
 			SmartTodayPageIds:              []int{},
 			SmartRecentPageIds:             []int{},
 			SmartStalePageIds:              []int{},
-			ArchivedPageIds:                []int{},
+			SmartAddedPageIds:              []int{},
+			SmartAddedLimit:                20,
+			RowTagsMax:                     2,
 			FaviconRefreshPolicy:           "on-save",
+			ConfigBookmarksSort:            defaultConfigBookmarksSort,
+			ConfigBookmarksPageSize:        defaultConfigBookmarksPageSize,
+			BookmarkDeleteConfirmFrom:      defaultBookmarkDeleteConfirmFrom,
+			DefaultMonitorIntervalMin:      defaultMonitorIntervalMinutes,
+			NewBookmarkCheckMode:           defaultNewBookmarkCheckMode,
+			BookmarkStaleDays:              defaultBookmarkStaleDays,
+			BookmarkArchiveUrl:             defaultBookmarkArchiveUrl,
 			LayoutPreset:                   "default",
 			LayoutVersion:                  "classic",
 			DensityMode:                    "compact",
 			CategorySpacing:                "balanced",
 			SideMargin:                     "balanced",
 			PackedColumns:                  true,
+			DefaultCategorySpread:          false,
+			CategorySpreadResetScope:       defaultCategorySpreadResetScope,
 			BackgroundType:                 "none",
 			BackgroundGradient:             "",
 			BackgroundImageUrl:             "",
@@ -2355,7 +2718,9 @@ func (fs *FileStore) GetSettings() Settings {
 		}
 		// Absent for everyone until this setting existed, and the button it
 		// controls was visible all that time. Defaulting to false would take it
-		// away from every existing dashboard on upgrade.
+		// away from every existing dashboard on upgrade — which is why a fresh
+		// install starting without the button (see the constructors above) does
+		// not change anything here: no key means an upgrade, not a new install.
 		if _, ok := rawSettings["showCollapseAllButton"]; !ok {
 			settings.ShowCollapseAllButton = true
 		}
@@ -2383,14 +2748,23 @@ func (fs *FileStore) GetSettings() Settings {
 		if _, ok := rawSettings["showShortcuts"]; !ok {
 			settings.ShowShortcuts = true
 		}
-		if _, ok := rawSettings["showLinkPreviewCards"]; !ok {
-			settings.ShowLinkPreviewCards = false
+		// A settings file that predates the card carries neither key, and the
+		// card is on by default now. One that carries the old boolean has an
+		// answer already — including the false the v1.2 migration wrote, which
+		// was a decision made for those installs and is not undone here.
+		_, hadLegacy := rawSettings["showLinkPreviewCards"]
+		_, hadMode := rawSettings["linkPreviewMode"]
+		if !hadLegacy && !hadMode {
+			settings.ShowLinkPreviewCards = true
 		}
 		if _, ok := rawSettings["linkPreviewHoverDelayMs"]; !ok {
-			settings.LinkPreviewHoverDelayMs = 150
+			settings.LinkPreviewHoverDelayMs = 250
 		}
+		settings.LinkPreviewMode = normalizeLinkPreviewMode(settings.LinkPreviewMode, settings.ShowLinkPreviewCards)
+		settings.ShowLinkPreviewCards = settings.LinkPreviewMode != "off"
+		settings.LinkPreviewParts = normalizeLinkPreviewParts(settings.LinkPreviewParts)
 		if settings.LinkPreviewHoverDelayMs != 100 && settings.LinkPreviewHoverDelayMs != 150 && settings.LinkPreviewHoverDelayMs != 250 {
-			settings.LinkPreviewHoverDelayMs = 150
+			settings.LinkPreviewHoverDelayMs = 250
 		}
 		if _, ok := rawSettings["showPinIcon"]; !ok {
 			settings.ShowPinIcon = false
@@ -2492,8 +2866,8 @@ func (fs *FileStore) GetSettings() Settings {
 		if _, ok := rawSettings["smartStalePageIds"]; !ok || settings.SmartStalePageIds == nil {
 			settings.SmartStalePageIds = []int{}
 		}
-		if _, ok := rawSettings["archivedPageIds"]; !ok || settings.ArchivedPageIds == nil {
-			settings.ArchivedPageIds = []int{}
+		if _, ok := rawSettings["smartAddedPageIds"]; !ok || settings.SmartAddedPageIds == nil {
+			settings.SmartAddedPageIds = []int{}
 		}
 		if _, ok := rawSettings["faviconRefreshPolicy"]; !ok || (settings.FaviconRefreshPolicy != "manual" && settings.FaviconRefreshPolicy != "on-save") {
 			settings.FaviconRefreshPolicy = "on-save"
@@ -2542,11 +2916,11 @@ func (fs *FileStore) GetSettings() Settings {
 		if _, ok := rawSettings["enableSessionTips"]; !ok {
 			settings.EnableSessionTips = true
 		}
-		// Same default-on, opt-out contract: the shortcut popovers are how the
-		// keys are discovered in the first place, so they stay on until asked.
-		if _, ok := rawSettings["showShortcutTooltips"]; !ok {
-			settings.ShowShortcutTooltips = true
-		}
+		// Off unless the file says otherwise. This used to fill an absent key
+		// with true — the popovers were how the keys were discovered — and the
+		// one-time migration above has since turned them off for everyone, so
+		// filling in true here would put them straight back on any file written
+		// before the key existed.
 		if _, ok := rawSettings["packedColumns"]; !ok {
 			settings.PackedColumns = true
 		}
@@ -2637,6 +3011,12 @@ func (fs *FileStore) GetSettings() Settings {
 			settings.PasteDestination = "ask"
 		}
 		settings.PasteDestination = normalizePasteDestination(settings.PasteDestination)
+		// The mode decides; the old boolean follows it, so anything still reading
+		// showLinkPreviewCards — the command palette toggle, the analytics flag —
+		// cannot disagree with the setting the reader actually chose.
+		settings.LinkPreviewMode = normalizeLinkPreviewMode(settings.LinkPreviewMode, settings.ShowLinkPreviewCards)
+		settings.ShowLinkPreviewCards = settings.LinkPreviewMode != "off"
+		settings.LinkPreviewParts = normalizeLinkPreviewParts(settings.LinkPreviewParts)
 		if _, ok := rawSettings["inboxDedupeUrls"]; !ok {
 			settings.InboxDedupeUrls = true
 		}
@@ -2668,6 +3048,26 @@ func (fs *FileStore) GetSettings() Settings {
 	settings.FontPreset = normalizeFontPreset(settings.FontPreset)
 	settings.FontSize = normalizeFontSize(settings.FontSize)
 	settings.HealthAutoRecheckIntervalHours = clampHealthAutoRecheckIntervalHours(settings.HealthAutoRecheckIntervalHours)
+	// 0 stays 0 — it means "the built-in default" — and anything else is held
+	// inside the range a bounded sweep can afford.
+	if settings.HealthCheckTimeoutSeconds != 0 {
+		if settings.HealthCheckTimeoutSeconds < 2 {
+			settings.HealthCheckTimeoutSeconds = 2
+		}
+		if settings.HealthCheckTimeoutSeconds > 30 {
+			settings.HealthCheckTimeoutSeconds = 30
+		}
+	}
+	// Same shape: 0 means the built-in 30 days, anything else is held inside a
+	// range where a renewal reminder is still a reminder.
+	if settings.CertWarnDays != 0 {
+		if settings.CertWarnDays < certWarnDaysMin {
+			settings.CertWarnDays = certWarnDaysMin
+		}
+		if settings.CertWarnDays > certWarnDaysMax {
+			settings.CertWarnDays = certWarnDaysMax
+		}
+	}
 	settings.ServerLogRetentionHours = clampServerLogRetentionHours(settings.ServerLogRetentionHours)
 	settings.ServerLogRetentionMode = clampServerLogRetentionMode(settings.ServerLogRetentionMode)
 	settings.ServerLogMaxEntries = clampServerLogMaxEntries(settings.ServerLogMaxEntries)
@@ -2697,6 +3097,8 @@ func (fs *FileStore) SaveSettings(settings Settings) error {
 		if json.Unmarshal(raw, &stored) == nil {
 			settings.TagCloudDefaultMigrated = stored.TagCloudDefaultMigrated
 			settings.LinkPreviewCardsOffMigrated = stored.LinkPreviewCardsOffMigrated
+			settings.ShortcutTooltipsOffMigrated = stored.ShortcutTooltipsOffMigrated
+			settings.ShortcutOpenModeInstantMigrated = stored.ShortcutOpenModeInstantMigrated
 			settings.HideEmptyCategoriesMigrated = stored.HideEmptyCategoriesMigrated
 			settings.ConfigButtonDefaultOnMigrated = stored.ConfigButtonDefaultOnMigrated
 		}
@@ -3159,19 +3561,22 @@ type HealthReason struct {
 }
 
 type HealthIssue struct {
-	Name         string `json:"name"`
-	URL          string `json:"url"`
-	Shortcut     string `json:"shortcut,omitempty"`
-	Category     string `json:"category,omitempty"`
-	PageID       int    `json:"pageId"`
-	PageName     string `json:"pageName,omitempty"`
-	Index        int    `json:"index"`
-	Pinned       bool   `json:"pinned"`
-	CheckStatus  bool   `json:"checkStatus"`
-	OpenCount    int    `json:"openCount"`
-	LastOpened   int64  `json:"lastOpened,omitempty"`
-	LastChecked  int64  `json:"lastChecked,omitempty"`
-	LastError    string `json:"lastError,omitempty"`
+	Name        string `json:"name"`
+	URL         string `json:"url"`
+	Shortcut    string `json:"shortcut,omitempty"`
+	Category    string `json:"category,omitempty"`
+	PageID      int    `json:"pageId"`
+	PageName    string `json:"pageName,omitempty"`
+	Index       int    `json:"index"`
+	Pinned      bool   `json:"pinned"`
+	CheckStatus bool   `json:"checkStatus"`
+	OpenCount   int    `json:"openCount"`
+	LastOpened  int64  `json:"lastOpened,omitempty"`
+	LastChecked int64  `json:"lastChecked,omitempty"`
+	LastError   string `json:"lastError,omitempty"`
+	// BrokenSince is when this run of failures started, so the row can say how
+	// long it has been down rather than only that it is.
+	BrokenSince  int64  `json:"brokenSince,omitempty"`
 	PreviewTitle string `json:"previewTitle,omitempty"`
 	PreviewDesc  string `json:"previewDesc,omitempty"`
 	PreviewImage string `json:"previewImage,omitempty"`
@@ -3328,6 +3733,17 @@ type HealthSample struct {
 	// actually happened — but uptime ratios skip it, so a nightly backup does not
 	// read as a nightly outage.
 	Maint bool `json:"m,omitempty"`
+	// Fail is why a failed check failed, as a short class: dns, timeout,
+	// refused, tls, redirect, content, http, or other. Empty on a sample that
+	// succeeded.
+	//
+	// The engine has always worked this out — classifyPingError runs on every
+	// failed check — and then dropped it, so a DNS outage and a refused
+	// connection were both recorded as "Up: false, Code: 0" and reached the
+	// incident list, the fleet timeline and the CSV export with no cause at all.
+	// A class rather than the sentence: the sentence is for a human reading one
+	// row, the class is what a list can group and a column can hold.
+	Fail string `json:"e,omitempty"`
 }
 
 // HealthHistoryFile stores per-URL sample history for monitored bookmarks, kept
@@ -3337,6 +3753,24 @@ type HealthHistoryFile struct {
 	GeneratedAt int64 `json:"generatedAt"`
 	// Samples maps canonical URL to samples in ascending time order.
 	Samples map[string][]HealthSample `json:"samples"`
+	// Days maps canonical URL to one summary per day, ascending, for the part
+	// of the history whose individual checks have been dropped. Raw samples are
+	// capped per URL — roughly a week on a five-minute monitor — so before this
+	// the "30 days" figure was computed over whatever survived that cap. Folding
+	// each day into a summary before dropping it costs a few bytes a day and
+	// makes the long windows mean what they say.
+	Days map[string][]HealthDay `json:"days,omitempty"`
+}
+
+// HealthDay is one URL's day, kept after its individual samples are gone.
+//
+// Keys are terse for the same reason HealthSample's are: this file is rewritten
+// on every monitor run.
+type HealthDay struct {
+	D int64 `json:"d"`           // Start of the day, Unix milliseconds, UTC
+	N int   `json:"n"`           // Checks counted (maintenance samples excluded, as in uptimeRatio)
+	U int   `json:"u"`           // How many of them succeeded
+	P int   `json:"p,omitempty"` // Mean response time in ms across the successful checks
 }
 
 // HealthTrendPoint is one day's summary of the whole collection.
@@ -3355,6 +3789,14 @@ type HealthTrendPoint struct {
 	Stale     int   `json:"s,omitempty"`
 	Unused    int   `json:"x,omitempty"`
 	Duplicate int   `json:"p,omitempty"`
+	// Untagged and Opens make this a record of the collection rather than only
+	// of its health. Statistics could show every figure it has as a number and
+	// none of them as a direction: "102 bookmarks" says nothing about whether
+	// that is ten more than last week. These two are the ones that move on
+	// their own — tagging is the tidying people actually do, and opens are what
+	// the library is for — and both were already counted on every report build.
+	Untagged int `json:"g,omitempty"`
+	Opens    int `json:"o,omitempty"`
 	// Score is the average health score across the collection, 0..100. Stored
 	// alongside the counts because the header badge shows a percentage healthy
 	// while the rows carry scores, and a trend of one cannot be derived from the
@@ -3456,4 +3898,35 @@ func (fs *FileStore) GetDataRevision() string {
 	fs.readCache.revision = revision
 	fs.readCache.revisionOK = true
 	return revision
+}
+
+// GetSettingsRevision is a fingerprint of the files that decide how the app
+// looks and behaves, as opposed to what is in it.
+//
+// The whole-data revision already changes when settings.json does, and the
+// client's poll only ever reloaded bookmarks, inbox and health on that change —
+// so a second device kept showing stale chrome after every config change while
+// paying for the poll that could have told it. A separate hash means the poll
+// can tell "someone edited a bookmark" from "someone changed a setting" and do
+// the right, more expensive thing only for the second.
+func (fs *FileStore) GetSettingsRevision() string {
+	fs.mutex.Lock()
+	defer fs.mutex.Unlock()
+
+	fs.ensureDataDir()
+
+	hash := sha256.New()
+	for _, path := range []string{fs.settingsFile, fs.colorsFile} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			hash.Write([]byte(path + ":missing;"))
+			continue
+		}
+		fileHash := sha256.Sum256(data)
+		hash.Write([]byte(path + ":"))
+		hash.Write(fileHash[:])
+		hash.Write([]byte(";"))
+	}
+	sum := hash.Sum(nil)
+	return hex.EncodeToString(sum[:8])
 }

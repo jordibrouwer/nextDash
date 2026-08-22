@@ -44,7 +44,7 @@ class SearchCommandsComponent {
                 label: 'Look & layout',
                 labelKey: 'commands.groupLookAndFeel',
                 commands: [
-                    'theme', 'layoutversion', 'layout', 'density', 'columns', 'fontsize', 'buttonbar', 'packed',
+                    'theme', 'layoutversion', 'layout', 'density', 'columns', 'width', 'fontsize', 'buttonbar', 'packed',
                     'preview', 'favicons', 'title', 'opacity', 'animations', 'status', 'dark', 'lang', 'buttons',
                     'shortcuts',
                 ],
@@ -59,7 +59,7 @@ class SearchCommandsComponent {
                 id: 'settings-tools',
                 label: 'Settings & tools',
                 labelKey: 'commands.groupSettingsTools',
-                commands: ['config', 'backup', 'export', 'metadata', 'health', 'monitor', 'reload', 'cheat', 'help', 'whatsnew', 'telemetry'],
+                commands: ['config', 'backup', 'trash', 'export', 'metadata', 'health', 'monitor', 'reload', 'cheat', 'help', 'whatsnew', 'telemetry'],
             },
         ];
         // Track which groups are expanded (none by default)
@@ -75,6 +75,7 @@ class SearchCommandsComponent {
             'theme': this.handleThemeCommand.bind(this),
             'fontsize': this.handleFontSizeCommand.bind(this),
             'columns': this.handleColumnsCommand.bind(this),
+            'width': this.handleWidthCommand.bind(this),
             'save': this.handleSaveSearchCommand.bind(this),
             'saved': this.handleSavedSearchesCommand.bind(this),
             'history': this.handleHistoryCommand.bind(this),
@@ -123,6 +124,7 @@ class SearchCommandsComponent {
             'collections': this.handleCollectionsCommand.bind(this),
             'opacity': this.handleOpacityCommand.bind(this),
             'backup': this.handleBackupCommand.bind(this),
+            'trash': this.handleTrashCommand.bind(this),
             'metadata': this.handleMetadataCommand.bind(this),
             'filter': this.handleFilterCommand.bind(this),
             'export': this.handleExportCommand.bind(this),
@@ -195,12 +197,14 @@ class SearchCommandsComponent {
     }
 
     _sortModeLabel(method) {
-        const key = method === 'az'
-            ? 'commands.sortModeAz'
-            : method === 'recent'
-                ? 'commands.sortModeRecent'
-                : 'commands.sortModeOrder';
-        const fallback = method === 'az' ? 'A–Z' : method === 'recent' ? 'Recent' : 'Manual order';
+        // 'opened' was 'recent'; the old key is kept so translations stay put.
+        const map = {
+            az: ['commands.sortModeAz', 'A–Z'],
+            opened: ['commands.sortModeRecent', 'Last opened'],
+            added: ['commands.sortModeAdded', 'Recently added'],
+            opens: ['commands.sortModeOpens', 'Most opened'],
+        };
+        const [key, fallback] = map[method] || ['commands.sortModeOrder', 'Manual order'];
         return this._t(key, fallback);
     }
 
@@ -701,10 +705,9 @@ class SearchCommandsComponent {
 
         const flashRow = () => {
             if (!row) return;
-            row.classList.remove('bookmark-copy-flash');
-            void row.offsetWidth;
-            row.classList.add('bookmark-copy-flash');
-            row.addEventListener('animationend', () => row.classList.remove('bookmark-copy-flash'), { once: true });
+            // Shared helper: the remove/reflow/add dance replays an animation that
+            // may still be running, and was written out by hand in five places.
+            window.dashboardInstance?.bookmarkRows?.restartRowAnimation?.(row, 'bookmark-copy-flash');
         };
 
         const done = () => {
@@ -1157,7 +1160,9 @@ class SearchCommandsComponent {
             stateId: 'pin',
             type: 'command',
             action: () => {
-                ctx.pinned = willPin;
+                // No flip here: _persistBookmarkField applies it synchronously
+                // before its first await, so the refresh below still sees the
+                // new value — and a failed write can put it back.
                 this._persistBookmarkField(ctx, { pinned: willPin });
                 return this._paletteRefresh('pin');
             }
@@ -1812,29 +1817,62 @@ class SearchCommandsComponent {
 
     // ─── persist helper ───────────────────────────────────────────────────────
 
+    /**
+     * Write one or more fields of a bookmark, optimistically.
+     *
+     * The update is applied to the in-memory object first so the pin badge and
+     * the palette label change under the user's hand, and reverted if the write
+     * does not land. Callers used to do that flip themselves and had nothing to
+     * revert with, so a failed write left the dashboard claiming a bookmark was
+     * pinned when the file said otherwise — silently, on all three pin routes
+     * (:pin, Shift+P and the context menu). Doing it here keeps that one
+     * implementation rather than three.
+     *
+     * @returns {Promise<boolean>} whether the change reached the server.
+     */
     async _persistBookmarkField(bookmark, updates) {
         const dash = window.dashboardInstance;
-        if (!dash) return;
+        if (!dash) return false;
         const pageId = Number(bookmark.pageId || bookmark.pageID || dash.currentPageId);
-        if (!pageId) return;
+        if (!pageId) return false;
+
+        const previous = {};
+        Object.keys(updates).forEach((key) => { previous[key] = bookmark[key]; });
+        Object.assign(bookmark, updates);
+
+        const revert = (message) => {
+            Object.assign(bookmark, previous);
+            if (dash.bookmarks && Number(dash.currentPageId) === pageId) {
+                const localIdx = dash.bookmarks.findIndex(b => b.url === bookmark.url && b.name === bookmark.name);
+                if (localIdx >= 0) Object.assign(dash.bookmarks[localIdx], previous);
+            }
+            if (typeof dash.renderDashboard === 'function') dash.renderDashboard();
+            dash.showErrorNotification?.(message);
+            return false;
+        };
+
+        const failedLabel = this._t('commands.bookmarkUpdateFailed', 'Could not save the change');
+
         try {
             const res = await fetch(`/api/bookmarks?page=${pageId}`);
-            if (!res.ok) return;
+            if (!res.ok) return revert(failedLabel);
             const bookmarks = await res.json();
             const idx = bookmarks.findIndex(b => b.url === bookmark.url && b.name === bookmark.name);
             if (idx >= 0) Object.assign(bookmarks[idx], updates);
-            await (typeof nextDashFetch === 'function' ? nextDashFetch : fetch)(`/api/bookmarks?page=${pageId}`, {
+            const write = await (typeof nextDashFetch === 'function' ? nextDashFetch : fetch)(`/api/bookmarks?page=${pageId}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(bookmarks)
             });
+            if (!write?.ok) return revert(failedLabel);
             if (dash.bookmarks && Number(dash.currentPageId) === pageId) {
                 const localIdx = dash.bookmarks.findIndex(b => b.url === bookmark.url && b.name === bookmark.name);
                 if (localIdx >= 0) Object.assign(dash.bookmarks[localIdx], updates);
             }
             if (typeof dash.renderDashboard === 'function') dash.renderDashboard();
+            return true;
         } catch (e) {
-            // ignore
+            return revert(failedLabel);
         }
     }
 
@@ -1950,7 +1988,7 @@ class SearchCommandsComponent {
             dashboard,
             { id: categoryId }
         ) || 'order';
-        const validMethods = ['order', 'az', 'recent'];
+        const validMethods = ['order', 'az', 'opened', 'added', 'opens'];
 
         if (!method) {
             return validMethods.map((sortMethod) => ({
@@ -1981,6 +2019,108 @@ class SearchCommandsComponent {
             type: 'command',
             action: () => this.applySort(dashboard, sortMethod, categoryId),
         }));
+    }
+
+    /**
+     * :width — whether the focused category spreads across columns.
+     *
+     * On or off, not a number: how many columns a spread category takes follows
+     * from the items-per-category limit and how many bookmarks are in it.
+     *
+     * `all` is the escape hatch for the case the per-category rows are bad at:
+     * undoing an afternoon of switching things on.
+     */
+    handleWidthCommand(args) {
+        const dashboard = window.dashboardInstance;
+        const span = window.DashboardCategorySpan;
+        if (!dashboard || !span) {
+            return [];
+        }
+
+        const blocked = span.spreadUnavailableReason(dashboard);
+        if (blocked) {
+            return [{
+                name: blocked === 'unlimited-items'
+                    ? this._t('commands.widthNeedsLimit',
+                        'Spreading needs a limit on items per category — that limit decides how many columns')
+                    : this._t('commands.widthUnavailable',
+                        'There is only one column to work with — spreading needs at least two'),
+                shortcut: ':WIDTH',
+                type: 'command',
+                action: () => false,
+            }];
+        }
+
+        const categoryEl = span.resolveFocusedCategoryEl(dashboard);
+        const category = categoryEl ? span.categoryFromEl(dashboard, categoryEl) : null;
+        if (!category) {
+            return [{
+                name: this._t('commands.widthNoCategory', 'No category on this page yet'),
+                shortcut: ':WIDTH',
+                type: 'command',
+                action: () => false,
+            }];
+        }
+
+        const label = String(category.name || category.id || '').trim();
+        const current = span.isCategorySpread(dashboard, category);
+        const rows = [true, false].map((on) => ({
+            name: this._markCurrent(
+                this._formatSpreadPaletteLabel(on, label),
+                on === current,
+            ),
+            shortcut: ':WIDTH',
+            stateId: `width:${on ? 'on' : 'off'}`,
+            completion: `:width ${on ? 'on' : 'off'} `,
+            type: 'command',
+            action: () => this.applyCategorySpread(dashboard, category.id, on),
+        }));
+
+        rows.push({
+            name: this._t('commands.widthResetAll', 'Every category back to one column'),
+            shortcut: ':WIDTH',
+            stateId: 'width:reset',
+            completion: ':width all ',
+            type: 'command',
+            action: () => this.applyCategorySpreadReset(dashboard),
+        });
+
+        const query = (args[0] || '').toLowerCase();
+        if (!query) {
+            return rows;
+        }
+        if ('all'.startsWith(query) || 'reset'.startsWith(query)) {
+            return [rows[rows.length - 1]];
+        }
+        return rows.filter((row) => row.stateId === `width:${query}`
+            || ('on'.startsWith(query) && row.stateId === 'width:on')
+            || ('off'.startsWith(query) && row.stateId === 'width:off'));
+    }
+
+    _formatSpreadPaletteLabel(on, categoryLabel) {
+        const state = on
+            ? this._t('commands.widthSpreadOn', 'Spread across columns')
+            : this._t('commands.widthSpreadOff', 'One column');
+        if (!categoryLabel) {
+            return state;
+        }
+        return this._t('commands.widthForCategory', '{width} — {category}')
+            .replace('{width}', state)
+            .replace('{category}', categoryLabel);
+    }
+
+    applyCategorySpread(dashboard, categoryId, on) {
+        const span = window.DashboardCategorySpan;
+        span?.setCategorySpread(dashboard, categoryId, on);
+        span?.refreshCategorySpreadUi(dashboard, categoryId);
+        return this._paletteRefresh(`width:${on ? 'on' : 'off'}`);
+    }
+
+    applyCategorySpreadReset(dashboard) {
+        const scope = dashboard.settings?.categorySpreadResetScope === 'all' ? 'all' : 'page';
+        void window.DashboardCategorySpan?.resetAllCategorySpreads(dashboard, scope)
+            .then(() => dashboard.renderDashboard?.({ animate: false, forceFull: true }));
+        return this._paletteRefresh('width:reset');
     }
 
     applySort(dashboard, method, categoryId) {
@@ -2441,6 +2581,19 @@ class SearchCommandsComponent {
 
     setPreviewCardsVisibility(dashboard, enabled) {
         dashboard.settings.showLinkPreviewCards = enabled;
+        // The mode is what the card reads, so `:preview off` has to write it —
+        // otherwise the palette says off while every row still opens a card.
+        // Switching back on restores the way it was reached before, which for
+        // someone who chose keyboard-only is keyboard-only: `on` means "not
+        // off", not "on hover".
+        if (!enabled) {
+            dashboard._previewModeBeforeOff = dashboard.settings.linkPreviewMode || 'hover';
+            dashboard.settings.linkPreviewMode = 'off';
+        } else {
+            const restored = dashboard._previewModeBeforeOff;
+            dashboard.settings.linkPreviewMode =
+                restored && restored !== 'off' ? restored : 'hover';
+        }
         if (!enabled && typeof dashboard.dismissBookmarkPreviewInteractions === 'function') {
             dashboard.dismissBookmarkPreviewInteractions();
         }
@@ -3417,6 +3570,32 @@ class SearchCommandsComponent {
             action: () => {
                 this._closeCommandPalette();
                 window.location.href = '/config#backups';
+                return { navigate: true };
+            },
+        }];
+    }
+
+    /**
+     * :trash — the 30-day recycle bin, from the dashboard.
+     *
+     * Deleted bookmarks, pages and categories have been kept for 30 days for a
+     * while, reachable only by mouse through Config → Data & backups → Trash.
+     * There was no command, no shortcut and no cheat-sheet row, and "trash" was
+     * not in the config-section list either, so even :config trash missed. The
+     * manual's own line — "the undo in the toast is for the moment after; the
+     * trash is for the next morning" — describes someone who is on the
+     * dashboard when the next morning comes.
+     */
+    handleTrashCommand(args, fullQuery) {
+        return [{
+            name: this._t('commands.trashLabel', 'Open the trash — restore deleted items'),
+            shortcut: ':TRASH',
+            type: 'command',
+            action: () => {
+                this._closeCommandPalette();
+                // The hash the config router already understands, so this needs
+                // no new target: section, then sub-tab.
+                window.location.hash = '#config/data-backups/trash';
                 return { navigate: true };
             },
         }];

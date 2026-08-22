@@ -293,7 +293,14 @@ class DashboardMultiSelect {
             bar.className = 'multi-select-toolbar';
             bar.setAttribute('role', 'toolbar');
             bar.setAttribute('aria-label', this.t('dashboard.multiSelectToolbarAria', 'Selection actions'));
-            container.prepend(bar);
+            // Before the grid, not inside it. #dashboard-layout carries
+            // role="grid", whose children must be rows or rowgroups — a
+            // role="toolbar" among them is invalid. It also laid out wrong:
+            // the grid is a flex row, so a full-width bar was squeezed into a
+            // narrow vertical strip beside the columns instead of sitting above
+            // them. Sticky positioning is unaffected; the scrolling ancestor is
+            // the same either way.
+            (container.parentElement || container).insertBefore(bar, container);
             this._toolbar = bar;
         }
 
@@ -358,6 +365,22 @@ class DashboardMultiSelect {
         });
         tagsBtn.setAttribute('aria-haspopup', 'true');
         tagsBtn.setAttribute('aria-expanded', 'false');
+        // Pin and checking were per-row only, and both are what you set while
+        // laying out a page: twenty rows meant twenty menus. Pin reads the
+        // selection first, so a mixed set pins rather than toggling each row
+        // into the opposite of what its neighbour just became.
+        const allPinned = this.resolveRefs().every((ref) => ref.bookmark?.pinned);
+        addButton(allPinned
+            ? this.t('dashboard.multiSelectUnpin', 'Unpin')
+            : this.t('dashboard.multiSelectPin', 'Pin'), '', () => {
+            void this.setSelectedPinned(!allPinned);
+        });
+        const checkBtn = addButton(this.t('dashboard.multiSelectChecking', 'Checking'), 'multi-select-check-btn', (btn) => {
+            this.openCheckModePopover(btn);
+            markExpandedUntilPopoverCloses(btn, 'multi-select-check-popover');
+        });
+        checkBtn.setAttribute('aria-haspopup', 'true');
+        checkBtn.setAttribute('aria-expanded', 'false');
         addButton(this.t('dashboard.multiSelectOpen', 'Open'), '', () => {
             this.openSelected();
         });
@@ -411,16 +434,18 @@ class DashboardMultiSelect {
         header.textContent = this.t('dashboard.multiSelectTagsTitle', 'Tag selection…');
         pop.appendChild(header);
 
+        let unbindOutside = null;
+        let unbindPosition = null;
         const close = () => {
             pop.remove();
-            document.removeEventListener('click', onOutside, true);
+            unbindOutside?.();
+            unbindOutside = null;
+            unbindPosition?.();
+            unbindPosition = null;
             document.removeEventListener('keydown', onKey, true);
             if (d._multiSelectTagsCleanup === close) {
                 d._multiSelectTagsCleanup = null;
             }
-        };
-        const onOutside = (e) => {
-            if (!pop.contains(e.target) && e.target !== anchorEl) close();
         };
         const onKey = (e) => {
             if (e.key === 'Escape') {
@@ -491,18 +516,36 @@ class DashboardMultiSelect {
         });
 
         document.body.appendChild(pop);
-        d._positionActionPopoverBeside?.(pop, anchorEl);
+
         // The shared helper centres the popover on its anchor, which is right for
         // a bookmark row but not here: the toolbar sits at the top-left, so a tall
         // tag list centred on a short button rides up over the bar it came from.
         // Align its top to the button and let it grow downward instead.
-        const anchorRect = anchorEl.getBoundingClientRect();
         const pad = window.DashboardPromoPlacement?.VIEWPORT_PAD ?? 8;
-        const maxTop = window.innerHeight - pop.offsetHeight - pad;
-        pop.style.top = `${Math.round(Math.max(pad, Math.min(anchorRect.top, maxTop)))}px`;
+        const reposition = () => {
+            d._positionActionPopoverBeside?.(pop, anchorEl);
+            const rect = anchorEl.getBoundingClientRect();
+            const maxTop = window.innerHeight - pop.offsetHeight - pad;
+            pop.style.top = `${Math.round(Math.max(pad, Math.min(rect.top, maxTop)))}px`;
+        };
+        reposition();
         window.FocusTrapUtils?.syncDashboardInert?.();
+
+        // Anchored to a toolbar button that scrolls with the grid, so it has to
+        // follow it. The row popovers already do; this one bound nothing at all
+        // and drifted away from the button it belongs to.
+        window.addEventListener('resize', reposition);
+        window.addEventListener('scroll', reposition, true);
+        unbindPosition = () => {
+            window.removeEventListener('resize', reposition);
+            window.removeEventListener('scroll', reposition, true);
+        };
+
+        // contextmenu as well as click, and the anchor matched by containment
+        // rather than identity so an icon added to the button later cannot make
+        // its own click close and reopen the popover.
+        unbindOutside = d.bookmarkRows._bindActionPopoverOutsideClose(pop, close, { anchorEl });
         setTimeout(() => {
-            document.addEventListener('click', onOutside, true);
             document.addEventListener('keydown', onKey, true);
         }, 0);
         d._multiSelectTagsCleanup = close;
@@ -552,6 +595,10 @@ class DashboardMultiSelect {
             return;
         }
         void d.data?.fetchAndStoreDataRevision?.();
+        // The same eight seconds a move and a delete offer. Twenty rows tagged
+        // in one click is one misclick, and putting it right by hand means
+        // finding every row again.
+        const snapshot = refs.map((ref, i) => ({ ref, tags: previous[i] }));
         d.showGroupedNotification?.(
             'multi-select-tags',
             changed,
@@ -560,6 +607,178 @@ class DashboardMultiSelect {
                 : this.t('dashboard.multiSelectTagsAdded', 'Tagged {count} bookmark(s) “{tag}”'))
                 .replace('{count}', String(n))
                 .replace('{tag}', tag),
+            'success',
+            {
+                actionLabel: this.t('dashboard.undo', 'Undo'),
+                onAction: () => { void this.undoTagChange(snapshot); },
+            }
+        );
+    }
+
+    /**
+     * Put back the tags each bookmark had before the batch.
+     *
+     * From the snapshot rather than by applying the opposite change: removing a
+     * tag the user had already put on some of the rows themselves would take it
+     * off those too, and "undo" would quietly do more than it undid.
+     */
+    async undoTagChange(snapshot) {
+        const d = this.dash;
+        if (!Array.isArray(snapshot) || !snapshot.length) return;
+        d.ensureBookmarkMutationSnapshot?.();
+        snapshot.forEach(({ ref, tags }) => {
+            if (ref?.bookmark) ref.bookmark.tags = [...(tags || [])];
+        });
+        d.renderDashboard?.({ incremental: false });
+        const saved = await d.saveBookmarkOrder();
+        if (!saved) {
+            d.pendingReorderSnapshot = null;
+            return;
+        }
+        void d.data?.fetchAndStoreDataRevision?.();
+    }
+
+    /**
+     * Availability checking for the whole selection.
+     *
+     * The three modes come from CheckMode so the wording and the cadence rules
+     * are the ones the row menu and the config form already use. Applied one
+     * bookmark at a time because that is the endpoint's shape — the health view
+     * does the same for its own bulk switch — with a single toast at the end
+     * rather than one per row.
+     */
+    openCheckModePopover(anchorEl) {
+        const d = this.dash;
+        const refs = this.resolveRefs();
+        if (!refs.length || !anchorEl || !window.CheckMode) return;
+        d._closeActionPopovers?.();
+
+        const pop = document.createElement('div');
+        pop.id = 'multi-select-check-popover';
+        pop.className = 'move-popover bookmark-context-menu bookmark-check-mode-menu';
+        pop.setAttribute('role', 'menu');
+        pop.setAttribute('aria-label', this.t('dashboard.healthCheckModeLabel', 'Availability checking'));
+
+        const header = document.createElement('div');
+        header.className = 'move-popover-header';
+        header.textContent = this.t('dashboard.multiSelectCheckingHeader', 'Checking for {count} bookmark(s)')
+            .replace('{count}', String(refs.length));
+        pop.appendChild(header);
+
+        const close = () => {
+            pop.remove();
+            document.removeEventListener('keydown', onKey, true);
+        };
+        const onKey = (e) => {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                close();
+            }
+        };
+
+        window.CheckMode.options().forEach((option) => {
+            const item = document.createElement('div');
+            item.className = 'move-popover-item';
+            item.setAttribute('role', 'menuitem');
+            item.setAttribute('data-check-mode', option.mode);
+            item.tabIndex = 0;
+
+            const text = document.createElement('span');
+            text.className = 'check-mode-option-text';
+            const label = document.createElement('span');
+            label.className = 'check-mode-option-label';
+            label.textContent = option.label;
+            const body = document.createElement('span');
+            body.className = 'check-mode-option-body';
+            body.textContent = option.body;
+            text.appendChild(label);
+            text.appendChild(body);
+            item.appendChild(text);
+
+            const choose = () => {
+                close();
+                void this.setSelectedCheckMode(option.mode, refs);
+            };
+            item.addEventListener('click', choose);
+            item.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    choose();
+                }
+            });
+            pop.appendChild(item);
+        });
+
+        document.body.appendChild(pop);
+        document.addEventListener('keydown', onKey, true);
+        const rect = anchorEl.getBoundingClientRect();
+        pop.style.position = 'fixed';
+        pop.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - pop.offsetWidth - 8))}px`;
+        pop.style.top = `${Math.max(8, rect.top - pop.offsetHeight - 8)}px`;
+        pop.querySelector('.move-popover-item')?.focus({ preventScroll: true });
+    }
+
+    async setSelectedCheckMode(mode, refs) {
+        const d = this.dash;
+        const targets = (refs && refs.length ? refs : this.resolveRefs())
+            .filter((ref) => ref?.bookmark?.url && ref.scope === 'current');
+        if (!targets.length || !window.CheckMode) return;
+
+        let changed = 0;
+        for (const ref of targets) {
+            const outcome = await window.CheckMode.apply({
+                pageId: d.currentPageId,
+                index: ref.index,
+                url: ref.bookmark.url,
+                mode,
+                name: ref.bookmark.name || ref.bookmark.url,
+            });
+            if (outcome === 'failed') continue;
+            window.CheckMode.assign(ref.bookmark, mode);
+            changed += 1;
+        }
+        d.renderDashboard?.({ incremental: false });
+        d.updateHealthBadge?.();
+        void d.data?.fetchAndStoreDataRevision?.();
+        if (!changed) {
+            d.showErrorNotification?.(this.t('dashboard.healthCheckModeFailed', 'Could not change availability checking'));
+            return;
+        }
+        d.showGroupedNotification?.(
+            'multi-select-check-mode',
+            changed,
+            (n) => this.t('dashboard.multiSelectCheckingDone', 'Checking changed on {count} bookmark(s)')
+                .replace('{count}', String(n)),
+            'success'
+        );
+    }
+
+    /** Pin or unpin every selected bookmark in one write. */
+    async setSelectedPinned(pinned) {
+        const d = this.dash;
+        const refs = this.resolveRefs();
+        if (!refs.length) return;
+        const previous = refs.map((ref) => Boolean(ref.bookmark?.pinned));
+        if (previous.every((was) => was === pinned)) return;
+
+        d.ensureBookmarkMutationSnapshot?.();
+        refs.forEach((ref) => { ref.bookmark.pinned = pinned; });
+        d.renderDashboard?.({ incremental: false });
+        const saved = await d.saveBookmarkOrder();
+        if (!saved) {
+            refs.forEach((ref, i) => { ref.bookmark.pinned = previous[i]; });
+            d.pendingReorderSnapshot = null;
+            d.renderDashboard?.({ incremental: false });
+            return;
+        }
+        void d.data?.fetchAndStoreDataRevision?.();
+        d.showGroupedNotification?.(
+            'multi-select-pin',
+            refs.length,
+            (n) => (pinned
+                ? this.t('dashboard.multiSelectPinned', 'Pinned {count} bookmark(s)')
+                : this.t('dashboard.multiSelectUnpinned', 'Unpinned {count} bookmark(s)')).replace('{count}', String(n)),
             'success'
         );
     }
@@ -669,6 +888,34 @@ class DashboardMultiSelect {
         failed();
     }
 
+    /**
+     * Drop the trash entries an undo has just made redundant.
+     *
+     * Undo restores through saveBookmarkOrder rather than through the trash, so
+     * without this the bookmarks come back on the page *and* stay in the trash.
+     * Matched on page and URL rather than on id, because record() assigns those
+     * server-side and does not hand them back.
+     *
+     * Best-effort, like the category undo: a stale entry is untidy, a blocked
+     * undo is not.
+     */
+    async dropRestoredTrashEntries(entries) {
+        try {
+            const data = await window.DashboardTrash?.list?.();
+            const items = data?.items || [];
+            for (const entry of entries) {
+                const hit = items.find((item) => item.kind !== 'category'
+                    && Number(item.pageId) === Number(entry.pageId)
+                    && String(item.bookmark?.url || '') === String(entry.bookmark?.url || ''));
+                if (hit) {
+                    await window.DashboardTrash.remove(hit.id);
+                }
+            }
+        } catch (_error) {
+            /* leave them; the restore itself already succeeded */
+        }
+    }
+
     async deleteSelected() {
         const d = this.dash;
         const refs = this.resolveRefs();
@@ -714,6 +961,19 @@ class DashboardMultiSelect {
 
         const saved = await d.saveBookmarkOrder();
         if (!saved) {
+            // The rows are already spliced out and the selection already
+            // cleared, so a silent return left the user watching bookmarks
+            // vanish with no sign the write failed. Put them back in the order
+            // they came from and say so.
+            [...trashed].sort((a, b) => a.index - b.index).forEach((entry) => {
+                d.bookmarks.splice(entry.index, 0, entry.bookmark);
+                d.restoreBookmarkInAllBookmarks(entry.bookmark, entry.pageId);
+            });
+            d.pendingReorderSnapshot = null;
+            d.renderDashboard();
+            d.showErrorNotification?.(
+                this.t('dashboard.multiSelectDeleteFailed', 'Could not delete the selected bookmarks')
+            );
             return;
         }
         await window.DashboardTrash?.record(trashed, 'dashboard-multi-select');
@@ -722,7 +982,30 @@ class DashboardMultiSelect {
             count,
             (n) => this.t('dashboard.multiSelectDeleted', 'Deleted {count} bookmark(s)')
                 .replace('{count}', String(n)),
-            'success'
+            'success',
+            {
+                // Same fast path the single delete offers (see
+                // deleteBookmarkInline): the trash catches it an hour later,
+                // the toast catches it now. Ascending index order, because
+                // each splice shifts everything after it.
+                duration: 8000,
+                undoCallback: async () => {
+                    [...trashed].sort((a, b) => a.index - b.index).forEach((entry) => {
+                        d.bookmarks.splice(entry.index, 0, entry.bookmark);
+                        d.restoreBookmarkInAllBookmarks(entry.bookmark, entry.pageId);
+                    });
+                    d.pendingReorderSnapshot = null;
+                    try {
+                        await d.saveBookmarkOrder();
+                        await this.dropRestoredTrashEntries(trashed);
+                        await d.data?.refreshAfterBookmarkMutation?.({
+                            pageIds: [...new Set(trashed.map((entry) => entry.pageId))],
+                        });
+                    } catch (_error) {
+                        // saveBookmarkOrder surfaces its own errors and reverts.
+                    }
+                }
+            }
         );
     }
 }

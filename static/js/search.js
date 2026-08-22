@@ -1,8 +1,54 @@
 // Search Component JavaScript
 class SearchComponent {
+    /**
+     * Match a timestamp against an age word used by `opened:` and `added:`.
+     *
+     * `never` is only meaningful for opened — a bookmark always has a created
+     * date — but it costs nothing to accept for both and reads the same way.
+     */
+    static matchesAgeFilter(timestamp, word) {
+        const ts = Number(timestamp || 0);
+        const key = String(word || '').toLowerCase();
+        if (key === 'never') return ts === 0;
+        const windows = {
+            today: 86400000,
+            week: 7 * 86400000,
+            month: 30 * 86400000,
+            year: 365 * 86400000,
+        };
+        const span = windows[key];
+        if (!span) return true;      // an unknown word filters nothing
+        if (ts === 0) return false;
+        return (Date.now() - ts) <= span;
+    }
+
     static STATUS_FILTER_VALUES = new Set([
         'online', 'offline', 'broken', 'ok', 'pinned', 'unpinned', 'checked', 'unchecked',
+        // untagged is a first-class collection rule, a stats row and a config
+        // filter, and was the one tidy-up question the search bar could not ask.
+        // noted is its twin: a note is the thing you left to explain the link.
+        'untagged', 'tagged', 'noted', 'unnoted',
+        // feed answers "which of these can ever tell me something is new". A row
+        // with a feed and nothing new looks exactly like a row with no feed, so
+        // without this the only way to find out was to read the count on the
+        // Fresh tab and guess which bookmarks it meant.
+        'feed', 'unfed',
     ]);
+
+    /**
+     * Every filter key the parser understands, in one place.
+     *
+     * The autocomplete used to carry its own hardcoded list of four, so
+     * `opened:` and `added:` worked when typed in full but were invisible to the
+     * hint panel and to the incomplete/complete-query checks — the latter
+     * meaning `opened:week` never counted as a finished filter and autocomplete
+     * kept firing over real results.
+     */
+    static FILTER_KEYS = ['category', 'status', 'page', 'tag', 'opened', 'added'];
+
+    /** Age words shared by `opened:` and `added:` — see matchesAgeFilter. */
+    static AGE_FILTER_VALUES = new Set(['today', 'week', 'month', 'year']);
+
     static TOP_TAG_FILTER_SUGGESTIONS = 20;
 
     constructor(bookmarksForSearch, currentBookmarks, allBookmarks, settings = {}, language = null, finders = [], pages = []) {
@@ -30,6 +76,8 @@ class SearchComponent {
         this.lastNonCommandQuery = '';
         this._debounceTimer = null;
         this._openBookmarkTimer = null;
+        /** Armed only in "delay" shortcut mode; see _maybeAutoOpenShortcut. */
+        this._shortcutOpenTimer = null;
 
         this.commandsComponent = new window.SearchCommandsComponent(this.language, this.currentBookmarks, this.allBookmarks, (newQuery) => {
             this.currentQuery = newQuery;
@@ -171,18 +219,31 @@ class SearchComponent {
                 return;
             }
 
-            // Physical key codes — belt-and-suspenders for shift-modified action shortcuts
+            // Physical key codes — belt-and-suspenders for the shift-modified
+            // action shortcuts, on a layout where Shift+letter produces
+            // something the check above does not recognise as a letter. Every
+            // Shift+letter belongs to an action, so this asks about the family
+            // rather than naming its members: the list it replaced still held
+            // the four keys that existed when it was written and had silently
+            // fallen behind the ones added since.
             if (
                 !this.searchActive
                 && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey
-                && (e.code === 'KeyM' || e.code === 'KeyD' || e.code === 'KeyT' || e.code === 'KeyB')
+                && /^Key[A-Z]$/.test(e.code || '')
             ) {
                 return;
             }
 
             // Don't trigger shortcuts if any modifier key is pressed
             // This allows browser shortcuts like Ctrl+W, Ctrl+R, Ctrl+Q, etc.
-            if (e.ctrlKey || e.altKey || e.metaKey) {
+            //
+            // Ctrl/Cmd+Enter is the exception: the grid has always honoured it to
+            // force a new tab whatever the open-in-new-tab setting says, and the
+            // overlay — where most opens actually happen — swallowed it here, so
+            // the chord never reached handleKeyPress at all.
+            const forceNewTab = (e.ctrlKey || e.metaKey) && !e.altKey && e.key === 'Enter'
+                && (this.searchActive || this.currentQuery.length > 0);
+            if (!forceNewTab && (e.ctrlKey || e.altKey || e.metaKey)) {
                 return;
             }
 
@@ -227,6 +288,13 @@ class SearchComponent {
         }
 
         // Mode tab click handlers
+        // Escape does it too, but a line you typed into needs a way out you can
+        // point at — on touch there is no Escape at all.
+        document.getElementById('search-clear')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.closeSearch();
+        });
+
         document.querySelectorAll('.search-mode-tab').forEach(tab => {
             tab.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -500,7 +568,7 @@ class SearchComponent {
         if (key === 'ENTER' && (this.searchActive || this.currentQuery.length > 0)) {
             e.preventDefault();
             this._flushSearchUpdate();
-            this.selectCurrentMatch();
+            this.selectCurrentMatch({ newTab: (e.ctrlKey || e.metaKey) && !e.altKey });
             return;
         }
         
@@ -695,24 +763,6 @@ class SearchComponent {
         this.addToQuery(key);
     }
 
-    addShortcutLetter(letter) {
-        const key = String(letter || '').toUpperCase();
-        if (!/^[A-Z]$/.test(key)) {
-            return false;
-        }
-        if (this.shouldDeferToDashboardOverlay()) {
-            return false;
-        }
-        if (this._isInboxViewActive()) {
-            return false;
-        }
-        if (this._isConfigViewActive()) {
-            return false;
-        }
-        this.addToQuery(key);
-        return true;
-    }
-
     addToQuery(key) {
         this.currentQuery += key;
 
@@ -727,38 +777,103 @@ class SearchComponent {
         }
 
         this.commandsComponent.resetState();
-        
-        // Check for exact match first
-        const query = this.currentQuery.startsWith('/') ? this.currentQuery.slice(1) : this.currentQuery;
-        const isShortcutMode = (this.currentQuery.startsWith('/') && this.interleaveMode) || (!this.currentQuery.startsWith('/') && !this.interleaveMode);
-        
-        if (isShortcutMode) {
-            const exactMatch = this.shortcuts.get(query.toLowerCase());
-            if (exactMatch) {
-                // If it's a single character or no other shortcuts start with this query
-                const hasLongerMatches = Array.from(this.shortcuts.keys()).some(shortcut => 
-                    shortcut !== query.toLowerCase() && 
-                    shortcut.startsWith(query.toLowerCase())
-                );
-                
-                const hasFinder = this.settings.includeFindersInSearch && (
-                    this.findersComponent.shortcuts.has(query.toLowerCase()) ||
-                    Array.from(this.findersComponent.shortcuts.keys()).some(finderShortcut => 
-                        finderShortcut.startsWith(query.toLowerCase())
-                    )
-                );
-                
-                if (!hasLongerMatches && !hasFinder) {
-                    // Open immediately if no longer matches exist and no finder conflicts
-                    this.openBookmark(exactMatch);
-                    this.resetQuery();
-                    return;
-                }
-            }
-        }
-        
-        // Show search interface and find matches
+
+        // What typing does with a shortcut is a setting: Enter opens (the
+        // default), a short pause opens, or the match opens on the spot. See
+        // _maybeAutoOpenShortcut.
+        this._maybeAutoOpenShortcut();
         this._scheduleUpdateSearch();
+    }
+
+    /** Milliseconds of quiet before "delay" mode opens an exact shortcut. */
+    static SHORTCUT_OPEN_DELAY_MS = 400;
+
+    /** instant | delay | enter — an unknown or absent value reads as instant. */
+    shortcutOpenMode() {
+        const mode = String(this.settings?.shortcutOpenMode || '').toLowerCase();
+        return (mode === 'delay' || mode === 'enter') ? mode : 'instant';
+    }
+
+    cancelPendingShortcutOpen() {
+        if (this._shortcutOpenTimer) {
+            clearTimeout(this._shortcutOpenTimer);
+            this._shortcutOpenTimer = null;
+        }
+    }
+
+    /**
+     * The bookmark a bare query names outright, or null.
+     *
+     * Both guards are the ones the original had. A longer shortcut sharing the
+     * prefix means the typing may not be finished — "gh" cannot open while
+     * "ghi" exists — and a finder sharing it would be shadowed by a bookmark
+     * that opened first.
+     */
+    exactShortcutMatch() {
+        const query = this.currentQuery.startsWith('/') ? this.currentQuery.slice(1) : this.currentQuery;
+        const isShortcutMode = (this.currentQuery.startsWith('/') && this.interleaveMode)
+            || (!this.currentQuery.startsWith('/') && !this.interleaveMode);
+        if (!isShortcutMode || !query) return null;
+
+        const key = query.toLowerCase();
+        const match = this.shortcuts.get(key);
+        if (!match) return null;
+
+        const hasLongerMatch = Array.from(this.shortcuts.keys())
+            .some((shortcut) => shortcut !== key && shortcut.startsWith(key));
+        if (hasLongerMatch) return null;
+
+        const hasFinder = this.settings.includeFindersInSearch && (
+            this.findersComponent.shortcuts.has(key)
+            || Array.from(this.findersComponent.shortcuts.keys()).some((f) => f.startsWith(key))
+        );
+        if (hasFinder) return null;
+
+        return match;
+    }
+
+    /**
+     * Open on typing alone, in the two modes that ask for it.
+     *
+     * Instant is what the dashboard did before v1.2.0, and what it costs is
+     * measurable: on an install with 200 shortcuts, eight of thirteen ordinary
+     * search words were swallowed mid-word, because a shortcut fired the moment
+     * the query matched it and nothing longer shared its letters — "invoice"
+     * opened something at "in" and left "voice" behind. Which of your words
+     * survive depends on which other bookmarks you own, and changes every time
+     * you add one.
+     *
+     * Delay is the middle: the same open, held back until you stop typing, so a
+     * word that carries on past the shortcut keeps going. It cannot rescue a
+     * word typed slowly enough to fall through the pause — which is why Enter,
+     * where nothing decides for you, stays the default.
+     */
+    _maybeAutoOpenShortcut() {
+        this.cancelPendingShortcutOpen();
+        const mode = this.shortcutOpenMode();
+        if (mode === 'enter') return;
+
+        const match = this.exactShortcutMatch();
+        if (!match) return;
+
+        if (mode === 'instant') {
+            this.openBookmark(match);
+            this.resetQuery();
+            return;
+        }
+
+        const query = this.currentQuery;
+        this._shortcutOpenTimer = setTimeout(() => {
+            this._shortcutOpenTimer = null;
+            // The query has to be the one the timer was armed for: another key,
+            // a backspace or a closed panel all mean this is no longer what the
+            // user is asking for.
+            if (!this.searchActive || this.currentQuery !== query) return;
+            const stillMatching = this.exactShortcutMatch();
+            if (!stillMatching) return;
+            this.openBookmark(stillMatching);
+            this.resetQuery();
+        }, SearchComponent.SHORTCUT_OPEN_DELAY_MS);
     }
 
     _scheduleUpdateSearch() {
@@ -852,25 +967,35 @@ class SearchComponent {
             category: '',
             status: '',
             page: '',
-            tag: ''
+            tag: '',
+            // Everything above, in the negative. Custom collections have had an
+            // "excludes" operator on every rule field since they were built, so
+            // "dev links that are not archived" was expressible in config and
+            // not in the bar — which is the shape most tidy-up questions take.
+            not: {},
         };
 
         const parts = (query || '').split(/\s+/).filter(Boolean);
         const remaining = [];
+        const KEYS = ['category', 'status', 'page', 'tag', 'opened', 'added'];
 
         parts.forEach((part) => {
-            const lower = part.toLowerCase();
-            if (lower.startsWith('category:')) {
-                filters.category = lower.slice(9);
-            } else if (lower.startsWith('status:')) {
-                filters.status = lower.slice(7);
-            } else if (lower.startsWith('page:')) {
-                filters.page = lower.slice(5);
-            } else if (lower.startsWith('tag:')) {
-                filters.tag = lower.slice(4);
-            } else {
+            const negated = part.startsWith('-') && part.length > 1;
+            const body = negated ? part.slice(1) : part;
+            const lower = body.toLowerCase();
+            const key = KEYS.find((name) => lower.startsWith(`${name}:`));
+            if (!key) {
                 remaining.push(part);
+                return;
             }
+            const value = lower.slice(key.length + 1);
+            if (negated) {
+                // An empty value ("-tag:") excludes nothing rather than
+                // everything, which is what a half-typed filter should do.
+                if (value) filters.not[key] = value;
+                return;
+            }
+            filters[key] = value;
         });
 
         return {
@@ -894,7 +1019,12 @@ class SearchComponent {
     }
 
     _hasActiveFilters(filters) {
-        return Object.values(this._getActiveFilters(filters)).some((value) => Boolean(value));
+        const active = this._getActiveFilters(filters);
+        // `not` is an object, so a plain truthiness sweep would call an empty one
+        // an active filter and treat a bare query as filtered.
+        const { not = {}, ...scalars } = active;
+        return Object.values(scalars).some((value) => Boolean(value))
+            || Object.values(not).some((value) => Boolean(value));
     }
 
     _getCurrentFilterToken(rawQuery) {
@@ -908,11 +1038,12 @@ class SearchComponent {
             return false;
         }
         if (!token.includes(':')) {
-            return ['category', 'status', 'page', 'tag'].some((prefix) => (
+            return SearchComponent.FILTER_KEYS.some((prefix) => (
                 prefix.startsWith(token) || token.startsWith(prefix)
             ));
         }
-        return /^(category|status|page|tag):/.test(token);
+        const key = token.slice(0, token.indexOf(':'));
+        return SearchComponent.FILTER_KEYS.includes(key);
     }
 
     _isCompleteFilterQuery(raw) {
@@ -921,7 +1052,7 @@ class SearchComponent {
 
         const parsed = this.parseSearchFilters(text);
         if (parsed.query.length > 0) return false;
-        if (!Object.values(parsed.filters).some((value) => Boolean(value))) return false;
+        if (!this._hasActiveFilters(parsed.filters)) return false;
 
         const parts = text.split(/\s+/).filter(Boolean);
         return parts.every((part) => {
@@ -938,6 +1069,15 @@ class SearchComponent {
             if (lower.startsWith('page:')) {
                 const pageValue = lower.slice(5);
                 return pageValue === 'current' || pageValue === 'all' || /^\d+$/.test(pageValue);
+            }
+            if (lower.startsWith('opened:')) {
+                const value = lower.slice(7);
+                // `never` only says anything about a bookmark that was never
+                // opened, so it is accepted here but not under `added:`.
+                return value === 'never' || SearchComponent.AGE_FILTER_VALUES.has(value);
+            }
+            if (lower.startsWith('added:')) {
+                return SearchComponent.AGE_FILTER_VALUES.has(lower.slice(6));
             }
             return false;
         });
@@ -993,6 +1133,21 @@ class SearchComponent {
                 completion: 'tag: ',
                 type: 'filter-completion',
             },
+            {
+                shortcut: '↳',
+                name: this.dashboardLabel(
+                    'filterByOpened',
+                    'Filter by when it was last opened (never/today/week/month/year)',
+                ),
+                completion: 'opened: ',
+                type: 'filter-completion',
+            },
+            {
+                shortcut: '↳',
+                name: this.dashboardLabel('filterByAdded', 'Filter by when it was added (today/week/month/year)'),
+                completion: 'added: ',
+                type: 'filter-completion',
+            },
         ];
     }
 
@@ -1029,12 +1184,15 @@ class SearchComponent {
 
         const filterTypeHints = () => ([
             toCompletion('category:', t('filterByCategory', 'Filter by category (example: category:work)')),
-            toCompletion('status:', t('filterByStatusFull', 'Filter by status (online/offline/checked/unchecked/pinned/unpinned/broken/ok)')),
+            toCompletion('status:', t('filterByStatusFull', 'Filter by status (online/offline/checked/unchecked/pinned/unpinned/broken/ok/feed)')),
             toCompletion('page:', t('filterByPage', 'Filter by page (current/all/number)')),
-            toCompletion('tag:', t('filterByTag', 'Filter by tag (example: tag:work)'))
+            toCompletion('tag:', t('filterByTag', 'Filter by tag (example: tag:work)')),
+            toCompletion('opened:', t('filterByOpened', 'Filter by when it was last opened (never/today/week/month/year)')),
+            toCompletion('added:', t('filterByAdded', 'Filter by when it was added (today/week/month/year)'))
         ]);
 
-        if (currentToken === '' || currentToken === 'category' || currentToken === 'status' || currentToken === 'page' || currentToken === 'tag') {
+        if (currentToken === '' || currentToken === 'category' || currentToken === 'status' || currentToken === 'page'
+            || currentToken === 'tag' || currentToken === 'opened' || currentToken === 'added') {
             return filterTypeHints();
         }
 
@@ -1066,13 +1224,19 @@ class SearchComponent {
                 partialHints.push(toCompletion('category:', t('filterByCategory', 'Filter by category (example: category:work)')));
             }
             if ('status'.startsWith(currentToken) && currentToken.length >= 2) {
-                partialHints.push(toCompletion('status:', t('filterByStatusFull', 'Filter by status (online/offline/checked/unchecked/pinned/unpinned/broken/ok)')));
+                partialHints.push(toCompletion('status:', t('filterByStatusFull', 'Filter by status (online/offline/checked/unchecked/pinned/unpinned/broken/ok/feed)')));
             }
             if ('page'.startsWith(currentToken) && currentToken.length >= 2) {
                 partialHints.push(toCompletion('page:', t('filterByPage', 'Filter by page (current/all/number)')));
             }
             if ('tag'.startsWith(currentToken) && currentToken.length >= 2) {
                 partialHints.push(toCompletion('tag:', t('filterByTag', 'Filter by tag (example: tag:work)')));
+            }
+            if ('opened'.startsWith(currentToken) && currentToken.length >= 2) {
+                partialHints.push(toCompletion('opened:', t('filterByOpened', 'Filter by when it was last opened (never/today/week/month/year)')));
+            }
+            if ('added'.startsWith(currentToken) && currentToken.length >= 2) {
+                partialHints.push(toCompletion('added:', t('filterByAdded', 'Filter by when it was added (today/week/month/year)')));
             }
 
             const combined = [...valueHits, ...partialHints];
@@ -1106,6 +1270,8 @@ class SearchComponent {
                 ['unpinned', t('filterStatusUnpinned', 'Not pinned')],
                 ['checked', t('filterStatusChecked', 'Status check enabled')],
                 ['unchecked', t('filterStatusUnchecked', 'Status check disabled')],
+                ['feed', t('filterStatusFeed', 'Publishes a feed Fresh can read')],
+                ['unfed', t('filterStatusUnfed', 'No feed behind it')],
             ];
             return statusEntries
                 .filter(([status]) => status.startsWith(value))
@@ -1144,6 +1310,29 @@ class SearchComponent {
             ));
         }
 
+        // The age words are a closed vocabulary, so they can be offered the same
+        // way status values are. `never` is only on `opened:` — a bookmark has
+        // no "never added" state.
+        if (currentToken.startsWith('opened:') || currentToken.startsWith('added:')) {
+            const key = currentToken.startsWith('opened:') ? 'opened' : 'added';
+            const value = currentToken.slice(key.length + 1);
+            const entries = [
+                ['today', t('filterAgeToday', 'Within the last day')],
+                ['week', t('filterAgeWeek', 'Within the last week')],
+                ['month', t('filterAgeMonth', 'Within the last month')],
+                ['year', t('filterAgeYear', 'Within the last year')],
+            ];
+            if (key === 'opened') {
+                entries.push(['never', t('filterAgeNever', 'Never opened')]);
+            }
+            return entries
+                .filter(([word]) => word.startsWith(value))
+                .map(([word, desc]) => toCompletion(
+                    `${key}:${word}`,
+                    t('filterAgeEntry', '{key}:{value} — {desc}', { key, value: word, desc })
+                ));
+        }
+
         return [];
     }
 
@@ -1165,57 +1354,115 @@ class SearchComponent {
         return fromDash || bookmark;
     }
 
+    /**
+     * Does one bookmark satisfy one filter key?
+     *
+     * Split out of matchesAdvancedFilters so the negative form can reuse it: a
+     * `-tag:x` is exactly `tag:x` with the answer flipped, and writing the
+     * predicate twice is how the two drift apart.
+     */
+    matchesFilterKey(bookmark, key, value) {
+        if (!value) return true;
+        const wanted = String(value).toLowerCase();
+
+        if (key === 'category') {
+            return String(bookmark.category || '').toLowerCase().includes(wanted);
+        }
+
+        if (key === 'tag') {
+            return (bookmark.tags || []).some((tag) => String(tag).toLowerCase().includes(wanted));
+        }
+
+        if (key === 'opened') {
+            return SearchComponent.matchesAgeFilter(bookmark.lastOpened, wanted);
+        }
+
+        if (key === 'added') {
+            return SearchComponent.matchesAgeFilter(bookmark.createdAt, wanted);
+        }
+
+        if (key === 'page') {
+            if (wanted === 'all' || wanted === 'global') return true;
+            const bookmarkPageId = Number(bookmark.pageId || bookmark.pageID || this.currentPageId || 0);
+            if (wanted === 'current') {
+                return !bookmarkPageId || bookmarkPageId === Number(this.currentPageId || 0);
+            }
+            if (/^\d+$/.test(wanted)) {
+                return bookmarkPageId === Number(wanted);
+            }
+            return true;
+        }
+
+        if (key === 'status') {
+            if (!SearchComponent.STATUS_FILTER_VALUES.has(wanted)) return true;
+            const hasStatus = bookmark.checkStatus === true;
+            const isPinned = bookmark.pinned === true;
+            const isBroken = Boolean(String(bookmark.lastError || '').trim());
+            const tagCount = (bookmark.tags || []).filter((tag) => String(tag).trim()).length;
+            const hasNote = Boolean(String(bookmark.note || '').trim());
+            // Known only while Fresh is on: with it off the server answers with
+            // an empty map, and every bookmark would read as "no feed" — an
+            // answer about the setting rather than about the bookmark.
+            const feeds = window.dashboardInstance?.feeds;
+            const hasFeed = feeds?.enabled === true
+                && Boolean(feeds.byKey?.get(feeds.key(bookmark.url))?.feedUrl);
+            const monitor = window.dashboardInstance?.statusMonitor;
+            const reachability = typeof monitor?.getBookmarkReachability === 'function'
+                ? monitor.getBookmarkReachability(bookmark)
+                : null;
+
+            // The questions that are only about the bookmark come from the
+            // shared registry, so `status:untagged` here and the config list's
+            // "Without tags" cannot drift apart — they used to disagree over a
+            // tag that is nothing but spaces.
+            if (window.BookmarkPredicates?.has?.(wanted)
+                && !['checked', 'unchecked', 'pinned', 'unpinned'].includes(wanted)) {
+                return window.BookmarkPredicates.match(wanted, bookmark);
+            }
+
+            switch (wanted) {
+                case 'checked': return hasStatus;
+                case 'unchecked': return !hasStatus;
+                case 'pinned': return isPinned;
+                case 'unpinned': return !isPinned;
+                case 'broken': return isBroken;
+                case 'ok': return hasStatus && !isBroken && reachability === 'online';
+                case 'online': return reachability === 'online';
+                case 'offline': return reachability === 'offline';
+                case 'untagged': return tagCount === 0;
+                case 'tagged': return tagCount > 0;
+                case 'noted': return hasNote;
+                case 'unnoted': return !hasNote;
+                case 'feed': return hasFeed;
+                case 'unfed': return !hasFeed;
+                default: return true;
+            }
+        }
+
+        return true;
+    }
+
     matchesAdvancedFilters(bookmark, filters) {
         if (!bookmark) return false;
         bookmark = this._resolveBookmarkForFilters(bookmark);
 
-        if (filters.category) {
-            const category = String(bookmark.category || '').toLowerCase();
-            if (!category.includes(filters.category)) {
+        // openCount, lastOpened and createdAt drive every smart collection and the
+        // whole stats page, and were reachable from none of the filters — so
+        // "added this month and never opened" was answerable in Config and not
+        // from the search bar a keyboard-first user actually lives in.
+        for (const key of ['category', 'status', 'tag', 'opened', 'added', 'page']) {
+            if (!this.matchesFilterKey(bookmark, key, filters[key])) {
                 return false;
             }
         }
 
-        if (filters.status) {
-            const normalized = filters.status.toLowerCase();
-            if (SearchComponent.STATUS_FILTER_VALUES.has(normalized)) {
-                const hasStatus = bookmark.checkStatus === true;
-                const isPinned = bookmark.pinned === true;
-                const isBroken = Boolean(String(bookmark.lastError || '').trim());
-                const monitor = window.dashboardInstance?.statusMonitor;
-                const reachability = typeof monitor?.getBookmarkReachability === 'function'
-                    ? monitor.getBookmarkReachability(bookmark)
-                    : null;
-
-                if (normalized === 'checked' && !hasStatus) return false;
-                if (normalized === 'unchecked' && hasStatus) return false;
-                if (normalized === 'pinned' && !isPinned) return false;
-                if (normalized === 'unpinned' && isPinned) return false;
-                if (normalized === 'broken' && !isBroken) return false;
-                if (normalized === 'ok' && !(hasStatus && !isBroken && reachability === 'online')) return false;
-                if (normalized === 'online' && reachability !== 'online') return false;
-                if (normalized === 'offline' && reachability !== 'offline') return false;
-            }
-        }
-
-        if (filters.tag) {
-            const t = filters.tag.toLowerCase();
-            if (!(bookmark.tags || []).some(tag => tag.toLowerCase().includes(t))) {
+        // The same predicates, inverted: a bookmark that matches an excluded
+        // filter is out.
+        const not = filters.not || {};
+        for (const key of Object.keys(not)) {
+            if (!not[key]) continue;
+            if (this.matchesFilterKey(bookmark, key, not[key])) {
                 return false;
-            }
-        }
-
-        if (filters.page && filters.page !== 'all' && filters.page !== 'global') {
-            const pageValue = String(filters.page).toLowerCase();
-            const bookmarkPageId = Number(bookmark.pageId || bookmark.pageID || this.currentPageId || 0);
-            if (pageValue === 'current') {
-                if (bookmarkPageId && bookmarkPageId !== Number(this.currentPageId || 0)) {
-                    return false;
-                }
-            } else if (/^\d+$/.test(pageValue)) {
-                if (bookmarkPageId !== Number(pageValue)) {
-                    return false;
-                }
             }
         }
 
@@ -1538,12 +1785,23 @@ class SearchComponent {
             clearTimeout(this._debounceTimer);
             this._debounceTimer = null;
         }
+        // A pending "open after a pause" belongs to the query that is being
+        // abandoned here.
+        this.cancelPendingShortcutOpen();
         this.searchActive = false;
         // Reset so reopening the same mode counts as a new open.
         this._lastTrackedMode = null;
         this.emptyStateExpandedGroups.clear();
         document.dispatchEvent(new CustomEvent('nextdash:launcher-filter', { detail: { active: false, urls: new Set() } }));
         this.resetQuery();
+        // resetQuery clears the state; the prompt is a separate element and used
+        // to keep showing the query that had just been abandoned — so Escape
+        // read as "did nothing" until the next key replaced the text.
+        const queryElement = document.getElementById('search-query');
+        if (queryElement) {
+            queryElement.textContent = '';
+        }
+        this.updateModeIndicator();
         const searchElement = document.getElementById('shortcut-search');
         const mobileInput = document.getElementById('search-input-mobile');
 
@@ -1642,6 +1900,7 @@ class SearchComponent {
     }
 
     resetQuery() {
+        this.cancelPendingShortcutOpen();
         this.currentQuery = '';
         this.searchMatches = [];
         this.selectedMatchIndex = 0;
@@ -1673,6 +1932,23 @@ class SearchComponent {
         }
         prefix.dataset.mode = mode;
         prefix.textContent = label;
+
+        // The key that starts this mode, in front of the mode itself: > search,
+        // : commands, ? finders, @ everywhere. Typing a bare letter still
+        // searches — this says which key gets you here on purpose, and which one
+        // to press when a single-letter bookmark shortcut would fire instead.
+        const chevron = document.querySelector('.search-chevron');
+        if (chevron) {
+            const KEYS = { search: '>', command: ':', finder: '?', global: '@', fuzzy: '/' };
+            chevron.textContent = KEYS[mode] || '>';
+            chevron.dataset.mode = mode;
+        }
+
+        // A query you can see is a query you can clear.
+        const clear = document.getElementById('search-clear');
+        if (clear) {
+            clear.hidden = q.length === 0;
+        }
 
         // Sync mode tab active state
         document.querySelectorAll('.search-mode-tab').forEach(tab => {
@@ -2008,7 +2284,7 @@ class SearchComponent {
         this.updateSelectionHighlight();
     }
 
-    selectCurrentMatch() {
+    selectCurrentMatch({ newTab = false } = {}) {
         if (this.selectableMatches.length > 0 && this.selectedMatchIndex >= 0) {
             const selectedMatch = this.selectableMatches[this.selectedMatchIndex];
             if (selectedMatch.type === 'command-group-header') {
@@ -2069,13 +2345,13 @@ class SearchComponent {
             } else if (selectedMatch.type === 'hint-new' || selectedMatch.type === 'hint-finder') {
                 selectedMatch.action?.();
             } else {
-                this.openBookmark(selectedMatch.bookmark);
+                this.openBookmark(selectedMatch.bookmark, { newTab });
             }
         }
         // If no matches, do nothing (keep search open)
     }
 
-    openBookmark(bookmark) {
+    openBookmark(bookmark, { newTab = false } = {}) {
         this.recordSearchHistory(this.currentQuery);
         // Opening from search went uncounted before: it bypasses the dashboard row
         // handler that normally records the open. Attribute it to the search source.
@@ -2102,7 +2378,9 @@ class SearchComponent {
                 const link = document.createElement('a');
                 link.href = bookmark.url;
                 link.style.display = 'none'; // Hide the link
-                if (this.settings.openInNewTab) {
+                // newTab forces it whatever the setting says — the same
+                // promise Ctrl/Cmd+Enter makes on the grid.
+                if (newTab || this.settings.openInNewTab) {
                     link.target = '_blank';
                     link.rel = 'noopener noreferrer';
                 } else {
@@ -2424,10 +2702,29 @@ class SearchComponent {
         }];
     }
 
+    /**
+     * Saved searches, from settings.
+     *
+     * They used to live only in localStorage, so a documented feature vanished
+     * on a cleared cache or a different browser — and, worst of all, sat in no
+     * backup: a ZIP taken the same day did not contain them. They are now part
+     * of settings.json, which the backup already carries. Any localStorage
+     * entries left over from before are read once and migrated up.
+     */
     loadSavedSearches() {
+        const fromSettings = window.dashboardInstance?.settings?.savedSearches;
+        if (Array.isArray(fromSettings) && fromSettings.length) {
+            return fromSettings.filter((entry) => entry && entry.name && entry.query);
+        }
         try {
             const stored = localStorage.getItem('dashboardSavedSearches');
-            return stored ? JSON.parse(stored).filter((entry) => entry && entry.name && entry.query) : [];
+            const legacy = stored ? JSON.parse(stored).filter((entry) => entry && entry.name && entry.query) : [];
+            if (legacy.length) {
+                // Migrate on first read, then let the server own them.
+                this.savedSearches = legacy;
+                void this.saveSavedSearches();
+            }
+            return legacy;
         } catch (error) {
             return [];
         }
@@ -2441,8 +2738,19 @@ class SearchComponent {
      * was kept. The caller reports the outcome instead of always claiming success.
      */
     saveSavedSearches() {
+        const list = this.savedSearches.slice(0, 10);
+        const d = window.dashboardInstance;
+        if (d?.settings) {
+            d.settings.savedSearches = list;
+            // Fire and forget: saveSettings reports its own failures, and the
+            // caller's outcome is about whether the entry was accepted here.
+            void d.saveSettings?.();
+            // Kept in localStorage as well, so an older tab still sees them.
+            try { localStorage.setItem('dashboardSavedSearches', JSON.stringify(list)); } catch { /* ignore */ }
+            return true;
+        }
         try {
-            localStorage.setItem('dashboardSavedSearches', JSON.stringify(this.savedSearches.slice(0, 10)));
+            localStorage.setItem('dashboardSavedSearches', JSON.stringify(list));
             return true;
         } catch {
             return false;

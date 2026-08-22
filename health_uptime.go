@@ -58,6 +58,18 @@ type MonitorStats struct {
 	LastSample  int64 `json:"lastSample,omitempty"`
 	LastPingMs  int   `json:"lastPingMs,omitempty"`
 	TotalChecks int   `json:"totalChecks"`
+	// CoveredMs is how far back this monitor's samples actually reach.
+	//
+	// The retention window is 30 days, but maxHealthSamplesPerURL trims first
+	// for anything checked often: at the 5-minute floor, 2000 samples are about
+	// seven days. The 30-day figure was still printed as "30d", computed over
+	// whatever happened to be there — so a number that described a week was
+	// labelled a month, and nothing on screen said so.
+	//
+	// Reporting the span lets the view mark a window it cannot honestly fill.
+	// Keeping every sample instead would mean rewriting megabytes every minute;
+	// a daily roll-up is the real answer and a larger piece of work.
+	CoveredMs int64 `json:"coveredMs,omitempty"`
 }
 
 // uptimeRatio computes the reachable fraction over the window ending at now.
@@ -88,6 +100,26 @@ func uptimeRatio(samples []HealthSample, window time.Duration, now time.Time) Up
 	return UptimeWindow{Ratio: float64(up) / float64(total), Samples: total}
 }
 
+// uptimeWithDays counts the raw samples in the window and adds the summarised
+// days that fall before the raw history starts.
+func uptimeWithDays(samples []HealthSample, days []HealthDay, window time.Duration, now time.Time) UptimeWindow {
+	raw := uptimeRatio(samples, window, now)
+	if len(days) == 0 {
+		return raw
+	}
+	rawFrom := int64(0)
+	if len(samples) > 0 {
+		rawFrom = samples[0].T
+	}
+	upDays, totalDays := uptimeFromDays(days, window, rawFrom, now)
+	total := raw.Samples + totalDays
+	if total == 0 {
+		return UptimeWindow{}
+	}
+	up := int(float64(raw.Samples)*raw.Ratio+0.5) + upDays
+	return UptimeWindow{Ratio: float64(up) / float64(total), Samples: total}
+}
+
 // deriveIncidents turns the sample stream into outages: each maximal run of
 // failed checks becomes one incident. The final incident is marked Ongoing when
 // the most recent sample is still failing.
@@ -111,12 +143,16 @@ func deriveIncidents(samples []HealthSample, now time.Time) []HealthIncident {
 			}
 			current.Checks++
 			current.End = s.T
-			// The reason comes from the sample's HTTP status, which is all the
-			// history keeps: a network-level failure stores no code, so it stays
-			// blank rather than inventing a cause. Later codes in the same outage
-			// win, so a run that ends 500 is not still labelled with its first 503.
+			// The reason is the HTTP status when there is one, and the recorded
+			// failure class when there is not. Before samples carried a class,
+			// every network-level failure — DNS, timeout, refused, TLS — reached
+			// this list with a blank reason, because a network failure stores no
+			// code. Later samples in the same outage win, so a run that ends 500
+			// is not still labelled with its first 503.
 			if s.Code > 0 {
 				current.Reason = "HTTP " + strconv.Itoa(s.Code)
+			} else if s.Fail != "" {
+				current.Reason = failureClassReason(s.Fail)
 			}
 			continue
 		}
@@ -222,6 +258,14 @@ func heartbeatBuckets(samples []HealthSample, window time.Duration, count int, n
 // Returns nil when there is no history yet, so the UI can distinguish "monitored
 // but not yet checked" from "monitored and healthy".
 func buildMonitorStats(samples []HealthSample, intervalMinutes int, now time.Time) *MonitorStats {
+	return buildMonitorStatsWithDays(samples, nil, intervalMinutes, now)
+}
+
+// buildMonitorStatsWithDays is buildMonitorStats with the daily summaries that
+// stand in for the checks the per-URL cap has already dropped. The short windows
+// are unaffected — they are inside the raw history by definition — and the long
+// ones stop being computed over a week and labelled a month.
+func buildMonitorStatsWithDays(samples []HealthSample, days []HealthDay, intervalMinutes int, now time.Time) *MonitorStats {
 	if len(samples) == 0 {
 		return nil
 	}
@@ -246,12 +290,18 @@ func buildMonitorStats(samples []HealthSample, intervalMinutes int, now time.Tim
 	stats := &MonitorStats{
 		IntervalMinutes: interval,
 		Uptime24h:       uptimeRatio(samples, 24*time.Hour, now),
-		Uptime7d:        uptimeRatio(samples, 7*24*time.Hour, now),
-		Uptime30d:       uptimeRatio(samples, healthHistoryRetention, now),
+		Uptime7d:        uptimeWithDays(samples, days, 7*24*time.Hour, now),
+		Uptime30d:       uptimeWithDays(samples, days, healthHistoryRetention, now),
 		Heartbeat:       heartbeatBuckets(samples, window, defaultHeartbeatBuckets, now),
 		LastSample:      last.T,
 		LastPingMs:      last.PingMs,
 		TotalChecks:     len(samples),
+		CoveredMs:       last.T - samples[0].T,
+	}
+	// Covered span includes the summarised days: the point of the field is "how
+	// much history is behind this figure", and a folded day is history.
+	if len(days) > 0 && days[0].D < samples[0].T {
+		stats.CoveredMs = last.T - days[0].D
 	}
 
 	incidents := deriveIncidents(samples, now)

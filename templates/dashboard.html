@@ -16,7 +16,7 @@
     <script src="{{asset "js/app-version-guard.js"}}"></script>
     <script src="{{asset "js/update-notice.js"}}"></script>
     <script src="{{asset "js/write-api.js"}}"></script>
-    {{if .AnalyticsEnabled}}<script src="{{asset "js/umami-analytics.js"}}" data-nextdash-analytics="on" data-website-id="{{.AnalyticsWebsiteID}}" data-analytics-src="{{.AnalyticsScriptSrc}}" data-release="{{.ReleaseTag}}"></script>{{end}}
+    {{if .AnalyticsEnabled}}<script src="{{asset "js/umami-analytics.js"}}" data-nextdash-analytics="on" data-website-id="{{.AnalyticsWebsiteID}}" data-analytics-src="{{.AnalyticsScriptSrc}}" data-release="{{.ReleaseTag}}" data-content="{{.AnalyticsContentJSON}}"></script>{{end}}
     <script src="{{asset "js/font-presets.js"}}"></script>
     <script src="{{asset "js/device-settings-merge.js"}}"></script>
     <script src="{{asset "js/settings-sanitize.js"}}"></script>
@@ -31,7 +31,12 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="{{if and .EnableCustomTitle .CustomTitle}}{{.CustomTitle}}{{else}}nextDash{{end}}">
-    <link rel="stylesheet" href="/api/theme.css">
+    <!-- Inline rather than linked: this stylesheet is generated per install and
+         served no-store, so as a link it was an uncacheable blocking request
+         between the HTML and the first paint on every load. The endpoint stays
+         for the theme switch, which reloads it — see reloadThemeCSS. -->
+    <style id="nextdash-theme-css">{{themeCSS}}</style>
+    <!-- bundle:css -->
     <link rel="stylesheet" href="{{asset "css/theme.css"}}">
     <!-- Modern design tokens load ahead of every view stylesheet, so view CSS
          that carries its own modern rules can read --layout-* directly. The
@@ -56,13 +61,14 @@
     <link rel="stylesheet" href="{{asset "css/skeleton-loading.css"}}">
     <link rel="stylesheet" href="{{asset "css/dashboard-quickstart.css"}}">
     <link rel="stylesheet" href="{{asset "css/dashboard-tag-cloud.css"}}">
-    <link rel="stylesheet" href="{{asset "css/dashboard-inbox.css"}}">
+    <link rel="stylesheet" href="{{asset "css/feed-row.css"}}">
+    <link rel="stylesheet" href="{{asset "css/spread-tutorial.css"}}">
+    <link rel="stylesheet" href="{{asset "css/fresh-tutorial.css"}}">
+    <link rel="stylesheet" href="{{asset "css/setting-art.css"}}">
     <link rel="stylesheet" href="{{asset "css/dashboard-multi-select.css"}}">
     <link rel="stylesheet" href="{{asset "css/view-explainers.css"}}">
-    <link rel="stylesheet" href="{{asset "css/health-view.css"}}">
     <link rel="stylesheet" href="{{asset "css/health-tutorial.css"}}">
     <link rel="stylesheet" href="{{asset "css/health-focus.css"}}">
-    <link rel="stylesheet" href="{{asset "css/config-view.css"}}">
     <link rel="stylesheet" href="{{asset "css/config-setting-promo.css"}}">
     <link rel="stylesheet" href="{{asset "css/colors.css"}}">
         <link rel="stylesheet" href="{{asset "css/enhanced-features.css"}}">
@@ -79,6 +85,13 @@
          twice and warn that the preload went unused. Both sides must agree. -->
     <link rel="preload" href="/static/fonts/source-code-pro-latin.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="{{asset "css/fonts.css"}}">
+    <!-- /bundle:css -->
+    <!-- bundle:css-views -->
+    <link rel="stylesheet" href="{{asset "css/dashboard-inbox.css"}}">
+    <link rel="stylesheet" href="{{asset "css/inbox-tutorial.css"}}">
+    <link rel="stylesheet" href="{{asset "css/health-view.css"}}">
+    <link rel="stylesheet" href="{{asset "css/config-view.css"}}">
+    <!-- /bundle:css-views -->
     <noscript>
         <style>
             /* Without JS the `loading` class never clears, so the skeleton would
@@ -215,9 +228,16 @@
     <div id="shortcut-search" class="shortcut-search">
         <div class="search-container">
             <div class="search-prompt">
+                <!-- The key that starts this mode, in front of the mode it starts.
+                     The tabs below name all four, but the line you type into is
+                     where the convention has to be legible: > search, : commands,
+                     ? finders, @ everywhere. -->
+                <span class="search-chevron" data-mode="search" aria-hidden="true">&gt;</span>
                 <span class="search-prefix" data-mode="search">SEARCH</span>
                 <span id="search-query" class="search-query"></span>
                 <span class="search-cursor" data-i18n="dashboard.searchCursor">_</span>
+                <button type="button" id="search-clear" class="search-clear" hidden
+                        data-i18n-aria="dashboard.searchClearAria" aria-label="Clear search">&times;</button>
             </div>
             <input type="text" id="search-input-mobile" class="search-input-mobile" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-i18n-aria="dashboard.searchInputAria" aria-label="Search" />
             <div id="search-matches" class="search-matches"></div>
@@ -323,6 +343,8 @@
         <span class="whats-new-btn-update-dot" aria-hidden="true"></span>
     </button>
 
+    <script src="{{asset "js/view-styles.js"}}" defer></script>
+    <!-- bundle:js -->
     <script src="{{asset "js/dashboard-feature-flags.js"}}" defer></script>
     <script src="{{asset "js/theme-icon-styling.js"}}" defer></script>
     <!-- Before modal.js and every other overlay: they all take scroll locks. -->
@@ -334,6 +356,7 @@
     <script src="{{asset "js/layout-utils.js"}}" defer></script>
     <script src="{{asset "js/shared/config-language.js"}}" defer></script>
     <script src="{{asset "js/shared/last-opened-format.js"}}" defer></script>
+    <script src="{{asset "js/shared/duplicate-bookmark-prompt.js"}}" defer></script>
     <script src="{{asset "js/bookmark-form/bookmark-url-utils.js"}}" defer></script>
     <script src="{{asset "js/bookmark-form/bookmark-preview-service.js"}}" defer></script>
     <script src="{{asset "js/bookmark-form/bookmark-form-preview.js"}}" defer></script>
@@ -347,6 +370,9 @@
     <script src="{{asset "js/search-finders.js"}}" defer></script>
     <script src="{{asset "js/fuzzy-search.js"}}" defer></script>
     <script src="{{asset "js/dashboard-promo-placement.js"}}" defer></script>
+    <!-- One answer to "which bookmarks", shared by the search bar, the
+         config list and the statistics panel. Loaded before all three. -->
+    <script src="{{asset "js/shared/bookmark-predicates.js"}}" defer></script>
     <script src="{{asset "js/search.js"}}" defer></script>
     <script src="{{asset "js/status.js"}}" defer></script>
     <!-- Before the health view and the context menu: both read window.CheckMode. -->
@@ -359,11 +385,22 @@
     <!-- Shared bottom-left notice card; must precede the cards that define one. -->
     <script src="{{asset "js/notice-card.js"}}" defer></script>
     <script src="{{asset "js/analytics-notice.js"}}" defer></script>
+    <script src="{{asset "js/fresh-tutorial.js"}}" defer></script>
+    <script src="{{asset "js/fresh-notice.js"}}" defer></script>
     <script src="{{asset "js/side-rail-notice.js"}}" defer></script>
+    <script src="{{asset "js/health-review-notice.js"}}" defer></script>
+    <script src="{{asset "js/spread-tutorial.js"}}" defer></script>
+    <script src="{{asset "js/spread-notice.js"}}" defer></script>
     <script src="{{asset "js/weather.js"}}" defer></script>
     <script src="{{asset "js/tag-autocomplete.js"}}" defer></script>
     <script src="{{asset "js/quick-add.js"}}" defer></script>
     <script src="{{asset "js/skeleton-loading.js"}}" defer></script>
+    <!-- Stand-in drawings for settings whose difference is a shape; config and
+         help both read from it, so it loads before either. -->
+    <script src="{{asset "js/shared/setting-art.js"}}" defer></script>
+    <!-- What a bookmark shortcut shares the keyboard with; read by every
+         field that takes one. -->
+    <script src="{{asset "js/shared/shortcut-keys.js"}}" defer></script>
     <script src="{{asset "js/shortcut-format.js"}}" defer></script>
     <script src="{{asset "js/app-notification.js"}}" defer></script>
     <!-- Tip catalogue is shared with Config → Help so the two lists cannot drift. -->
@@ -395,15 +432,19 @@
     <script src="{{asset "js/dashboard-trash.js"}}" defer></script>
     <script src="{{asset "js/dashboard/dashboard-tag-filter.js"}}" defer></script>
     <script src="{{asset "js/dashboard/dashboard-multi-select.js"}}" defer></script>
+    <script src="{{asset "js/dashboard/dashboard-grid-filter.js"}}" defer></script>
     <script src="{{asset "js/dashboard/dashboard-structure-create.js"}}" defer></script>
     <script src="{{asset "js/dashboard/dashboard-category-add.js"}}" defer></script>
     <script src="{{asset "js/dashboard/dashboard-category-menu.js"}}" defer></script>
     <script src="{{asset "js/dashboard/dashboard-bookmark-interactions-loader.js"}}" defer></script>
     <script src="{{asset "js/dashboard/dashboard-toolbar.js"}}" defer></script>
     <script src="{{asset "js/dashboard/dashboard-smart-collections.js"}}" defer></script>
+    <script src="{{asset "js/dashboard/dashboard-feeds.js"}}" defer></script>
     <script src="{{asset "js/dashboard/dashboard-smart-why-popover.js"}}" defer></script>
     <script src="{{asset "js/dashboard/dashboard-bookmark-rows.js"}}" defer></script>
     <script src="{{asset "js/dashboard/dashboard-category-sort.js"}}" defer></script>
+    <script src="{{asset "js/dashboard/dashboard-category-span.js"}}" defer></script>
+    <script src="{{asset "js/dashboard/dashboard-packed-masonry.js"}}" defer></script>
     <script src="{{asset "js/dashboard/dashboard-category-title-fit.js"}}" defer></script>
     <script src="{{asset "js/dashboard/dashboard-render-core.js"}}" defer></script>
     <script src="{{asset "js/dashboard/dashboard-render-incremental.js"}}" defer></script>
@@ -425,5 +466,6 @@
          moves it into place and instantiates the existing ColorsEditor against it. -->
     <script src="{{asset "js/shared/config-custom-themes.js"}}" defer></script>
     <script src="{{asset "js/color-value-utils.js"}}" defer></script>
+    <!-- /bundle:js -->
 </body>
 </html>

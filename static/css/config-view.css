@@ -274,6 +274,164 @@
     line-height: 1.25;
 }
 
+/* Config → Bookmarks reads as a view, not a settings panel.
+ *
+ * It shows the same rows as Health and Inbox, has the same tiles above them and
+ * the same right-click menu on them — but it opened with a bare panel title and
+ * a paragraph, where those two open with a titled header carrying a count. Same
+ * shape as .inbox-header / .health-view-header, deliberately, so moving between
+ * the three does not feel like moving between two products.
+ */
+.config-bm-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.25rem 0.35rem 0.5rem;
+    margin-bottom: 0.85rem;
+}
+
+.config-bm-subtitle {
+    margin: 0;
+    max-width: 62ch;
+    font-size: var(--font-size-controls);
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+
+.config-bm-header-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-shrink: 0;
+}
+
+.config-bm-header-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.35rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--accent-primary) 35%, transparent);
+    background: color-mix(in srgb, var(--accent-primary) 18%, transparent);
+    color: var(--accent-primary);
+    font-size: 0.72rem;
+    font-weight: var(--font-weight-semibold);
+    font-variant-numeric: tabular-nums;
+}
+
+/* The filter row, given the view toolbars' proportions.
+ *
+ * The controls stay selects rather than becoming segmented pills: page,
+ * category and sort have too many values for a strip of buttons, which is
+ * exactly why Health and Inbox use a select for their sort too. What is shared
+ * is the shape — same radius, same type size, same surface. */
+.config-crud-toolbar--view {
+    gap: 0.55rem;
+    padding: 0 0.35rem 0.35rem;
+    margin-bottom: 0.65rem;
+}
+
+.config-crud-toolbar--view .config-text {
+    flex: 1 1 12rem;
+    min-width: 8rem;
+    padding: 0.35rem 0.55rem;
+    border-radius: 0.4rem;
+    background: var(--background-primary);
+    font-size: 0.82rem;
+}
+
+.config-crud-toolbar--view .config-select {
+    padding: 0.35rem 0.5rem;
+    border-radius: 0.4rem;
+    background: var(--background-primary);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+.config-crud-toolbar--view .config-select:hover {
+    border-color: color-mix(in srgb, var(--accent-primary) 45%, transparent);
+    color: var(--accent-primary);
+}
+
+.config-crud-toolbar--view .config-btn {
+    padding: 0.35rem 0.7rem;
+    border-radius: 0.4rem;
+    background: var(--background-primary);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+.config-crud-toolbar--view .config-btn:hover {
+    border-color: color-mix(in srgb, var(--accent-primary) 45%, transparent);
+    color: var(--accent-primary);
+}
+
+/* Config → Bookmarks tiles use the same tile as Health and Inbox.
+ *
+ * They sit above a list of the same rows those views show, so a second tile
+ * design one screen away read as a different product. The severity stripe is
+ * dropped with it: Health carries tone in the value's colour instead, which is
+ * what the tone classes now do here too.
+ *
+ * Scoped to --bookmarks. Overview keeps the card-style tile — it is a dashboard
+ * of unrelated numbers, not the header of a list.
+ */
+.config-tiles--bookmarks {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.config-tiles--bookmarks .config-tile {
+    gap: 0.15rem;
+    padding: 0.5rem 0.6rem;
+    border: 1px solid var(--border-primary);
+    border-radius: var(--layout-radius-sm, 8px);
+    background: var(--background-secondary);
+    overflow: visible;
+}
+
+.config-tiles--bookmarks .config-tile::before {
+    content: none;
+}
+
+.config-tiles--bookmarks .config-tile-label {
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+}
+
+.config-tiles--bookmarks .config-tile-value {
+    font-size: 1.05rem;
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.2;
+    color: var(--text-primary);
+}
+
+.config-tiles--bookmarks .config-tile-detail {
+    font-size: 0.66rem;
+    color: var(--text-secondary);
+}
+
+/* Tone in the number, the way Health does it. */
+.config-tiles--bookmarks .config-tile--good .config-tile-value { color: var(--accent-success); }
+.config-tiles--bookmarks .config-tile--warn .config-tile-value { color: var(--accent-warning); }
+.config-tiles--bookmarks .config-tile--crit .config-tile-value { color: var(--accent-error); }
+
+.config-tiles--bookmarks button.config-tile:hover {
+    border-color: color-mix(in srgb, var(--accent-primary) 45%, var(--border-primary));
+    background: color-mix(in srgb, var(--accent-primary) 7%, var(--background-secondary));
+}
+
+.config-tiles--bookmarks .config-tile.is-active {
+    border-color: color-mix(in srgb, var(--accent-primary) 55%, transparent);
+    background: color-mix(in srgb, var(--accent-primary) 12%, var(--background-secondary));
+}
+
 @media (max-width: 720px) {
     .config-tiles--overview {
         grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -430,6 +588,14 @@
     gap: 10px;
     flex-wrap: wrap;
     margin: 0 0 16px;
+}
+
+/* The tab's own filter, at the end of the bar it shares with "Only changed":
+   both narrow what is below, so they belong on one row. Pushed right so the
+   count stays next to the button it belongs to. */
+.config-settings-filter {
+    margin-left: auto;
+    inline-size: min(16rem, 100%);
 }
 
 .config-changed-count {
@@ -592,11 +758,84 @@
     gap: 6px;
 }
 
+/* The sub-tab strip and the page scope share a row: the scope applies to
+   every tab, so it belongs beside them rather than inside one. Wraps under the
+   tabs on a narrow window. */
+.config-stats-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.config-stats-scope {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.config-stats-scope-label {
+    font-size: calc(var(--font-size-text) * 0.86);
+    color: var(--text-muted, #888);
+}
+
+.config-stats-scope-note {
+    margin-top: 0;
+}
+
+/* The healthy share over time. Sits above the figures it dates, on a fixed
+   0–100 axis; the colour is the direction of travel, and the summary beside it
+   says the same thing in words for anyone who cannot read a 44px line. */
+.config-stats-trend {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 0 0 14px;
+    color: var(--text-muted, #888);
+}
+
+.config-stats-trend--good { color: var(--accent-success, #3fa45b); }
+.config-stats-trend--bad { color: var(--accent-danger, #c0524a); }
+
+.config-stats-trend-chart {
+    width: 240px;
+    max-width: 100%;
+    height: 44px;
+    flex: 0 1 240px;
+}
+
+.config-stats-trend-summary {
+    margin: 0;
+    font-size: calc(var(--font-size-text) * 0.86);
+    color: var(--text-secondary, #666);
+    font-variant-numeric: tabular-nums;
+}
+
+/* The foot of the section: when the figures were worked out, and the two
+   controls that act on all of them. Wraps on a narrow window so the stamp and
+   the buttons stack rather than crushing each other. */
+.config-stats-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.config-stats-foot-actions {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+}
+
 /* When the figures above were worked out. Recessive — it dates the page, it is
    not one of its numbers. */
 .config-stats-updated {
-    margin: 14px 0 0;
-    text-align: right;
+    margin: 0;
     font-size: calc(var(--font-size-text) * 0.78);
     color: var(--text-muted, #888);
     font-variant-numeric: tabular-nums;
@@ -676,6 +915,14 @@
 .config-btn--small {
     padding: 5px 10px;
     font-size: calc(var(--font-size-text) * 0.891);
+}
+
+/* A row button that carries a symbol rather than a word — square, so a row of
+   them reads as a strip of controls instead of a ragged line of labels. */
+.config-btn--icon {
+    padding: 5px 9px;
+    min-width: 2rem;
+    text-align: center;
 }
 
 .config-btn--danger {
@@ -961,6 +1208,18 @@
     inset: -0.3rem -0.4rem;
 }
 
+/* The section in the left rail — the first step of the trail. The rail clips
+   nothing, so the stars sit in the bleed like everywhere else. */
+.config-nav-item--animated {
+    position: relative;
+    overflow: visible;
+    animation: config-new-features-panel-glow 3.4s ease-in-out infinite;
+}
+
+.config-nav-item--animated .config-new-features-panel-stars {
+    inset: -0.25rem -0.35rem;
+}
+
 .config-panel--animated {
     position: relative;
     isolation: isolate;
@@ -1056,11 +1315,6 @@
     cursor: not-allowed;
 }
 
-.config-select:focus-visible {
-    outline: 2px solid var(--accent-color, #4a90d9);
-    outline-offset: 1px;
-}
-
 /*
  * Theme picker — a listbox standing in for a <select>.
  *
@@ -1072,15 +1326,30 @@
 .config-theme-picker {
     position: relative;
     display: inline-block;
+    max-width: 100%;
 }
 
-/* Matches the arrow and text alignment of the real selects beside it. */
+/* Matches the arrow and text alignment of the real selects beside it.
+   Wide enough for a theme name on one line: at 12rem the closed button was
+   narrower than most of what it has to show — "Chartreuse Static [light]" is
+   25 characters — so the label wrapped and the field stood two lines tall.
+   The floor is in ch rather than rem so it tracks the configured text size
+   instead of guessing at it; max-content lets a longer custom name push wider,
+   up to a cap, and past that the label ellipsises rather than wrapping. */
 .config-theme-picker-button {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    min-width: 12rem;
+    width: max-content;
+    min-width: 26ch;
+    max-width: min(24rem, 100%);
     text-align: left;
+}
+
+.config-theme-picker-button [data-theme-picker-label] {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .config-theme-picker-button::after {
@@ -2611,32 +2880,9 @@ body.no-animations .config-new-features-panel-star {
     margin: 0 0 16px;
 }
 
-.config-bm-item {
-    position: relative;
-    display: grid;
-    grid-template-columns: 3rem 1fr;
-    gap: 0.85rem;
-    padding: 0.75rem 0.85rem;
-    border: 1px solid var(--border-primary);
-    border-radius: var(--layout-radius-sm, 8px);
-    background: var(--background-secondary);
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
+/* Card, hover and keyboard cursor come from feed-row.css. The ticked edge is
+   applied as feed-row--edge-accent by the renderer. */
 
-.config-bm-item:hover {
-    border-color: color-mix(in srgb, var(--accent-primary) 42%, var(--border-primary));
-    background: color-mix(in srgb, var(--accent-primary) 7%, var(--background-secondary));
-}
-
-.config-bm-item.keyboard-selected {
-    border-color: var(--accent-primary);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-primary) 28%, transparent);
-    background: color-mix(in srgb, var(--accent-primary) 9%, var(--background-secondary));
-}
-
-.config-bm-item.is-checked {
-    border-left: 3px solid var(--accent-primary);
-}
 
 .config-bm-check {
     position: absolute;
@@ -2764,12 +3010,13 @@ body.no-animations .config-new-features-panel-star {
  * Tags get their own line once there are more than two, so a long list stops
  * competing with the domain for the identifying line above it.
  */
+/* Matches .inbox-item-tags. */
 .config-bm-tag-row {
-    margin: 0.25rem 0 0;
+    margin: 0.3rem 0 0;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.3rem 0.35rem;
+    gap: 0.3rem;
     min-width: 0;
 }
 
@@ -2944,10 +3191,60 @@ body.no-animations .config-new-features-panel-star {
 }
 
 .config-bm-meta-category {
-    margin: 0.15rem 0 0;
-    font-size: 0.78rem;
+    margin: 0.25rem 0 0;
+    /* Larger than the 0.78rem it was: this line answers "where does this live",
+       which is the question the list is most often open for, and it was set
+       smaller than the tag chips beside it. */
+    font-size: 0.86rem;
     color: var(--text-secondary);
     overflow-wrap: anywhere;
+}
+
+/* Page › category as one pill in two halves. Bordered rather than underlined:
+   the click filters the list, and an underline promises navigation. Squarer
+   than the tag chips above it, so the two read as different kinds of fact. */
+.config-bm-crumb {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.3rem;
+    max-width: 100%;
+    padding: 0.1rem 0.5rem;
+    border: 1px solid var(--border-secondary);
+    border-radius: 0.4rem;
+    background: color-mix(in srgb, var(--background-secondary) 70%, transparent);
+}
+
+.config-bm-crumb-part {
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+}
+
+/* The page is the container, the category the thing inside it: the muted half
+   and the plain half say which is which without a label. */
+.config-bm-crumb-page {
+    color: var(--text-tertiary);
+}
+
+.config-bm-crumb-category {
+    color: var(--text-primary);
+    font-weight: var(--font-weight-semibold);
+}
+
+.config-bm-crumb-part:hover,
+.config-bm-crumb-part:focus-visible {
+    color: var(--accent-primary);
+    text-decoration: underline;
+    text-underline-offset: 0.14em;
+}
+
+.config-bm-crumb-sep {
+    color: var(--text-tertiary);
+    font-size: 0.9em;
 }
 
 .config-bm-meta-footer {
@@ -3154,19 +3451,23 @@ body.no-animations .config-new-features-panel-star {
     margin-top: 0.5rem;
 }
 
+/* Same chip as the inbox rows (.inbox-item-tag): a tag should look like a tag
+   wherever it is listed, and the two were drifting — a tinted fill against a
+   solid one, and two different border tokens. */
 .config-bm-tag-chip {
-    padding: 0.05rem 0.4rem;
+    padding: 0.05rem 0.45rem;
     border-radius: 999px;
-    border: 1px solid var(--border-secondary);
-    background: color-mix(in srgb, var(--accent-primary) 8%, transparent);
+    border: 1px solid var(--border-primary);
+    background: var(--background-secondary);
     color: var(--text-secondary);
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     font-family: inherit;
     cursor: pointer;
 }
 
-.config-bm-tag-chip:hover {
-    border-color: var(--accent-primary);
+.config-bm-tag-chip:hover,
+.config-bm-tag-chip:focus-visible {
+    border-color: color-mix(in srgb, var(--accent-primary) 45%, var(--border-primary));
     color: var(--accent-primary);
 }
 
@@ -3763,22 +4064,93 @@ body.no-animations .config-new-features-panel-star {
     color: var(--text-muted, #888);
 }
 
-.help-signature {
-    margin: 8px 0 0;
-    text-align: center;
-    font-size: calc(var(--font-size-text) * 1.006);
+/* A help panel's heading row: the title, and the link that names it. The
+   button stays faint until the panel is hovered or it has focus — a row of
+   chain links down the page would compete with the headings. */
+.config-help-panel-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
 }
 
-.help-signature-link {
-    /* --accent-primary, not --accent-color: the themes define the former, and
-       the latter resolves to nothing here — leaving the raw blue fallback. */
-    color: var(--accent-primary, var(--accent-color, #4a90d9));
-    font-weight: 600;
-    text-decoration: none;
+.config-help-panel-link {
+    border: none;
+    background: none;
+    cursor: pointer;
+    padding: 2px 4px;
+    font-size: calc(var(--font-size-text) * 0.9);
+    line-height: 1;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+    color: var(--text-muted, #888);
 }
 
-.help-signature-link:hover {
-    text-decoration: underline;
+.config-help-panel:hover .config-help-panel-link,
+.config-help-panel-link:focus-visible {
+    opacity: 0.8;
+}
+
+/* Where a link landed. Fades out on its own — a permanent highlight would
+   still be there the next time the tab is opened. */
+.config-help-panel.is-linked {
+    outline: 2px solid var(--accent-primary, #4a90d9);
+    outline-offset: 4px;
+    border-radius: 8px;
+    transition: outline-color 0.6s ease;
+}
+
+/* Whether the feature this panel describes is on for the reader. */
+.config-help-state {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 0 0 10px;
+    font-size: calc(var(--font-size-text) * 0.88);
+    color: var(--text-secondary, #666);
+}
+
+.config-help-state-dot {
+    inline-size: 8px;
+    block-size: 8px;
+    border-radius: 50%;
+    background: var(--text-muted, #888);
+    flex: none;
+}
+
+.config-help-state.is-on .config-help-state-dot { background: var(--accent-success, #3fa45b); }
+.config-help-state.is-off .config-help-state-dot { background: var(--text-muted, #888); }
+
+/* The full tip catalogue on its own tab. */
+.config-help-tips {
+    margin: 0;
+    padding-left: 20px;
+    display: grid;
+    gap: 6px;
+}
+
+/* The wordmark sits on its own plate rather than on the panel background.
+   It is bright green on transparency — the colour it is on a terminal — which
+   a light theme would leave barely legible, so the plate is dark in both
+   themes. Same near-black as the printable cheat sheet, so the two places the
+   logo appears look like the same product. */
+.help-about-mark {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 18px 20px;
+    margin: 0 0 14px;
+    background: #0a0a0a;
+    border: 1px solid var(--border-primary, #2a3528);
+    border-radius: var(--radius-md, 10px);
+}
+
+.help-about-mark img {
+    display: block;
+    width: 100%;
+    max-width: 340px;
+    height: auto;
 }
 
 /* ── Overview → About the developer ─────────────────────────────────────
@@ -3906,8 +4278,14 @@ body.no-animations .config-new-features-panel-star {
     gap: 8px;
 }
 
-/* A native colour input needs its chrome stripped to read as a swatch. */
-.config-theme-picker {
+/* A native colour input needs its chrome stripped to read as a swatch.
+   It has a name of its own now. It used to be .config-theme-picker, which the
+   theme listbox up the file also answers to — and being the later rule, it
+   sized that listbox's wrapper to 34px. Harmless while the button inside
+   carried its own width; not harmless the moment anything in there resolved a
+   percentage against its container. .config-theme-swatch was not free either:
+   that is the 16px dot in the theme list. */
+.config-theme-color-input {
     inline-size: 34px;
     block-size: 28px;
     padding: 0;
@@ -3918,9 +4296,9 @@ body.no-animations .config-new-features-panel-star {
     flex: none;
 }
 
-.config-theme-picker::-webkit-color-swatch-wrapper { padding: 2px; }
-.config-theme-picker::-webkit-color-swatch { border: none; border-radius: 4px; }
-.config-theme-picker::-moz-color-swatch { border: none; border-radius: 4px; }
+.config-theme-color-input::-webkit-color-swatch-wrapper { padding: 2px; }
+.config-theme-color-input::-webkit-color-swatch { border: none; border-radius: 4px; }
+.config-theme-color-input::-moz-color-swatch { border: none; border-radius: 4px; }
 
 .config-theme-hex {
     flex: 1 1 110px;
@@ -4589,4 +4967,270 @@ body[data-layout-version="modern"] .config-backup-row {
 
 .config-maint-hint {
     margin-top: 4px;
+}
+
+/* ── Inline edits and scope marks in the bookmark list ──────────────────────
+   Name and shortcut are edited where they are read: the row keeps its place,
+   Enter saves, Escape puts the old value back. The empty shortcut pill is
+   deliberately visible — assigning one to fifty rows used to mean fifty
+   modals, and an absent pill gave the pointer nothing to aim at. */
+.config-bm-inline-input {
+    font: inherit;
+    color: var(--text-primary);
+    background: var(--background-primary);
+    border: 1px solid var(--accent-primary);
+    border-radius: 4px;
+    padding: 0.05rem 0.3rem;
+    min-width: 4rem;
+    max-width: 100%;
+}
+
+.config-bm-inline-input--name {
+    width: min(28rem, 100%);
+}
+
+.config-bm-inline-input--shortcut {
+    width: 4.5rem;
+    text-transform: uppercase;
+}
+
+button.config-bm-shortcut-pill {
+    font: inherit;
+    cursor: pointer;
+}
+
+.config-bm-shortcut-pill--empty {
+    opacity: 0.45;
+}
+
+.config-bm-shortcut-pill--empty:hover {
+    opacity: 1;
+}
+
+/* Which settings do not follow the rule the rest follow — see fieldScopeNote. */
+.config-field-scope {
+    margin-left: 0.35rem;
+    padding: 0.05rem 0.35rem;
+    border-radius: 999px;
+    border: 1px solid var(--border-secondary);
+    color: var(--text-tertiary);
+    font-size: 0.65rem;
+    white-space: nowrap;
+}
+
+/* A statistics row that hands off to the list it describes. */
+.config-dist-label--link {
+    border: 0;
+    background: none;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.config-dist-label--link:hover {
+    color: var(--accent-primary);
+    text-decoration: underline;
+}
+
+/* The shortcut a row is trying to take, and who already has it. Shown while the
+   field is open — a conflict found later is a red row in Health; a conflict
+   found here is one Escape away from not happening. */
+.config-bm-inline-input.is-invalid {
+    border-color: var(--accent-error);
+}
+
+.config-bm-inline-conflict {
+    display: inline-block;
+    margin-left: 0.4rem;
+    color: var(--accent-error);
+    font-size: 0.72rem;
+    white-space: nowrap;
+}
+
+/* The Tips tab filters itself, at the grain of one tip: help's own search
+   returns whole panels, and a panel here is a group of up to eight lines. */
+.config-help-tips-filter {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0 0 0.8rem;
+}
+
+.config-help-tips-filter .config-text {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.config-help-tips-count {
+    flex: 0 0 auto;
+    font-size: 0.8rem;
+    color: var(--text-muted, #777);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Where a topic is continued on another tab. Reads as a footnote to the panel,
+   not as a call to action — the reader is mid-article. */
+.config-help-see-also {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.4rem;
+    margin: 0.9rem 0 0;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--border-secondary, rgba(128, 128, 128, 0.2));
+    font-size: 0.85rem;
+}
+
+.config-help-see-also-label {
+    color: var(--text-muted, #777);
+}
+
+.config-help-see-also-link {
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--accent-primary);
+    font: inherit;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.config-help-see-also-link:hover,
+.config-help-see-also-link:focus-visible {
+    text-decoration-thickness: 2px;
+}
+
+.config-help-see-also-link + .config-help-see-also-link::before {
+    content: "·";
+    margin-right: 0.4rem;
+    color: var(--text-muted, #777);
+    text-decoration: none;
+    display: inline-block;
+}
+
+/* What the figures say, in three sentences, each with the button that acts on
+   it. A number you cannot act on is trivia; this panel is the difference. */
+.config-stats-summary-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.config-stats-summary-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.config-stats-summary-text {
+    flex: 1 1 16rem;
+    min-width: 0;
+}
+
+/* Which way a count moved this week, beside the count itself. Quiet: the
+   number is the fact, the direction is the footnote. */
+.config-tile-delta {
+    margin-left: 0.35rem;
+    font-size: 0.62em;
+    font-weight: var(--font-weight-semibold);
+    white-space: nowrap;
+    vertical-align: middle;
+    font-variant-numeric: tabular-nums;
+}
+
+.config-tile-delta--up { color: var(--accent-success, #2e7d32); }
+.config-tile-delta--down { color: var(--text-muted, #777); }
+
+.config-tile-delta-period {
+    font-weight: 400;
+    opacity: 0.75;
+}
+
+/* The chart in a sentence, above the bars: the shape a table of thirty numbers
+   cannot give, and the peak a sighted reader would otherwise have to hover for. */
+.config-chart-summary {
+    margin: 0 0 0.5rem;
+    font-size: 0.82rem;
+    color: var(--text-muted, #777);
+}
+
+/* The three orders people use, and the filter that answers "what did I touch".
+   A row of chips above the list: a select shows one option and hides the rest,
+   which is where "most opened" went to be never found. */
+.config-bm-quickbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0 0 0.6rem;
+}
+
+.config-bm-quickbar-label {
+    font-size: 0.75rem;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--text-muted, #777);
+    margin-right: 0.15rem;
+}
+
+.config-choice--small {
+    padding: 0.2rem 0.55rem;
+    font-size: 0.78rem;
+}
+
+/* The keys the list answers to, said once under the toolbar rather than left
+   to be discovered. */
+.config-bm-keys-hint {
+    margin: 0 0 0.6rem;
+    font-size: 0.75rem;
+    color: var(--text-muted, #777);
+}
+
+.config-bm-keys-hint kbd {
+    font-size: 0.9em;
+}
+
+/* The rows above and below the drawn window: height only, so the scrollbar
+   describes the whole list while the DOM holds a screenful. */
+.config-bm-spacer {
+    flex: 0 0 auto;
+    pointer-events: none;
+}
+
+/*
+ * The link preview panel: eight boxes choosing the card's rows, and the card
+ * itself drawn beside them from a real bookmark.
+ */
+.config-checkset {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 0.4rem 1rem;
+    margin: 0.2rem 0 0.6rem;
+}
+
+.config-checkset-item {
+    margin: 0;
+}
+
+.config-preview-sample {
+    display: flex;
+    justify-content: flex-start;
+    margin: 0.4rem 0 0.2rem;
+}
+
+/* The sample is the card, so it inherits every rule the card has — it only has
+   to stop being a fixed, floating one. */
+.config-preview-sample-card.bookmark-preview-card {
+    position: static;
+    z-index: auto;
+    pointer-events: none;
+    width: min(340px, 100%);
+    box-shadow: none;
 }

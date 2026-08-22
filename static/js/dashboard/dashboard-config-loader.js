@@ -27,6 +27,7 @@ class DashboardConfigLoader {
         'data-backups',
         'stats',
         'help',
+        'about',
     ];
 
     static VIEW = 'config';
@@ -43,12 +44,17 @@ class DashboardConfigLoader {
         if (raw === 'config/behavior/layout') return 'appearance';
         if (raw === 'config/behavior/display') return 'appearance';
         if (raw === 'config') return 'overview';
-        const match = raw.match(/^config\/([a-z-]+)(?:\/([a-z-]+))?$/);
+        // Help links carry a third segment naming a panel; the section is
+        // still the first, and the loader only needs that much.
+        const match = raw.match(/^config\/([a-z-]+)(?:\/([a-z0-9-]+))?(?:\/([a-z0-9-]+))?$/);
         if (!match) return null;
         return DashboardConfigLoader.SECTIONS.includes(match[1]) ? match[1] : 'overview';
     }
 
     static CONFIG_LAST_KEY = 'nextdash:config-last-location-v1';
+
+    /** Mirrors DashboardConfig.CONFIG_LAST_TTL_MS; both must agree. */
+    static CONFIG_LAST_TTL_MS = 5 * 60 * 1000;
 
     /** Mirrors DashboardConfig.SUB_TAB_STATE for pre-load sub-tab replay. */
     static SUB_TAB_STATE = {
@@ -66,6 +72,11 @@ class DashboardConfigLoader {
             const raw = localStorage.getItem(DashboardConfigLoader.CONFIG_LAST_KEY);
             if (!raw) return null;
             const data = JSON.parse(raw);
+            // Same expiry as the module's own reader: a cold load straight into
+            // bare `#config` must not restore a location the module would have
+            // thrown away.
+            const savedAt = Number(data?.savedAt) || 0;
+            if (!savedAt || Date.now() - savedAt > DashboardConfigLoader.CONFIG_LAST_TTL_MS) return null;
             const section = data?.section;
             if (!section || !DashboardConfigLoader.SECTIONS.includes(section)) return null;
             let subTab = data?.subTab ?? null;
@@ -157,7 +168,17 @@ class DashboardConfigLoader {
             'js/dashboard/dashboard-config.js',
             'dashboardConfig',
             () => typeof window.DashboardConfig === 'function'
-        ).then(() => {
+        ).then(() => (
+            // The Bookmarks row menu, fetched with config rather than on the
+            // dashboard's critical path: nothing outside config uses it. Its
+            // failure is not fatal — config without a right-click menu is worse
+            // than config, but far better than no config.
+            window.LazyScript.loadScriptOnce(
+                'js/dashboard/dashboard-config-context-menu.js',
+                'dashboardConfigContextMenu',
+                () => typeof window.DashboardConfigContextMenu === 'function'
+            ).catch(() => {})
+        )).then(() => {
             if (typeof window.DashboardConfig !== 'function') {
                 throw new Error('config module loaded without defining DashboardConfig');
             }
@@ -186,7 +207,15 @@ class DashboardConfigLoader {
     async openConfigView(section) {
         let mod;
         try {
-            mod = await this.load();
+            // The Help tab's strings are not in the startup payload — a third of
+            // the file, read nowhere else — so they are fetched alongside the
+            // module that reads them. In parallel: neither waits on the other.
+            const [loaded] = await Promise.all([
+                this.load(),
+                this.dash?.language?.ensureHelpTranslations?.(),
+                window.ViewStyles?.ensureViewStyles?.(),
+            ]);
+            mod = loaded;
         } catch (err) {
             const msg = this.dash?.language?.t?.('config.loadFailed');
             const text = (typeof msg === 'string' && msg !== 'config.loadFailed')

@@ -6,17 +6,18 @@ function dashFetch(url, init) {
 }
 
 class DashboardData {
+    /** sessionStorage key prefix for the per-page scroll offset. */
+    static SCROLL_KEY_PREFIX = 'nextdash:page-scroll:';
+
     constructor(dashboard) {
         this.dash = dashboard;
     }
 
     safeBookmarkOpenHref(url) {
-        const d = this.dash;
         return window.BookmarkUrlUtils?.safeHttpResourceUrl?.(url) || '';
     }
 
     samePageId(a, b) {
-        const d = this.dash;
         return Number(a) === Number(b);
     }
 
@@ -118,7 +119,6 @@ class DashboardData {
     }
 
     async withRetry(task, retries = 2, baseDelayMs = 220) {
-        const d = this.dash;
         let lastError = null;
         for (let attempt = 0; attempt <= retries; attempt += 1) {
             try {
@@ -227,14 +227,18 @@ class DashboardData {
                 d.settings.showAddBookmarkButton = true;
             }
             if (typeof d.settings.showLinkPreviewCards === 'undefined') {
-                d.settings.showLinkPreviewCards = false;
+                d.settings.showLinkPreviewCards = true;
             }
             if (![100, 150, 250].includes(Number(d.settings.linkPreviewHoverDelayMs))) {
-                d.settings.linkPreviewHoverDelayMs = 150;
+                d.settings.linkPreviewHoverDelayMs = 250;
             }
-            if (typeof d.settings.showSyncToasts === 'undefined') {
-                d.settings.showSyncToasts = false;
+            // The mode is what the card reads; the boolean is kept in step so
+            // everything still holding it — the command palette toggle, the
+            // analytics flag — agrees with what the reader chose.
+            if (!['off', 'hover', 'keyboard'].includes(String(d.settings.linkPreviewMode || ''))) {
+                d.settings.linkPreviewMode = d.settings.showLinkPreviewCards === true ? 'hover' : 'off';
             }
+            d.settings.showLinkPreviewCards = d.settings.linkPreviewMode !== 'off';
             if (typeof d.settings.updateCheckEnabled === 'undefined') {
                 d.settings.updateCheckEnabled = true;
             }
@@ -516,6 +520,9 @@ class DashboardData {
             }
             const body = await res.json();
             const revision = String(body?.revision || '').trim();
+            // Stashed rather than returned: every caller wants the data
+            // revision, and only the poll cares whether settings moved with it.
+            this._lastSettingsRevision = String(body?.settingsRevision || '').trim();
             return revision || null;
         } catch {
             return null;
@@ -555,6 +562,24 @@ class DashboardData {
             return false;
         }
         const changed = await this.syncDataRevision({ invalidateOnChange: true });
+        const settingsChanged = Boolean(this._lastSettingsRevision)
+            && Boolean(d._serverSettingsRevision)
+            && this._lastSettingsRevision !== d._serverSettingsRevision;
+        d._serverSettingsRevision = this._lastSettingsRevision || d._serverSettingsRevision;
+
+        // A config change on another device used to be invisible here: this poll
+        // reloaded bookmarks, inbox and health and never settings, while the
+        // revision it polls is hashed over settings.json too. So the second
+        // device kept its old chrome — theme, visible buttons, layout — until it
+        // was reloaded by hand, having paid for the poll that knew.
+        //
+        // Routed through the same path a config save uses locally, so there is
+        // one way to apply settings rather than two that can drift.
+        if (settingsChanged && typeof d.configSync?.refreshAfterConfigSettingsUpdate === 'function') {
+            await d.configSync.refreshAfterConfigSettingsUpdate({});
+            return true;
+        }
+
         if (!changed) {
             return false;
         }
@@ -740,10 +765,74 @@ class DashboardData {
         },
     ];
 
+    /**
+     * Remember where the user was on the page they are leaving.
+     *
+     * Read before the grid is swapped out — once renderDashboard has run, the
+     * document height belongs to the new page and window.scrollY has already
+     * been clamped to it.
+     */
+    rememberScrollForPage(pageId) {
+        const d = this.dash;
+        if (!Number.isFinite(pageId) || pageId <= 0 || d.activeView !== 'bookmarks') {
+            return;
+        }
+        if (!d._pageScrollPositions) {
+            d._pageScrollPositions = new Map();
+        }
+        const offset = window.scrollY || 0;
+        d._pageScrollPositions.set(pageId, offset);
+        // Also in sessionStorage, so the position survives a reload and a return
+        // from Health, Inbox or config — the memory in the Map only ever lasted
+        // as long as the page object did.
+        if (!this.rememberScrollEnabled()) return;
+        try {
+            sessionStorage.setItem(`${DashboardData.SCROLL_KEY_PREFIX}${pageId}`, String(Math.round(offset)));
+        } catch {
+            // Private mode, or a full quota: losing the offset is not worth an error.
+        }
+    }
+
+    /** Off puts the grid back to landing at the top on every arrival. */
+    rememberScrollEnabled() {
+        return this.dash.settings?.rememberScrollPosition !== false;
+    }
+
+    /**
+     * Consume the remembered offset for a page, if there is one.
+     *
+     * Consumed, not just read: the offset describes one particular departure,
+     * and leaving it behind would make a later deliberate visit to that page
+     * land halfway down for no reason the user can see.
+     */
+    takeRememberedScroll(pageId) {
+        const key = Number(pageId);
+        if (!this.rememberScrollEnabled()) {
+            this.dash._pageScrollPositions?.delete(key);
+            return 0;
+        }
+        const stored = this.dash._pageScrollPositions?.get(key);
+        if (Number.isFinite(stored)) {
+            return stored;
+        }
+        // The Map is the fast path within one session; sessionStorage is what
+        // survives a reload or a trip through another view.
+        try {
+            const raw = sessionStorage.getItem(`${DashboardData.SCROLL_KEY_PREFIX}${key}`);
+            const parsed = Number(raw);
+            return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+        } catch {
+            return 0;
+        }
+    }
+
     _applyLoadedPageData(targetPageId, bookmarks, categories, options = {}) {
         const d = this.dash;
         const { skipRender = false, animate = false } = options;
         const previousPageId = Number(d.currentPageId);
+        if (previousPageId !== targetPageId) {
+            this.rememberScrollForPage(previousPageId);
+        }
         // Three signals, because each alone has a blind spot:
         //  - the hash, for startup: the initial page load runs before #health/#inbox
         //    is consumed, so activeView is still 'bookmarks' and writing #<n> here
@@ -788,8 +877,16 @@ class DashboardData {
         if (d.searchComponent) {
             d.updateSearchComponent();
             if (!skipRender) {
+                const restoreTo = this.takeRememberedScroll(targetPageId);
                 window.scrollTo({ top: 0, behavior: 'instant' });
                 d.renderDashboard({ animate });
+                // After the render, or there is nothing tall enough to scroll to
+                // yet. A page that has since grown shorter clamps itself.
+                if (restoreTo > 0) {
+                    requestAnimationFrame(() => {
+                        window.scrollTo({ top: restoreTo, behavior: 'instant' });
+                    });
+                }
 
                 if (d.keyboardNavigation) {
                     if (d.keyboardNavigation.isNavigating()) {
@@ -1018,7 +1115,14 @@ class DashboardData {
         d.config?.repaintBookmarksFilters?.();
         d.config?.repaintBookmarksList?.();
 
-        const renderOpts = { incremental: false, animate, despiteModal };
+        // Not `incremental: false`. Every add/edit/delete/move/tag change comes
+        // through here, and forcing the full rebuild threw away the grid, every
+        // DragReorder instance, the scroll position and the focused row for
+        // what is usually a single changed row. The incremental path decides
+        // for itself: canAttemptDataPatch() bails on a layout-settings change
+        // and categoryStructureMatches() bails when categories were added,
+        // removed or reordered, both falling through to the full render below.
+        const renderOpts = { animate, despiteModal };
 
         if (d.activeView === 'health' && d.health?.isEnabled?.()) {
             if (d.isInlineEditActive() && !despiteModal) {
@@ -1073,7 +1177,25 @@ class DashboardData {
             if (!response.ok) {
                 throw new Error('Failed to save settings');
             }
-            
+
+            // The server drops collections it cannot store — no name, or no
+            // rule with a value — and used to do so behind a plain "success",
+            // so the row stayed on screen and was gone after a reload with
+            // nothing said. Report it instead.
+            //
+            // Reporting only: the row is deliberately left on screen. A
+            // half-filled collection is the normal state between clicking "Add
+            // collection" and typing the rule value, and removing it there
+            // would take the editor away mid-edit.
+            try {
+                const body = await response.clone().json();
+                const dropped = Array.isArray(body?.droppedCollections) ? body.droppedCollections : [];
+                if (dropped.length) {
+                    d._droppedCollections = dropped;
+                }
+            } catch { /* a body we cannot read must not fail an accepted save */ }
+
+
             // Also save device-local subset when device-specific is enabled.
             // The server already accepted the settings by this point, so a failure
             // here (private mode, quota exceeded) must not surface as "failed to
@@ -1091,6 +1213,8 @@ class DashboardData {
                 console.warn('Device-local settings mirror failed:', storageError);
             }
             void d.inbox?.bootstrap?.();
+            // Other tabs hold their own copy of settings; tell them it moved.
+            d.configSync?.publishConfigSync?.('settings');
             return true;
         } catch (error) {
             console.warn('Save settings failed:', error);

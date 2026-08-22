@@ -172,6 +172,41 @@ Switch pages with `0` (Inbox), `1`–`9`, `Shift + ←/→`, or the **pages** ov
 - Press and hold a category header (~500 ms, not on sort buttons) to rename — double-click still works. **Esc** cancels rename.
 - In **config → pages & tags → categories**, edits auto-save when you switch to another config tab or change the page selector (blocked if validation fails). Category lists are protected from accidental empty saves when bookmarks still reference those categories.
 
+#### Spreading a category across columns
+
+*(v1.1.0)* A category can run across several grid columns. Its bookmarks then flow across those columns instead of down a single one, which suits a category with many short entries.
+
+It is a switch, not a width. **How many** columns a spread category takes is not a setting: it follows from **items per category** — which caps the height of one column — and how many bookmarks the category holds. Forty bookmarks with a limit of fifteen take three columns, and two once you delete a handful. The column count is the ceiling: lower it and a spread category narrows to fit, raise it and it takes back only what it asks for.
+
+Because the width follows the contents, it also follows them as they change: a bookmark that pushes a category past its limit brings the next column with it there and then, and one that takes it back under drops the column again. With the limit at fifteen:
+
+| Bookmarks in the category | Columns |
+|---|---|
+| 1 – 15 | 1 |
+| 16 – 30 | 2 |
+| 31 – 45 | 3 |
+
+A spread category says so twice: a rule under its header running the width of the whole block, and a small **↔ N** beside the title naming the number of columns it currently takes.
+
+| Route | How |
+|-------|-----|
+| Mouse | Right-click the category header → **Spread across columns** |
+| Keyboard | **Shift + W** on the focused category |
+| Command | `:width on` / `:width off`, or `:width all` to switch every category back |
+| Config | **pages & tags → categories** has a ↔ button per row |
+
+**Config → appearance → layout → Categories across columns** holds what applies to all of them: **items per category**, whether a **new** category starts out spread, and whether **Turn spreading off everywhere** covers only the current page or every page.
+
+Spreading needs two things: **items per category** must not be *Unlimited*, and the grid must have at least two columns. With no limit there is nothing capping the height of a column, so nothing decides how many columns a category would need — which is why *Unlimited* is out of reach while any category spreads, and why the controls say what to set when it is.
+
+**With Pack columns tightly on** nothing changes while no category spreads — it is the same round-robin columns it has always been. Switch one on and the page becomes a packed grid: the spread category takes its columns where it falls, and the categories after it carry on beside and beneath it instead of waiting for a clear row.
+
+On a phone every category is one column wide.
+
+The first time it is worth knowing about, a card in the bottom-left corner offers a four-step walkthrough of all this — the before/after shape, where the switch is, the sum that decides the column count, and where the remaining settings live. Dismiss it and it does not come back.
+
+That corner holds **one card at a time**, and the others wait their turn rather than being dropped: a card that finds the corner busy — another invitation still unanswered, the ★ release notes open — comes back as soon as it frees up, however long that takes. Until **v1.1.3** it gave up after forty seconds, so on an install carrying an unanswered card, everything behind it was never offered at all.
+
 ### 4.3 Bookmarks
 
 Each bookmark has:
@@ -202,11 +237,12 @@ Pinned bookmarks stay at the top of their category (manual, A–Z, or recent sor
 - **Linkable and remembered** — filter, sort and search appear in the address bar (`?ib_filter=`, `?ib_sort=`, `?ib_q=`), so a view can be bookmarked or shared. Filter and sort also return on your next visit; a shared link overrides what was stored. The search box is deliberately not remembered.  
 - **Select several** — tick rows (click the box, or `x` on the selected row) and a bar offers **Mark read**, **Snooze** and **Delete** for just those items, instead of the toolbar's all-or-nothing bulk. `Esc` clears the selection, switching filter clears it too (so a bulk action cannot reach rows you can no longer see), and deleting names the count and asks first.  
 - Keyboard: `j`/`k` move, `g`/`G` first/last, `Enter` open, `p` promote, `r` mark read, `n` note, `z` snooze, `x` select, `d` delete. Toolbar bulk actions: **Mark all read** and **Clear read**.  
-- Toggle under **Config → Behavior → Search & inbox → Enable Inbox**; set the paste destination there too, to skip the choice dialog.
+- **First visit** — a one-time tour walks the whole loop in seven steps, from where links come from to how a backlog gets cleared. **Config → Help → Inbox** covers the same ground in more depth, at any time.
+- Toggle under **Config → Behavior → Inbox → Enable Inbox**; set the paste destination there too, to skip the choice dialog.
 
 ### 4.5 Config vs dashboard
 
-Config is a **view inside the dashboard**, not a separate page — same tab, same session, no page load. Open it with **`Shift+S`**, the **config** (gear) link in the header, or the `/#config` address; **`<`** takes you back. Reopening config with **`Shift+S`**, **`<`**, or the gear icon restores the **last section and sub-tab** only when you left via **`Shift+H`** or **`Shift+I`**; **`Escape`** and **`0`–`9`** clear stored location so the next visit starts on **Overview**. A deep link like `/#config/appearance` still takes priority.
+Config is a **view inside the dashboard**, not a separate page — same tab, same session, no page load. Open it with **`Shift+S`**, the **config** (gear) link in the header, or the `/#config` address; **`<`** takes you back. Reopening config with **`Shift+S`**, **`<`**, or the gear icon restores the **last section and sub-tab** you were on — whichever way you left, including **`Escape`**, **`0`–`9`**, and the health, inbox and page buttons in the header, which switch view around config without it being asked (**v1.1.0**). The memory lasts **5 minutes**, counted from the moment config left the screen rather than from your last click inside it: reading one panel for half an hour and stepping away for ten seconds still brings you back where you were, while coming back much later starts on **Overview** — a quick return is a continuation of what you were doing, a return an hour later is a new task. A deep link like `/#config/appearance` still takes priority.
 
 | Dashboard view | Config view |
 |-----------------|------------------|
@@ -214,7 +250,11 @@ Config is a **view inside the dashboard**, not a separate page — same tab, sam
 | Keyboard-first | Bookmark editor, stats, backups |
 | Live layout and themes | Every setting, grouped by topic |
 
-It has eight sections — **Overview**, **Pages & tags**, **Bookmarks**, **Appearance**, **Behavior**, **Data & backups**, **Statistics**, and **Help** — each deep-linkable as `/#config/<section>` (for example `/#config/appearance`).
+It has nine sections — **Overview**, **Pages & tags**, **Bookmarks**, **Appearance**, **Behavior**, **Data & backups**, **Statistics**, **Help**, and **About** — each deep-linkable as `/#config/<section>` (for example `/#config/appearance`).
+
+Two ways through it, both **v1.3.0**: **Tips** has its own filter that narrows to the single tip (the search at the top of Help returns whole topics), and a panel whose subject carries on in another tab ends with a **Continues in** line that jumps to that panel rather than to the top of its tab. The version heading reads the release index, so it cannot go stale.
+
+**Help** is prose with a drawing over every article since **v1.3.0**: the three search prefixes in the field you type them into, the health tiles in the colours the rows wear, a certificate meter with the day the warning starts marked on it, a maintenance window shaded into a day, the boundary the statistics never cross. Same small drawings the choice cards under Appearance use, so a grid, a spacing and a margin look the same wherever nextDash shows one. Every word inside them is translated.
 
 Most controls **save the moment you change them**, and a short *Saving…* / *Saved* confirmation appears. The bookmark editor is the exception: it collects your edits and writes them when you press **Save**. Config only writes data that actually changed — a small settings edit does not re-upload every page of bookmarks.
 
@@ -235,7 +275,7 @@ Most controls **save the moment you change them**, and a short *Saving…* / *Sa
 └─────────────────────────────────────────────────────────────┘
 ```
 
-Side rail layout (optional — **Config → Appearance → Layout → Button bar position → Rail left** or **Rail right**):
+Side rail layout (optional — **Config → Appearance → Button bar → Button bar position → Rail left** or **Rail right**):
 
 ```
 ┌──┬─────────────────────────────────────────────────────────┐
@@ -256,7 +296,7 @@ Side rail layout (optional — **Config → Appearance → Layout → Button bar
 ### 🧭 Header
 
 - **Date/time** — Click for a **week overview** popover (today highlighted; optional **Open calendar** link when configured in General). Optional weather line below.
-- **Page tabs** — Switch bookmark pages (`1`–`9`, `Shift + ←/→`, or click). On desktop the strip scrolls when you have many pages.
+- **Page tabs** — Switch bookmark pages (`1`–`9`, `Shift + ←/→`, or click). On desktop the strip scrolls when you have many pages. A long page **remembers where you were** (**v1.3.0**): switching pages, or opening Health, Inbox or config and coming back, puts you at the offset you left, and so does a reload while the tab stays open — a page that has grown shorter clamps to its new end. Switch it off with **Come back to where you were on a page** under **Config → Behavior → General**
 - **pages** — Grid icon beside the page tabs; opens an overview of all pages with counts (`,` or click). Same stroke and spacing as inbox, health, and config (**v2026.08.08.6**).
 - **Inbox** — When enabled, an inbox icon beside **pages** opens the triage view (`Shift + I` or `0`). Unread count on the tab when something is waiting.
 - **health** — A **heartbeat icon** linking to `/#health`, with an inline pill counter (e.g. `3`) when there is something to report — **red** for a monitored bookmark that is down right now or an ordinary broken link, **amber** for warnings, hidden when healthy (styled like the inbox tab). The most severe state wins the badge: a **down monitor** takes priority over a broken link, which takes priority over warnings. A down monitor is counted apart from a broken link — clicking opens `/?hv_filter=monitored#health` for an outage, `/?hv_filter=broken#health` for a broken link. When the number of down monitors **rises**, the icon **pulses once** to catch your eye; it stays quiet on a reload that merely finds an existing outage, on a recovery, and — via a 10-minute cooldown — on a monitor that flaps up and down. The pulse shares the broken red and is told apart by the movement, and it honours reduced-motion and the no-animations setting. Always shown. Open the same view from the keyboard with **`Shift+H`**.
@@ -266,7 +306,7 @@ Side rail layout (optional — **Config → Appearance → Layout → Button bar
 
 ### 🎛️ Button bar / side rail
 
-The button bar can appear as a **floating bottom bar** (default), a **corner dock**, or a **44 px vertical side rail on either edge** — set via **Config → Appearance → Layout → Button bar position** or the `:buttonbar` command.
+The button bar can appear as a **floating bottom bar** (default), a **corner dock**, or a **44 px vertical side rail on either edge** — set via **Config → Appearance → Button bar** or the `:buttonbar` command.
 
 **Bottom bar** — buttons float centred at the bottom of the viewport.
 
@@ -280,7 +320,7 @@ The button bar can appear as a **floating bottom bar** (default), a **corner doc
 | `!` | `!` / `F1` | Keyboard cheat sheet |
 | `.` | `.` | Fold or unfold every category |
 
-Each button can be shown or hidden individually under **Config → Appearance → Toolbar & tabs**. `*` recent, `!` cheat sheet and `.` fold-all share one group, and it disappears only when all three are switched off.
+Each button can be shown or hidden individually under **Config → Appearance → Button bar**, under the position control (**v1.3.0** — it was two tabs away, on Toolbar & tabs). `*` recent, `!` cheat sheet and `.` fold-all share one group, and it disappears only when all three are switched off. **A fresh install starts without the fold-all button** — the key still works, and it is one switch away — while a dashboard that already had it keeps it: an existing `settings.json` with no such key reads as an upgrade, not as a new install.
 
 **Side rail** — 44×44 px square cells stacked vertically against one edge; the dashboard grid shifts by 44 px to clear it. Available on the **left** (`side-left`) or the **right** (`side-right`); the two are mirror images, so the divider faces the content and tooltips open inward. On mobile (≤768 px) the rail automatically reverts to a centred bottom bar.
 
@@ -298,7 +338,7 @@ Each button can be shown or hidden individually under **Config → Appearance �
 | | `.` | `.` | Fold or unfold every category |
 | Bottom | `★` | — | What's new |
 
-Hover a button on desktop for a tooltip with shortcuts. In side-rail mode, tooltips appear to the **right** of the rail. The header icons — **pages**, **inbox**, **health**, **config** — carry the same tooltips (**v2026.08.08.6**) and open **below** the icon, since there is no room above them at the top of the window (**v2026.09.2**).
+**Off by default.** The shortcut popovers are a switch under **config → behavior → general** — *Show shortcut hints on toolbar icons* — and they now start off, for existing dashboards as well as new ones: the setting has been on since it existed and is written into every stored settings file, so changing the default alone would have left everybody exactly where they were. A one-time migration turns them off; switching them back on sticks, because the migration records that it ran and never runs again. With them on, hover a button on desktop for a tooltip with shortcuts. In side-rail mode, tooltips appear to the **right** of the rail. The header icons — **pages**, **inbox**, **health**, **config** — carry the same tooltips (**v2026.08.08.6**) and open **below** the icon, since there is no room above them at the top of the window (**v2026.09.2**).
 
 ### 🔗 Deep links from Health
 
@@ -368,7 +408,7 @@ Since **v2026.09.05.1**, the **Page** and **Category** dropdowns each lead with 
 
 ### 7.3 Paste a URL (`Ctrl+V`)
 
-With the dashboard focused and no text field active, paste a URL. A choice dialog offers **Save to Inbox** or **Add bookmark** (full modal pre-filled). Set a default under **Config → Behavior → Search & inbox** (*Ask each time*, *Always add bookmark*, or *Always save to Inbox*). Paste is ignored while **inline edit** or the **tag word cloud** is open. If paste cannot open the form (no active page, Inbox disabled, or the feature is blocked), a notification explains what to do.
+With the dashboard focused and no text field active, paste a URL. A choice dialog offers **Save to Inbox** or **Add bookmark** (full modal pre-filled). Set a default under **Config → Behavior → Inbox** (*Ask each time*, *Always add bookmark*, or *Always save to Inbox*). Paste is ignored while **inline edit** or the **tag word cloud** is open. If paste cannot open the form (no active page, Inbox disabled, or the feature is blocked), a notification explains what to do.
 
 ### 7.4 Inline edit after long-press
 
@@ -380,14 +420,14 @@ Right-click any bookmark on the dashboard for its actions in one place:
 
 | Item | What it does |
 |------|--------------|
-| **Open in new tab** | Opens the bookmark in a background tab and counts the open, like a normal click |
-| **Copy URL** | Copies the URL to the clipboard; the row flashes green |
+| **Open in new tab** | Opens the bookmark in a background tab and counts the open, like a normal click (also `Ctrl/Cmd + Enter`) |
+| **Copy URL** | Copies the URL to the clipboard; the row flashes green (also `Ctrl/Cmd + C`) |
 | **Share… / Copy name + URL** | Hands the bookmark to your system's share sheet with its name and URL. **The entry names what your browser will actually do.** Sharing needs more than the feature being present: browsers only open a sheet in a *secure context*, and **Safari on macOS refuses it over plain `http://` — including `localhost`** — even though it reports the feature as available. When a share is refused the link is copied instead, the message says the browser will not open a sheet here, and the entry re-labels itself to **Copy name + URL** so it stops promising a dialog. Reach the dashboard over **HTTPS** (a reverse proxy or Tailscale) for a real share sheet. Chrome and Firefox on macOS/Linux have no Web Share at all. Closing the sheet does nothing, so a cancel is never mistaken for a copy. Since **v2026.08.08.3** this works on the first attempt: the entry used to do nothing at all when the interaction module had not been fetched yet |
-| **Edit** | Opens the same inline editor as long-press |
+| **Edit** | Opens the same inline editor as long-press (also `Shift + E`) |
 | **Tags…** | The quick-tag popover (also `Shift + T`) |
 | **Move to…** | The move popover — another category or page (also `Shift + M`) |
 | **Checking** | Names the bookmark's current availability mode and opens the three-way choice — **Off** / **Periodic** / **Monitor** (also `Shift + C`) |
-| **Show in Health** | Opens the [health view](#15-status-monitoring-and-health) with this bookmark's row selected. Offered for **every** bookmark, including ones with checking switched off — the report covers the whole library, and that row is where checking gets turned on |
+| **Show in Health** | Opens the [health view](#15-status-monitoring-and-health) with this bookmark's row selected (also `Shift + R`). Offered for **every** bookmark, including ones with checking switched off — the report covers the whole library, and that row is where checking gets turned on |
 | **Select** / **Select all in category** | Starts a [multi-selection](#94-selecting-several-bookmarks) with this row, or with every row in its category. Placed above the divider: below it is the destructive zone, and selecting is not destructive |
 | **Delete** | Asks for confirmation first, then deletes with undo in the toast. The bookmark goes to the [trash](#trash-data--backups--trash) for 30 days |
 
@@ -395,7 +435,9 @@ Right-click a bookmark that is **part of an open selection** and the menu switch
 
 Apart from sharing, nothing here is exclusive to the menu — the rest is reachable from the [command palette](#93-bookmark-actions) and config, and the menu just puts it where most people look first.
 
-Arrow keys move through the items and `Enter` activates one; `Esc` or a click outside closes it. It works on **smart collection** rows too. The menu deliberately stays out of the way where the browser's own menu matters: it does not open while the inline editor is active or over a modal, and **`Shift` + right-click** always gives you the browser menu instead. Not available on touch, which has no right-click — use long-press for inline edit there.
+**A category can have an icon.** Right-click its header and pick **Icon…**, type an emoji, press Enter. The header follows what you type before you commit, and Escape puts back what was there. `Category.Icon` has been stored and rendered for a long time — the strings for this control were still sitting unused in all four locales — but there was nowhere to set it, so eight categories on a page meant eight identical `▣` headers. **Clear** takes it off again.
+
+**Every entry that has a key shows it** beside the label (**v1.1.1**), so the menu teaches the keyboard route to the thing you just clicked; screen readers get the same key through `aria-keyshortcuts`. The menu also opens from the keyboard with **`Shift + F10`** or the **Menu** key, beside the row rather than in the corner of the window. Arrow keys move through the items and `Enter` activates one; `Esc` or a click outside closes it. It works on **smart collection** rows too. The menu deliberately stays out of the way where the browser's own menu matters: it does not open while the inline editor is active or over a modal, and **`Shift` + right-click** always gives you the browser menu instead. Not available on touch, which has no right-click — use long-press for inline edit there.
 
 ### 7.6 Config → bookmarks (bulk and detail)
 
@@ -435,13 +477,23 @@ HTML export from Chrome/Firefox/Edge (see [Import, export, and backup](#17-impor
 4. **Act on a row** — *Open* in a new tab, *Promote* to open the new-bookmark form pre-filled — with every page and category available in its dropdowns, so the bookmark can be filed anywhere (status-checked bookmarks are health-checked right away), *Mark read*, *Snooze* (`z`: 3h / tomorrow / weekend / next week), add a *Note* (`n`), **Share** or copy from the right-click menu (**v2026.08.08.4**), or *Delete* (undo in the toast). Use the toolbar to **Mark all read** or **Clear read**.  
 5. **Keyboard** — `j`/`k` move, `g`/`G` first/last, `Enter` open, `p` promote, `r` mark read, `n` note, `z` snooze, `d` delete, `x` tick a row and move on, `Shift+↑/↓` extend the selection, `Ctrl/Cmd+A` tick everything on screen, `R` re-fetch the list, `Esc` clear the selection (legend under the list).  
 5b. **Several at once (v1.0.0)** — tick rows and the bar offers **Promote** (choose one page for the lot), **Open**, **Copy links**, **Mark read**, **Snooze** and **Delete**. When a filter hides some of what you ticked, the bar says how many it cannot reach and offers **Select only these**.  
-5c. **Stats (v1.0.0)** — the **Stats** button reports how many links you have added, promoted and deleted, what share of the ones you decided on became bookmarks, and how long a link typically sits here.  
+5c. **Stats (v1.0.0)** — the **Stats** button reports how many links you have added, promoted and deleted, what share of the ones you decided on became bookmarks, and how long a link typically sits here. The rate is worked out over the links you *decided on*, not everything ever added, and each figure carries that explanation as readable text rather than as a tooltip.  
+5d. **Take the list with you** — **CSV** and **JSON** download exactly what the view is showing, and the file is named after everything that shaped it: the filter, the site, the tag and the search term. **Import** reads a JSON export back in — a file from another install, or one you edited by hand. Links already in the inbox are skipped rather than duplicated, and the toast accounts for every row in the file: added, already here, failed, and whether the item cap stopped the rest.  
 6. **Triage** — click **Triage** or run **`:inbox triage`** to walk unread items one by one: `J`/`K` move, `O` open, `P` promote, `R` keep (mark read), `D` delete, `Esc` close.
 7. **How it works** — the **`ℹ`** at the end of the toolbar explains what the inbox is for, what read and unread track, what snoozing hides, what promoting leaves behind, and the two ways through a backlog (**v2026.09.06.2**).
+8. **The one-time tour** — the first time the inbox opens, a guided modal walks the whole loop in seven steps: where links come from, what read really means, snoozing, notes, promoting, triage, and selecting several at once. It appears once — finishing it, **Skip** and `Esc` all count as seen — and everything in it is covered at more length in **Config → Help → Inbox**. Turning off *Show occasional keyboard tips* under **Config → Behavior → General → Onboarding** suppresses it along with every other one-time hint, and **Show quick-start card again**, in the same place, brings it back after you have seen it.
 
-**Snoozed links are counted as hidden.** The tiles, the header badge and the Inbox tab all count what you can act on now, so a snoozed link is left out of every one of them until it wakes — including *This week* — and **Clear read** leaves snoozed links alone (**v2026.09.06.2**). Your filter, sort and chosen site are remembered for the next visit; a site filter is dropped once its last link leaves the inbox, rather than filtering the list down to nothing.
+**Snoozed links are counted as hidden.** The tiles, the header badge and the Inbox tab all count what you can act on now, so a snoozed link is left out of every one of them until it wakes — including *This week* — and **Clear read** leaves snoozed links alone (**v2026.09.06.2**). The first tile is therefore named *Active* rather than *Total*: it counts what the list can show. A line under the list says how many links are asleep and when the first one is due, with a button that switches to *Snoozed* — outside its own tile a sleeping link is otherwise invisible. Your filter, sort and chosen site are remembered for the next visit; a site filter is dropped once its last link leaves the inbox, rather than filtering the list down to nothing.
+
+**Every number counts the rows on screen.** A search or a site filter narrows the tiles, the pills and the header badge along with the list, so nothing promises rows the view is not showing. The site picker offers only sites the active filter can actually reach and says how many rows each one leaves (`example.com (4)`), and **Mark all read** becomes **Mark shown read** — acting on what you can see — as soon as something is narrowing the view. **Clear read** works to the same edge.
+
+**Moving can be undone.** Moving a bookmark to another category — one row, a multi-select, or everything the tag filter is showing — now offers **Undo** in its toast for eight seconds, the same window a delete has. A bulk undo puts each bookmark back in the category it came from rather than filing them all together, because the move records where each one was before it wrote the new value.
 
 **Undo works even at the item cap.** The inbox keeps at most `inboxMaxItems` links (500 by default) and drops the oldest beyond that. Undoing a delete puts the link back with the time it was *originally saved*, not the moment you pressed undo — which, in a full inbox, is precisely the entry the cap would otherwise discard. A returning link is therefore protected and the oldest of the others makes way for it. When there is genuinely no room the undo says the inbox is full, rather than reporting success and quietly dropping the link, which would leave it looking restored until the next reload.
+
+**A link can go back to unread.** Right-click a read row and choose **Mark unread**. The server has always accepted it — a `readAt` of 0 clears the flag — and no client ever sent it, so unread was the one inbox state that only went one way while snoozing, notes, tags and deletes were all reversible. The only escape was *Clear read*, which deletes.
+
+**The fetched summary is shown.** When a link is captured the server downloads its page description; it was stored on every item and displayed nowhere. It now sits under the title, clamped to two lines, and rides along in both exports. Searching matches it too — that read a field name the API never sends, so the one consumer of the summary matched nothing at all.
 
 **Tags are shown, editable and searchable (v1.0.0).** Tags sent when a link is captured — by the extension or by anything posting to `/api/inbox` — have always been stored, but nothing displayed them. They now appear as chips on the row: click one to filter the list to it and click again to clear, right-click a link and choose **Tags** to edit them (comma-separated), search matches them alongside the title and note, and both exports carry them. The tag filter is part of the shared link, so `?ib_tag=` survives a reload. The inbox itself still never assigns a page or category on its own; that choice is made once, at promote time.
 
@@ -451,7 +503,14 @@ The first visit may show a short intro modal. Replay it from **Config → Behavi
 
 ### ♻️ Duplicate URLs
 
-nextDash warns when a URL already exists on the same page (canonical match: trailing slash, hash, host letter-case, and default ports are ignored — e.g. `https://x` ≡ `https://x:443`). You can still save anyway in the extension or modal when needed. Use **`:duplicate`** in search or the Health view to find duplicates across all pages. Imports **skip** duplicates and show a preview: e.g. **12 new, 3 conflicts (skipped)**.
+Since **v1.3.0**, nextDash checks for a URL you already have **everywhere**, not only on the page you are saving to (canonical match: trailing slash, hash, host letter-case, and default ports are ignored — e.g. `https://x` ≡ `https://x:443`). The two cases are answered differently, because they are different mistakes:
+
+- **Same page** — refused. Two identical rows on one page are never what anyone meant.
+- **Another page** — you are asked, and told where it already is: *"You already saved this on Work · Docs"*, with the existing bookmark as a link so you can go and look. **Save anyway** files the second copy; the same document filed with work and with reference is a real thing to want. The URL field says so while you type, too, before you have named or filed anything.
+
+Both the add form and quick add ask this. The **extension** says where the link already lives and saves a second copy if you press save again. Moving a bookmark between pages is unaffected — a move is an add and a delete, which is not the same as a duplicate.
+
+Use **`:duplicate`** in search or the Health view to find duplicates already in place across all pages. Imports **skip** duplicates and show a preview: e.g. **12 new, 3 conflicts (skipped)**.
 
 ---
 
@@ -474,7 +533,9 @@ nextDash warns when a URL already exists on the same page (canonical match: trai
 - **Category headers** are keyboard-focusable: **Enter** or **Space** toggles collapse (`aria-expanded` updates).  
 - When you move the **mouse over bookmarks**, the stale keyboard highlight **softens** until your next keyboard move.  
 - **Enter** or **Space** opens the selected row.  
-- If the bookmark has a **shortcut** letter and you are not in an input, press that key to open. For shortcuts starting with **`G`**, use a **quick tap** (press and release); **hold `G`** (~300 ms) or **`G` then a digit / `P` / second `G`** activates category jump instead.
+- If the bookmark has a **shortcut**, type it: the bookmark opens the moment your query matches it. That is the default again since **v1.3.0** — making `Enter` the default in v1.2.0 was a mistake, because a shortcut that needs a second key to finish is not much of a shortcut. The cost is real and known: a shortcut can swallow an ordinary word that starts with the same letters, and which words survive depends on the shortcuts you own — on an install with 200 shortcuts, eight of thirteen everyday words were cut off mid-word (`invoice` opened something at `in` and left `voice` behind). Two ways out sit under **Config → Behavior → Search → Typing a bookmark shortcut**: *Open after a short pause*, where the shortcut waits until you stop typing and a longer word carries on untouched, and *Press Enter to open*, where typing only narrows the list. The ℹ beside the three says what each one costs.
+- **While a row is selected the letters belong to the grid** — **`j`** / **`k`** move, **`x`** ticks, **`g`** starts the jump chord, **`t`** filters by the row's tag — and **`Esc`** hands them back to the search line. **`c`** is the exception: it adds a category whether or not a row is selected, so a search cannot begin with `c`; press **`>`** first.
+- **The shortcut field says what a letter costs.** Assigning `c`, `g`, `j`, `k` or `x` now shows what the dashboard does with it and when the bookmark is still reachable, beside the check that another bookmark already has it. Both the inline editor and the bookmark form say it.
 
 ### Hyprland / special setups
 
@@ -490,7 +551,7 @@ Health opens were the exception until **v2026.07.25.1**: they opened the link bu
 
 - **Config → Bookmarks → Edit** — a statistics block with when it was added, when it was last modified, how often it has been opened, when that last happened, and the result of the last availability check. The collapsed rows carry the short version (`35× · 2d ago`) so you can scan for dead weight without opening each one.
 - **Hovering a bookmark** on the dashboard — the tooltip adds the open count and last opened. Screen readers deliberately keep the short label, since it is announced on every row while you move through the grid.
-- **The link preview card**, if you have preview cards switched on.
+- **The link preview card**, which carries an *Opens* row whether or not the bookmark has ever been opened — *Never opened* is the state most worth acting on, and until **v1.3.2** it was the one state the card hid.
 
 **Last modified** is recorded from v2026.07.25.2 onward. It tracks changes you make — name, URL, category, tags, shortcut, icon, note, pin, availability mode — and deliberately ignores background activity: a health check writing its result, or you opening the link, is not an edit. Bookmarks that existed before this release have no edit date until you next change one, and show `—` rather than a made-up date.
 
@@ -516,7 +577,7 @@ Shows bookmarks you opened recently **on the current page** (not global). Each r
 | `Shift + ←` / `Shift + →` | Previous / next page (plain arrows move bookmarks, not pages) |
 | `,` | Page overview modal — `↑`/`↓` or `Tab`/`Shift+Tab` move between pages; `Enter` or `Space` switches page; focus stays trapped inside the panel; closing restores focus to the trigger |
 | `n` | In the page overview: open the **New page** row. Arrowing one stop past the last page reaches it too (**v2026.09.06**) |
-| Hold `c` | Add a category to the page on screen (**v2026.09.06**). A **hold** of about 300 ms, not a tap — a quick `c` is a shortcut-search keystroke and still goes there |
+| `c` | Add a category to the page on screen (**v2026.09.06**). Acts on the first press since **v1.1.1**; it used to need a hold of about 300 ms so a tap could still reach the shortcut search. It is the one letter that keeps the grid over the search line, so a search cannot begin with `c` — press **`>`** first |
 | `<` | Open **config** (`<` is `Shift+,`). In config, `<` returns to the dashboard — asking to confirm first if there are unsaved changes |
 | `.` | Collapse or expand **all** categories at once (smart toggle — any open → all collapse; state remembered per page) |
 
@@ -525,28 +586,40 @@ Shows bookmarks you opened recently **on the current page** (not global). Each r
 | Keys | Action |
 |------|--------|
 | `↑` `↓` `←` `→` | Move selection (first arrow key starts navigation if none selected) |
+| `k` / `j` | Same as `↑` / `↓`, matching the lists in config (**v1.1.1**) — but **only once a row is selected**: the dashboard's search line is always listening, so a bare letter typed with no cursor in the grid is a character, not a command. The arrows are the way in |
 | `1`–`9` (page switch) | Also selects the first visible bookmark on the new page |
 | `Tab` / `Shift+Tab` | Linear next/previous bookmark when a row is selected; at the first/last bookmark, Tab exits to the header/FAB |
-| `G` then `1`–`9` | Jump to nth visible category or smart collection, select first bookmark (also: hold `G` ~300 ms, then digit — first hold may show a one-time **Got it** hint) |
+| `G` then `1`–`9` | Jump to nth visible category or smart collection, select first bookmark. The first `G` arms the chord straight away and a **`g…` pill** in the corner says so; it lapses after three seconds. Like `j`/`k`, the chord only arms with a row selected — otherwise `g` is a letter, and a search for *github* would lose it |
 | `G` then `P` | Jump to first pinned bookmark on the page |
 | `GG` | Jump to very first bookmark (second `G` while chord pending) |
-| Quick tap `G` | Open bookmark shortcuts starting with `G` (`g`, `ga`, `g1`, …) — not category jump |
 | `Ctrl + Home` / `Ctrl + End` | First / last bookmark on the page (`Cmd` on Mac) |
+| `Shift + Home` | Step up from the list to its category header, where `F2`, `Shift + W`, `Delete` and `Shift + F10` act on the category (**v1.1.1**) |
+| `Alt + ←` / `Alt + →` on a header | Move that category one place left or right. `Alt` + arrow already means "move the thing under the cursor" for a bookmark; on a header it is the same idea one level up. Reordering used to mean dragging the small `//` prefix or going to config. Smart collections are skipped — their order is derived, not stored — and focus follows the category rather than the header element the render replaces |
 | `Enter` / `Space` | Open selected |
-| `Esc` | Clear selection and move focus to the first bookmark; may undo last drag reorder |
+| `Esc` | Clear selection and move focus to the first bookmark; may undo last drag reorder. With something typed it clears the search line, which now empties on screen instead of keeping the abandoned query until the next keystroke |
+
+**The line you type into names its own key.** The prompt shows the key that starts each mode in front of the mode itself — **`>`** search, **`:`** commands, **`?`** finders, **`@`** everywhere — so the convention is legible without reading the legend under it. Typing a bare letter still searches, and now that is all it does — nothing opens until `Enter`, so `>` is a way to be explicit rather than a way to protect your typing. Once there is a query, an **`×`** beside it clears the line, for touch and for anyone who would rather click than reach for Escape.
+
+**A key legend under the bookmarks.** On for a fresh install and off for everyone who already had a dashboard — an existing `settings.json` has no such key, and appearing under a grid someone already knows is not a welcome. Switch it either way with **Show a key legend under the bookmarks** in **config → behavior → general**, beside the other two discoverability switches, and it stays out of the way even then — four keys (`↑↓←→`, `Enter`, `x`, and `!` for the rest), appearing only once you move the cursor with the keyboard and going again the moment you open a bookmark.
 
 ### 9.3 Bookmark actions
 
 | Keys | Action |
 |------|--------|
-| `;` | Inline-edit selected row (page switches confirm before discarding unsaved edits) |
+| `Shift + Alt + ←` / `→` | Move the selected bookmark into the category beside it, in the order the page shows them. `Alt` alone moves the category, the plain arrows move the cursor, so the third gesture takes the third modifier. Smart collections are skipped — they are a query, not a place a bookmark can be put |
+| `Shift + F` | Filter the page you are on: a slim bar above the grid hides every row that does not match, and any category left with nothing in it. Matches what the row shows — name, shortcut, address, tags. `Escape` clears the query, a second `Escape` closes the bar. Different from search (`>`), which is an overlay over every page and takes you somewhere |
+| `Shift + E` | Inline-edit selected row (page switches confirm before discarding unsaved edits). Was `;`, which still works but is no longer listed (**v1.1.1**) |
 | `Shift + M` | Move to… (category or another page); popover receives focus — use arrows and `Enter` inside it |
 | `Shift + T` | Quick-tag selected row (popover receives focus — `↑`/`↓` navigate; `Enter`/`Space` toggle tag and advance to next; `✓` on tags already applied) |
 | `Shift + D` | Quick-delete selected row (popover receives focus; undo in toast) |
 | `Shift + C` | Availability checking for the selected row — **Off** / **Periodic** / **Monitor**. The popover anchors below the row and opens on the current mode; pick with `o` / `p` / `m`, or arrow and `Enter` |
+| `Shift + W` | Spread the focused category across columns, or put it back to one |
 | `Ctrl + C` | Copy URL (row flashes green) |
-| `[` | Toggle hover preview card on selection |
-| `Delete` | Delete selected bookmark (confirmation dialog; `Shift+D` uses the quick-delete popover instead) |
+| `Shift + P` | Pin or unpin the selected row |
+| `Shift + L` | Share the selected row, or copy its name and URL where there is no share sheet. Was `Shift + S`, which now always opens config (**v1.1.1**) |
+| `Shift + R` | Show the selected row on its own line in Health |
+| `Shift + V` | Toggle hover preview card on selection. Was `[`, which still works but is no longer listed — brackets mean *previous / next sub-tab* in config (**v1.1.1**) |
+| `Delete` | Delete selected bookmark — the same popover `Shift+D` and the right-click menu open, beside the row. With a selection open it deletes everything selected instead, confirmed in one modal that names the count |
 | `Enter` / `Space` on **+ N more** | Expand or collapse a long category; selection returns to the last bookmark above the toggle so you can keep arrowing down |
 
 ### 9.4 Selecting several bookmarks
@@ -559,7 +632,7 @@ Bulk actions used to live only in the tag filter, so acting on several bookmarks
 | `X` | Tick every row in the selected row's category |
 | `Shift + ↑` / `Shift + ↓` | Extend the selection a row at a time |
 | `Ctrl/Cmd + A` | Tick everything currently on screen |
-| `Ctrl/Cmd + click` | Add or remove a single row with the mouse |
+| `Alt + click` | Add or remove a single row with the mouse (**v1.3.1** — it was `Ctrl/Cmd + click`, which the browser and macOS had already spoken for) |
 | `Shift + click` | Extend the selection to the clicked row |
 | `Esc` | Clear the selection |
 | `Delete` | Delete everything selected (one confirmation for the whole set) |
@@ -568,13 +641,17 @@ A toolbar appears above the grid while a selection is open, with **Move**, **Tag
 
 **Tags** lists every tag you already use, each showing how it sits across the selection: a **✓** when every selected bookmark has it, so clicking takes it off; a **–** and *on 2 of 3* when only some do, so clicking fills in the rest; and plain when none do. The count is spelled out because *add* and *remove* mean different things for a mixed selection. Since **v2026.09.05.1**.
 
+**Deleting a selection can be undone** (v1.0.4). The toast offers **Undo** for eight seconds and puts every bookmark back in the position it held; the [trash](#trash-data--backups--trash) still catches it for 30 days after that. If the save does not go through, the rows come back and an error says so, rather than disappearing from the screen in silence.
+
 A **plain click while a selection is open clears it** instead of opening the bookmark, so a stray click cannot act on rows you had forgotten were ticked. A bookmark that appears in a [smart collection](#13-smart-collections-and-custom-collections) as well as its own category lights up in both places, because it is one bookmark shown twice.
+
+**Pages remember where you were reading** (v1.0.4). Switching to another page and back returns you to the offset you left, within the same visit; opening the page fresh starts at the top as it always did.
 
 ### 9.5 Cheat sheet
 
 Press **`!`** or **`F1`** (or run **`:cheat`** / **`:help`**). Focus lands in the filter box automatically. Type to narrow the list. When the **side rail** is active, a **Layout (side rail)** section lists tab order and `:buttonbar` hints. The cheat sheet does not open while the **page overview** (`,`), **tag cloud**, or another blocking overlay is open. On first open (desktop), a one-time **Got it** balloon may appear beside the modal — dismissing it does not close the cheat sheet.
 
-Since **v2026.08.09** the sheet opens on the section for the view you are in: from **Health** the health shortcuts lead and are marked, from **Inbox** the inbox ones (inbox triage when that overlay is up), from **config** the config ones. Nothing is hidden or reordered — the filter still searches every section — and opening it from the bookmark grid behaves as before. A one-page **Shortcuts PDF** is linked from **Config → Overview** (Tips panel) and at the top of **Config → Help**; it always opens in a new tab.
+Since **v2026.08.09** the sheet opens on the section for the view you are in: from **Health** the health shortcuts lead and are marked, from **Inbox** the inbox ones (inbox triage when that overlay is up), from **config** the config ones. Nothing is hidden or reordered — the filter still searches every section — and opening it from the bookmark grid behaves as before. A printable **Shortcuts PDF** is linked from **Config → Overview** (Tips panel) and at the top of **Config → Help**; it always opens in a new tab. Since **v1.3.0** it carries **every** shortcut the modal does, over as many pages as that takes — it used to be a curated one-pager, which meant a key could be in the app and not on the paper.
 
 Every shortcut uses its **fixed default**. Custom key rebinding is not available — the cheat sheet is the authoritative list.
 
@@ -592,10 +669,10 @@ While any of these are open, the bookmark grid behind them is **inert** (not cli
 | Page overview | `,` |
 | Quick-add omnibox | `&` |
 | Quick move / quick tag / quick delete / checking | `Shift+M` / `Shift+T` / `Shift+D` / `Shift+C` |
-| Inline edit | `;` |
+| Inline edit | `Shift+E` |
 | App modal | e.g. new bookmark `+`, confirmations, recent bookmarks `*` |
 
-**Tab** / **Shift+Tab** cycle within the open overlay. **Escape** closes it and restores focus to the control that opened it (or the bookmark grid). One-time **Got it** discoverability balloons dismiss with **Esc** without trapping the overlay open. A `MutationObserver` re-syncs dashboard `inert` when overlays are added or removed so the grid is not left stuck non-interactive. With an **active tag filter**, only the bookmark list is `inert` — the filter banner and bulk toolbar stay interactive while the tag cloud is open. Grid shortcuts **`;`**, **`Shift+M`**, **`Shift+T`**, **`Shift+D`**, and **`Shift+C`** work on the keyboard-selected row when no overlay is open.
+**Tab** / **Shift+Tab** cycle within the open overlay. **Escape** closes it and restores focus to the control that opened it (or the bookmark grid). One-time **Got it** discoverability balloons dismiss with **Esc** without trapping the overlay open. A `MutationObserver` re-syncs dashboard `inert` when overlays are added or removed so the grid is not left stuck non-interactive. With an **active tag filter**, only the bookmark list is `inert` — the filter banner and bulk toolbar stay interactive while the tag cloud is open. Grid shortcuts **`Shift+E`**, **`Shift+M`**, **`Shift+T`**, **`Shift+D`**, **`Shift+C`**, **`Shift+P`**, **`Shift+L`**, **`Shift+R`** and **`Shift+V`** work on the keyboard-selected row when no overlay is open.
 
 ---
 
@@ -625,11 +702,18 @@ Three input modes share one overlay; switch with keys or footer chips.
 | `category:` | `category:dev` |
 | `tag:` | `tag:work` |
 | `page:` | `page:2`, `page:all`, `page:current` |
-| `status:` | `status:online`, `status:broken`, `status:pinned`, … |
+| `status:` | `status:online`, `status:broken`, `status:pinned`, `status:untagged`, `status:noted`, … |
+| `opened:` | `opened:today`, `opened:week`, `opened:month`, `opened:year`, `opened:never` |
+| `added:` | `added:today`, `added:week`, `added:month`, `added:year` |
+| `-` before any of them | `-tag:archive`, `-category:work`, `-status:pinned` |
 
-While typing a partial value (e.g. `status:on`), autocomplete stays visible until the token is complete. `status:online` / `status:offline` use persisted reachability on monitored bookmarks.
+**Every filter also works in the negative.** A leading `-` excludes instead of selects, so `tag:dev -status:pinned` reads as "dev links I have not pinned". Custom collections have had an *excludes* operator on every rule field since they were built; the search bar could only say yes, which is the wrong half for a tidy-up question. A half-typed `-tag:` excludes nothing rather than everything.
 
-**Bookmark shortcuts starting with `G`** — a quick tap on `G` opens the shortcut search bar (`g`, `ga`, `g1`, …). Hold `G` (~300 ms) or press `G` then a digit / `P` / second `G` activates category jump instead (see §9.2).
+**`status:untagged` and `status:noted`** (with `tagged` / `unnoted` as their opposites) close the other gap: *untagged* was already a collection rule, a stats row and a config filter, and was the one thing the bar could not ask for — while a note is the sentence you left to explain why a link was worth keeping.
+
+Since **v1.0.4** the two age filters are offered while you type, like the others, with their words listed once the key is in — `never` only under `opened:`, since a bookmark has no "never added" state. While typing a partial value (e.g. `status:on`), autocomplete stays visible until the token is complete. `status:online` / `status:offline` use persisted reachability on monitored bookmarks.
+
+**Bookmark shortcuts starting with `G`** — `G` now belongs to the jump chord in every case (see §9.2): the first press arms it, a digit or `P` follows, and a second `G` goes to the top. Reach a bookmark whose shortcut starts with `g` through search (`>`) instead.
 
 ### 10.2 Tag word cloud (`/`, desktop)
 
@@ -701,8 +785,9 @@ Use **`Enter`** or **`Space`** on a highlighted row to run it (including after a
 | `:theme <name>` | Switch theme |
 | `:density comfortable\|compact\|dense` | Row density |
 | `:columns <1-6>` | Column count |
+| `:width on` / `off` | Spread the focused category across columns, or put it back; `:width all` switches every category back |
 | `:buttonbar bottom\|bottom-left\|bottom-right\|side-left\|side-right` | Button bar position (`side-left` / `side-right` = vertical rail on that edge) |
-| `:save` / `:saved` | Save / list saved searches |
+| `:save` / `:saved` | Save / list saved searches (kept in settings, so they are in every ZIP backup and follow you between browsers — **v1.0.2**) |
 | `:history` / `:history clear` | Search history |
 
 ### 10.6 Finders (`?`)
@@ -731,10 +816,10 @@ Temporarily hides bookmark tiles that do not match. Clear with `:find clear` (or
 Neither has to start in config (**v2026.09.06**). Both gestures live where the things themselves live.
 
 - **A page** — open the pages overview with **`,`** and use the **New page** row under the list: by click, by **`n`**, or by arrowing one stop past the last page. Naming it takes you straight to the new page, which is where its first category gets added anyway. The pages button in the header is unchanged — switching pages is the daily action, creating one is the rare one.
-- **A category** — a **`+`** sits beside the **A–Z** / **Rec** chips in a category header, and **holding `c`** (about 300 ms) does the same from the keyboard. Both act on the page on screen, so neither asks which page you meant. It is a hold rather than a tap because `c` is a letter you type into shortcut search constantly; a tap still goes there. The `+` appears in whichever header ends the grid, and costs no space of its own.
+- **A category** — a **`+`** sits beside the **A–Z** / **Rec** chips in a category header, and **`c`** does the same from the keyboard. Both act on the page on screen, so neither asks which page you meant. The key acts on the first press: it used to wait out a hold of about 300 ms so a tap could still reach the shortcut search, and it was one of only two keys that did. The `+` appears in whichever header ends the grid, and costs no space of its own.
 - **From the bookmark form** — the **Page** and **Category** dropdowns each lead with **➕ New page…** and **➕ New category…**, so a bookmark can be filed somewhere that does not exist yet without leaving the half-filled form.
 
-**Right-click a category header** for **rename**, **add category** and **delete** in one menu. Renaming was previously only reachable through a long press, and deleting meant a trip to config. Deleting tells you what it will do first, with the count — the bookmarks are **kept** but lose their category and reappear under *unknown category* — and the delete goes to the [trash](#trash-data--backups--trash). Smart collections and tag-filter groups have no menu: they are views over bookmarks rather than stored categories.
+**Right-click a category header** — or press **`Shift + F10`** on it, or the **Menu** key — for **rename**, **spread across columns**, **add category** and **delete** in one menu, each with its key beside it. **`Delete`** on a focused header deletes that category directly, with the same confirmation (**v1.1.1**) — it used to open the menu, the one place in nextDash where `Delete` meant *show me the options*. Renaming was previously only reachable through a long press, and deleting meant a trip to config. Deleting tells you what it will do first, with the count — the bookmarks are **kept** but lose their category and reappear under *unknown category* — and the delete goes to the [trash](#trash-data--backups--trash). Smart collections and tag-filter groups have no menu: they are views over bookmarks rather than stored categories.
 
 A category you have just created **stays visible** even with *hide empty categories* on, until you leave the page — otherwise it would vanish in the moment between creating it and putting something in it.
 
@@ -755,7 +840,6 @@ A category you have just created **stays visible** even with *hide empty categor
 
 - Drag the **grip** on a row in **config → pages & tags → pages**, or focus a row and press **↑** / **↓**.
 - Order saves automatically after a short debounce (~600 ms) and shows a localized sync toast.
-- **Archive** hides a page from the dashboard and page picker without deleting its bookmarks (restore from **config → pages & tags → pages**, the **Context** panel on Bookmarks when expanded, or the archived list there).
 
 ### Move between pages
 
@@ -811,7 +895,7 @@ Click category header or chevron, or focus the header and press **Enter** / **Sp
 ### Previews and favicons
 
 - Auto-fetch title/description/image when adding URLs (if enabled).  
-- **`[`** toggles preview card on keyboard focus.  
+- **`Shift+V`** toggles preview card on keyboard focus.  
 - **Show favicons** — **Config → Appearance** or `:favicons on/off` on the dashboard.
 - **Refresh every icon** — `:favicons fetch` re-downloads the favicon of every bookmark on every page, replacing the ones already stored, so icons that changed at the source are updated too. A progress bar shows how far along it is. The same run happens automatically once on a new install, right after you finish or skip the first-run setup card while keeping the example bookmarks. Individual icons can also be refreshed from the health view (`f` on the selected row), and **Config → Bookmarks** has a bulk **Refresh favicons** button for a selection.  
 - **Fetch favicon** in config detail or health actions.
@@ -835,12 +919,26 @@ Enabled in **config → pages & tags → collections**:
 | **Recently opened** | Latest activity on allowed pages |
 | **Most used** | Highest open counts |
 | **Stale** | Not opened within threshold days |
+| **Fresh** (**v1.3.0**) | Bookmarks whose page has published something since you last opened it — see [Fresh](#fresh-what-changed-since-you-looked) below |
 
 Each can be limited to certain pages and item limits (`0` = unlimited).
 
+### Fresh — what changed since you looked (**v1.3.0**)
+
+Every collection above keys on something *you* did. **Fresh** keys on what changed, which is the one question the others cannot answer: what is worth opening right now.
+
+Turn it on in **config → behavior → Fresh** — its own tab since **v1.3.1**, between Inbox and Status & health. Switching it on looks for feeds on the pages you have saved — one request per bookmark, once — and records the ones that have none so they are left alone for a month; **Find feeds now** repeats that round and reports *N of M bookmarks asked · K publish a feed*. Known feeds are polled hourly with a conditional request. It is off by default because it is the only thing here that reaches out to the internet on a schedule. A card in the corner offers it once on a dashboard that has more than the starter bookmarks on it, and opens a four-step walkthrough — the count on a row, the collection it gathers into, what the polling actually costs, and what it deliberately is not — ending on the switch. **Config → Help → Monitoring → Fresh** carries the same walkthrough on a button, with a line saying whether it is on for you. Which bookmarks take part is answerable three ways: the **Feed** line in the bookmark editor names the address when there is one, **`status:feed`** / **`-status:feed`** narrows a search to them, and *Mark rows that publish* on the Fresh tab — **off by default** — puts a quiet dot on those rows even when nothing is new.
+
+- When a bookmark's page advertises an RSS or Atom feed, nextDash notes where the feed is while it fetches previews — so switching Fresh on costs no re-fetch.
+- Feeds are polled on the **background re-check interval** with a conditional request, so a quiet blog costs a few hundred bytes.
+- A bookmark with something new carries a small count on its row: **3** means three entries published since you last opened it. Opening the bookmark clears it — there is no separate read state to keep in order.
+- The **Fresh** collection lists those bookmarks, newest publication first.
+
+This is not a feed reader. No articles are stored and none are shown — only how many entries are newer than your last visit.
+
 Cross-page bookmark data loads at startup only when smart collections, tag collections, or **Use shortcuts from all pages** need it — faster startup when those features are off.
 
-You can **long-press** or press **`;`** on a smart-collection row to inline-edit or delete; changes apply to the real bookmark on its page and stay in sync across collection columns.
+You can **long-press** or press **`Shift+E`** on a smart-collection row to inline-edit or delete; changes apply to the real bookmark on its page and stay in sync across collection columns.
 
 ### Custom collections
 
@@ -900,20 +998,23 @@ Two things worth knowing:
 - **Page margins never move on their own.** *Balanced* is byte-for-byte the margin `.container` has always carried, so an existing dashboard looks identical until you pick something else.
 - **Every option still narrows the margin on a small window**, so the columns are never squeezed before the whitespace is. And the space *Snug* hands back only becomes **wider columns** when **Pack columns tightly** is on (the default) — with packing off the columns are a fixed width and the reclaimed space stays empty.
 
+**Settings that are a shape are drawn.** Columns per row, density, category spacing, page margins, the button-bar position and the layout version each carry a small stand-in drawing beside the control — bars at the proportions of a real grid — and it redraws as you change the value, so the answer to "what will this look like" is on the panel rather than behind a trip to the dashboard. The type-size buttons show the letters at the size they set, the background-dots toggle shows the dots, **Paste destination** draws the route a pasted link takes — forking in two where *Ask each time* forks — and the help pages about layout and the inbox open with the same drawings instead of another paragraph. They are decorative: every one sits beside the label that already names it, so a screen reader hears the setting once.
+
 ### Themes
 
+- **A fresh install starts on Retro CRT** — green phosphor on near-black, with the light variant of the same pair for daytime, since auto dark mode is on out of the box. Existing dashboards keep whatever theme they already have; the default only decides where a brand-new install begins.
 - 74 built-in families (dark/light pairs), including twenty-three new pairs from **v2026.09.08.2** — Blueprint, Static Noise, Signal Flare, Bone China, Peacock, Tyrian, Absinthe, and sixteen more — and twenty from **v2026.07.26** (Patina Verdigris, Rhubarb Tart, Bio Abyss, Sumi Ink, Denim Fade, and fifteen more).  
-- **config → appearance → custom themes** — build, edit, and delete your own palettes. A contrast check warns when text against background is too weak to read. Changes preview live on the dashboard behind the config view; leaving the tab drops an unsaved preview rather than leaving the dashboard half-edited.
+- **config → appearance → custom themes** — build, edit, and delete your own palettes. **Export** writes a palette to a `.json`; **Import** reads one back as a new theme (**v1.0.2**), so a palette built on one machine can be carried to another, or shared, without a full ZIP restore. A contrast check warns when text against background is too weak to read. Changes preview live on the dashboard behind the config view; leaving the tab drops an unsaved preview rather than leaving the dashboard half-edited.
 - **config → appearance → general** — pick the active theme for the whole app (built-in or one of your own). Since **v2026.09.08.2** the list previews as you move through it: arrow keys or the mouse apply each theme to the dashboard behind the config view, and nothing is saved until you press Enter or click one. **Esc**, a click elsewhere, or moving focus away puts back the theme you started with, so browsing the list can never leave you somewhere you did not choose.
 - **Random theme** (**v2026.07.26**) — under **config → appearance → Theme**, below your saved theme. Choose **Off** (always use the saved theme), **On page refresh** (new built-in pick on each reload), or **On view change** (new pick when switching bookmarks ↔ config ↔ inbox ↔ health, or when switching dashboard pages — tabs, `1`–`9`, swipe, or hash; **v2026.07.26.2**). Each rotate picks a different theme from the pool when more than one is eligible (**v2026.07.26.3**). A **Currently showing** hint names the active theme while random is on. If random is on and you pick a different saved theme, your choice is stored but the display keeps rotating until you turn random off — a toast confirms this (**v2026.07.26.3**), including from `:theme` in search. With **auto dark mode**, only variants matching your system light/dark are eligible; custom single-palette themes are skipped. The first desktop visit to Appearance may show a one-time popover pointing at this control (**v2026.07.26.1**); dismiss it with **Got it** or **Esc** — the button stays fixed while the card appears.
 - **Auto dark mode** follows system light/dark for built-in theme pairs; your saved theme id stays stable (the app applies the matching dark/light variant without overwriting the palette name). Disabled with a fully custom theme.
-- **Favicon harmonisation** — recolours site favicons that clash with your theme (styles: **Muted**, **Tinted**, **Overlay**, with an intensity slider). Set per theme under **config → appearance → theme**, so the dark and light variant of a pair are configured separately. Changes apply live on the bookmark grid without a reload; stays enabled when a custom theme is active; and with **Random theme** on, it is one shared setting for the whole rotation instead of resetting each time the pool picks a new theme (**v2026.07.26.3**). **New installs start with it on** (Muted, intensity 0.5) for both Moss & Stone variants; existing dashboards keep whatever they had.
+- **Favicon harmonisation** — recolours site favicons that clash with your theme (styles: **Muted**, **Tinted**, **Overlay**, with an intensity slider). Set per theme under **config → appearance → theme**, so the dark and light variant of a pair are configured separately. Changes apply live on the bookmark grid without a reload; stays enabled when a custom theme is active; and with **Random theme** on, it is one shared setting for the whole rotation instead of resetting each time the pool picks a new theme (**v2026.07.26.3**). **New installs start with it on** (Muted, intensity 0.5) for both variants of the default theme; existing dashboards keep whatever they had.
 
 ### Config → pages & categories (list tabs)
 
 Desktop list tabs (**pages**, **categories**, **tags**, **finders**, **collections**) share the same layout pattern: a short intro paragraph, toolbar with **+ Add** and filters, then the list. On **Classic** layout, toolbar and list sit inside one elevated surface card. Empty states include a clear next step (e.g. Tags → open Bookmarks to add a tagged bookmark; Collections → start editing a new collection).
 
-- **Pages** — add, rename, **archive** (hide without deleting bookmarks), remove, drag or **↑/↓** reorder; order auto-saves (~600 ms). **Usage** column shows a popularity bar and bookmark count (Tags-style). Page dropdowns skip archived pages. Desktop only (mobile shows a toast). On the dashboard, **double-click a page tab** (desktop/tablet landscape) to rename, set an emoji, and pick a **colour dot**; on **Bookmarks**, the **Context** panel only switches the active page — full page editing stays here.
+- **Pages** — add, rename, remove, drag or **↑/↓** reorder; order auto-saves (~600 ms). **Usage** column shows a popularity bar and bookmark count (Tags-style). Desktop only (mobile shows a toast). On the dashboard, **double-click a page tab** (desktop/tablet landscape) to rename, set an emoji, and pick a **colour dot**; on **Bookmarks**, the **Context** panel only switches the active page — full page editing stays here.
 - **Categories** — per-page list with icon, name, **merge**, remove; drag or **↑/↓** reorder with auto-save; **Usage** column with popularity bar and bookmark count (Tags-style). Switching the page selector **or leaving the Categories tab** flushes pending edits first (blocked if validation fails). Delete asks what to do with in-use bookmarks (move, uncategorize, or delete). Breadcrumb shows the selected page. On **Bookmarks**, **Context** only switches the active category filter. Desktop only for full editing.
 
 ### Typography and density
@@ -932,7 +1033,7 @@ Desktop list tabs (**pages**, **categories**, **tags**, **finders**, **collectio
 
 **Not every release is in the modal.** A small presentation hotfix can ship without release notes of its own — **v2026.07.23.4**, which repaired the health view's see-through **More** menu, is one. The [changelog](CHANGELOG.md) carries the complete history either way.
 
-**★** opens release notes from a **corner FAB** below the `/` tag cloud on desktop (bottom-left by default; mirrored when the button bar is docked left/right; pinned at the bottom of the side rail). It is **not** in the centre dock toolbar. **Config → Help** also has **Show what's new** at the top. **Config → Overview → Latest update** summarises the newest release in plain text (from the same `modalLead` as the ★ modal) with a **Show what's new** button beside it. Since **v2026.08.04**, nextDash can also **check GitHub for a newer release** once a day: a dot on ★, a toast while you are actively using the app, and **Check for updates** on Config → Overview (above Tips). Turn it off under **Config → Behavior → Privacy**. The ★ modal header reports what that check found — the release, a link to it on GitHub, and **Dismiss** — but since **v2026.08.08.2** no longer carries a check button of its own; the manual trigger lives on Config → Overview. The latest release loads first; scroll to load up to the **50 most recent** versions (each fetches its own JSON on demand, with a loading skeleton). The same releases are summarized under **What's new** in **Config → Help**, and in full in the [changelog](CHANGELOG.md).
+**★** opens release notes from a **corner FAB** below the `/` tag cloud on desktop (bottom-left by default; mirrored when the button bar is docked left/right; pinned at the bottom of the side rail). It is **not** in the centre dock toolbar. **Config → Help** also has **Show what's new** at the top. **Config → Overview → Latest update** summarises the newest release in plain text (from the same `modalLead` as the ★ modal) with a **Show what's new** button beside it. Since **v2026.08.04**, nextDash can also **check GitHub for a newer release** once a day: a dot on ★, a toast while you are actively using the app, and **Check for updates** on Config → Overview (above Tips). Turn it off under **Config → Behavior → Privacy**. The ★ modal header reports what that check found — the release, a link to it on GitHub, and **Dismiss** — but since **v2026.08.08.2** no longer carries a check button of its own; the manual trigger lives on Config → Overview. The latest release loads first; scroll to load up to the **50 most recent** versions (each fetches its own JSON on demand, with a loading skeleton). A release can be **recorded without being announced**: it counts toward the version number and appears on **Config → Overview → Latest update**, but is skipped in this modal, so a small release landing the same day as a large one does not push the large one aside. v1.1.1 shipped that way and **v1.1.2** put it back in the list; **v1.2.1**, a single Health fix, ships that way too, so the modal still leads with **v1.2.0**. The same releases are summarized under **What's new** in **Config → Help**, and in full in the [changelog](CHANGELOG.md).
 
 ---
 
@@ -955,9 +1056,37 @@ Summary tiles (click to filter) → Compact controls (filters, search, sort, ret
 | Feature | Use |
 |---------|-----|
 | **Score 0–100** | Combines broken, duplicate, shortcut conflict, stale, missing preview, unused |
-| **Last opened** | Every row says when you last opened it on the **right side of the meta line** — domain and check mode stay left; last opened, the primary issue reason, and *+N more* share one right-aligned trail so the dates line up down the feed (**v2026.08.08.5**). Labels read *just opened*, *4h ago*, *yesterday*, *3d ago*, then a date once it is more than a week back (*Jul 21*, and *Jun 2025* beyond a year). The exact moment is in the tooltip. Rows you have never opened say so plainly rather than showing nothing — that is the same signal the **stale** and **unused** filters act on. Opening a row updates the label straight away, but deliberately does not re-score or re-sort the list, so a row cannot vanish from under you the moment you open it |
-| **Score breakdown** | Click the score badge — or press `s` — to unfold how the score was reached: every bookmark starts at 100, each issue lists what it costs (broken −60, duplicate −15, shortcut conflict −15, never checked −10, not opened in 30 days −10, never opened −10, stale check −5, no preview −5), down to the total |
+| **Last opened** | Every row says when you last opened it on the **right side of the meta line** — domain and check mode stay left; last opened, the primary issue reason, and *+N more* share one right-aligned trail so the dates line up down the feed (**v2026.08.08.5**). Labels read *just opened*, *4h ago*, *yesterday*, *3d ago*, then a date once it is more than a week back (*Jul 21*, and *Jun 2025* beyond a year). The exact moment is in the tooltip. Rows you have never opened say so plainly rather than showing nothing — that is the same signal the **stale** and **unused** filters act on. Opening a row updates the label straight away and never re-ranks the list: nothing in the sort key — score, severity, name — changes when you act on a row (**v1.2.1**) |
+| **Score breakdown** | Click the score badge — or press `s` — to unfold how the score was reached: every bookmark starts at 100, each issue lists what it costs (broken −60, duplicate −15, shortcut conflict −15, never checked −10, stale check −5, no preview −5), down to the total. **Usage costs nothing** (**v1.2.1**): *never opened* and *not opened in 30 days* are listed under *worth knowing, at no cost to the score*, and still drive the **Unused** and **Stale** tiles and filters. They used to cost −10 each, which meant opening a bookmark — the thing this view asks you to do — raised its score and, under the worst-first sort, sent the row hundreds of places down the list you were working through |
 | **Summary tiles** | Compact stat tiles; click a tile to jump to that filter. **Monitored** sits directly after **Healthy** and colours itself from live state: the whole tile turns **red** while any monitored bookmark is unreachable, **green** while they all answer, and stays neutral at zero. Its tooltip names the split (*1 of 3 not responding*); clicking opens the monitored list and is remembered. A monitor awaiting its first check counts as neither, since unknown is not the same as failing. Each tile explains its rule on hover — which matters most for the pair that sound alike: **Stale** is *not opened in over 30 days*, **Unused** is *never opened at all* |
+| **How long it has been failing** | Every checked bookmark records when its current run of failures started, so the row says *failing for 3d 4h* with the first failure date in the tooltip. Only a monitored row had this before, which meant a link that died four months ago looked exactly like one that broke this morning |
+| **Gone without saying so** | The most common form of rot is a page that answers **200** and shows *page not found*. With **Config → Behavior → Status & health → Spot pages that answer 200 but say "not found"**, a monitored check reads the page — the same single bounded read drift and the keyword rule already share — and judges the title first, then the opening of the body, in five languages. A hit is a failure with its own class, not a content failure: clearing an expectation does not clear it, because an expectation did not cause it. An explicit expectation still wins |
+| **Group by site** | A button beside the sort. One host down takes every bookmark on it with it, and grouped by site that reads as one problem with a count rather than ten problems. Works under every filter and sort |
+| **A tile counts what its filter shows** | The Broken tile reads the Broken filter rather than the report's own `brokenCount`, which deliberately keeps a down monitor apart from an ordinary dead link. On screen that split read as *Broken 0* beside a pill saying *Broken 1* — and once empty tiles were dropped, as no tile at all while the filter still had a row. The split is still there and still visible, in the Monitored tile that names it in full, and in the tile's own tooltip |
+| **A tile only appears when it has rows** | Broken, Content, Unchecked, Stale and Unused are drawn only when something is behind them, the rule Drift and Certificates already followed. Total, Healthy and Monitored always stay: they describe the collection rather than a backlog, and a zero in them is the answer |
+| **Statistics load with their section** | The 32 renderers behind **Config → Stats** — the tables, distributions, trends, and the inbox and health panels — live in their own file, fetched the first time that section is opened. 77 KB that every other section used to carry. Until they arrive the section says it is working out the numbers, then fills itself in |
+| **Config opens quicker** | The spotlight catalogue — 42 entries, five strings each — moved out of the config module into `static/data/overview-features.json`, fetched when Overview is first drawn. A bookmark row builds its two menus when one is opened rather than carrying both hidden: 2757 DOM nodes for fifty rows became 1762. Switching sections reuses the rail and the panel frame instead of rebuilding them. Opening config for the first time: 74 ms → 55 ms |
+| **One request instead of a hundred and forty** | The dashboard used to load 99 scripts and 42 stylesheets, each a separate request — invisible on localhost, a wave of round trips over a VPN or on a phone, and re-fetched wholesale after every release. They are served as one bundle each, built from the same tags in the same order; the files stay separate on disk and `NEXTDASH_BUNDLE=off` puts the individual tags back for debugging |
+| **The Help tab's prose loads with Help** | A third of the translation file — 182 KB of the 570 KB in English — is the Help tab's text, read only by the config module. It arrives with that module instead of before the first label is drawn |
+| **The generated theme is in the page** | `/api/theme.css` is built per install and served no-store, so as a link it was an uncacheable blocking request before every first paint. It is inlined; the endpoint stays for the theme switch, which reloads it |
+| **View stylesheets load with their view** | Config, Health and Inbox own 268 KB of CSS that paints nothing on the bookmark grid. It is one bundle, requested when a view is opened and awaited so nothing paints unstyled |
+| **Find a setting by what it is set to** | The settings search matches the current value as well as the name and its keywords, and shows it after the location — so *8099*, *Monitor* or *15* find the setting you cannot name |
+| **Which settings are per device** | With *Keep settings on this device only* on, a handful stay server-wide by design — the custom favicon, the custom font, collections, the button-bar position. Those carry an **all devices** mark, and the switch itself is marked **this device**. With the setting off everything is shared, so nothing is marked |
+| **A statistics row leads somewhere** | A tag in *Most used tags* is a button: it opens **Config → Bookmarks** filtered to that tag, clearing the other filters, the way the cleanup panel already handed off its rows |
+| **Duplicate a page or a category** | **Duplicate** on a page row copies its categories, and asks separately whether the bookmarks come too; on a category row it copies the category with its settings and, if you say so, the bookmarks in it. Copies start with an empty check and open history — a copied uptime would be a claim about a URL this copy has never checked — and duplicated bookmarks come without the original's shortcut |
+| **Edit a name or shortcut in the row** | Double-click the title, or click the shortcut pill — including the faint **+** on a bookmark that has none — and edit it where you read it. `Enter` saves, `Escape` restores, clicking away saves. A shortcut already taken is named as you type it — *“G” is already GitHub* — and `Enter` refuses it: two bookmarks sharing a key means neither is reachable by it, so the one that already worked is not broken to make room. Clicking away from a clash puts the old value back and says why. The check runs across every page, the same rule the health view's shortcut conflicts use. Anything with a picker (category, tags, checking) keeps its own menu |
+| **Saving a link from a phone** | Install nextDash as an app and it joins the share sheet: sharing a link from any app saves it to the **Inbox** and opens nextDash on it, with one line saying what happened. Android sometimes sends the address inside the text instead of as a link — *"Some title https://…"* — and it is picked out either way; what is left of the text becomes the title. A link already in the inbox is reported as already there, not as an error |
+| **Saving a link from a script** | [`integrations/`](integrations/) holds a shell script the rest build on (`nextdash-add <url> [title]`), two Raycast commands — one that takes a URL, one that reads the front tab of Safari, Chrome, Arc, Brave or Edge — a Dropzone action, a Ulauncher extension for Linux, and the four steps each for Alfred and an Apple Shortcut. On iOS the Shortcut is the route that works: Safari does not implement the web share target the installed app declares |
+| **Saving a link from any browser** | **Config → Help → Inbox** builds a bookmarklet carrying this install's own address, so there is nothing to edit before it works. It opens a tab that says *Saved to the inbox* and closes the matter. The same route — `/add?url=…&title=…` — is what a Shortcut, a Raycast command or a `curl` line would use |
+| **What capture may do** | Neither a share sheet nor a bookmarklet can send a header, so the write token cannot guard these two routes. With no write token set they are open, like everything else on that install. With one set, they need a token in the address: either the write token, or — better — a `NEXTDASH_CAPTURE_TOKEN` of its own, which opens nothing else. A leaked capture link can then at worst put a link in your inbox |
+| **One row of filters** || **One row of filters** | Every filter is a pill in a single row that scrolls sideways when it runs out of width — the **More** menu is gone, and so is the second line the row used to wrap onto. A pill carries its count only when there is one to carry, since *Content 0* is wider than *Content* and says the same thing |
+| **Selection: pin and checking** | The selection toolbar carries **Pin/Unpin** and **Checking** beside Move, Tags, Open, Copy links and Delete. Pin reads the selection first, so a mixed set pins rather than flipping each row into the opposite of its neighbour; Checking offers the same three modes as the row's own `Shift + C`, applied to the whole selection with one toast at the end |
+| **Undo on a bulk tag change** | Tagging or untagging twenty rows in one click can be taken back for eight seconds, from a snapshot of what each bookmark had. Applying the opposite change would have stripped a tag from rows that already carried it themselves |
+| **The trend, out of the way** | The 90-day line no longer sits above the list. The tile row carries it as a sparkline with the current reading — costing no row of its own — and clicking it, or the ▲/▼ beside the percentage in the header, opens the full chart — 15rem tall, with 100/50/0 on the vertical axis and the first, middle and last date under it, plus its six series and per-day readout. On a narrow screen the old placement took the full width and pushed the work below the fold |
+| **Rot report** | A button in the toolbar: what has gone, what has moved or been rewritten, what has been failing for over a month, what is broken and was never opened, and what broke this week — each with the rows behind it. The view is a work queue; this is the once-a-month read |
+| **Follow redirects in bulk** | Select rows and **Follow redirects** asks each one where it now goes, lists the answers, and applies them after one confirmation. A domain move breaks twenty bookmarks with the same redirect; fixing them one menu at a time was the work this removes. The server still pings each replacement before storing it, so a row that still fails is reported as such |
+| **Use the last archived copy** | **Find in Web Archive** opens the calendar of captures. The entry under it asks the archive for the closest capture, says when it was taken, and offers to point the bookmark at it — the original address is appended to the note, so nothing is lost. Decline and the capture opens in a tab anyway |
+| **Rows you have acted on stay put** | Opening a row under **Unused**, or re-checking one under **Broken**, takes it out of what the filter selects — and removing it closes the gap and moves everything below it up by one, mid-task. The row keeps its position instead, dimmed and marked **handled**, until you change the filter, sort or search, or reload the report with **R** or **Retest all** (**v1.2.1**) |
 | **Tiles and filters agree** | A bookmark can be several things at once, and the tiles count every condition that holds — so one that is both a duplicate and never opened is counted by **both** and appears under **either** filter. Until **v2026.09.06.1** the filters matched on the row's single worst problem instead, so a tile could report *2* and then list nothing when you clicked it. The row itself still shows only its worst problem, which is what decides its colour and its place in the list |
 | **What the filter selects** | A sentence under the toolbar states the rule behind whichever filter is active, in words rather than as a tooltip you have to find. It appears on an empty filter too — that is exactly when *what was being looked for* is the only useful thing left to say (**v2026.09.06.1**) |
 | **How this works (`ℹ`)** | The **ℹ** at the end of the toolbar opens a short explanation of the numbers: how the score is charged, why one bookmark can be counted by several tiles, how current the cached figures are, why an uptime percentage carries its check count, why the all-monitors panel pools checks, and how the trend line treats days you were away |
@@ -965,15 +1094,23 @@ Summary tiles (click to filter) → Compact controls (filters, search, sort, ret
 | **Health over time** | Once you have opened this view on more than one day, a chart beside the text explaining the filter draws the share of healthy bookmarks as a line, with an arrow beside the percentage in the header naming the movement across the window (*up 12 points over 30 days*). **Point at a day** to read out its date and the share healthy on it; a day with no reading says so rather than showing 0%. Drawn on a **fixed 0–100 scale** marked at 100%, so a collection sitting between 91% and 93% looks as flat as it is. One point is kept per day for **90 days** in `data/health-trend.json`, and days you did not open the dashboard leave a **gap** rather than a straight line through them. Nothing appears until there are two days to compare (**v2026.09.06.1**); moved out of the header, given the hover readout and its own `ℹ` in **v1.0.1** |
 | **Availability menu** | `c` on a row, or a click on its mode badge, opens a short menu: the three modes, the **Check interval** strip on a monitored row, and **Expected response** — which opens the settings in the row itself rather than in the popover. They lived in the menu until **v2026.09.09.1**, where they had grown into a form: five of its controls sat below a scrollbar, Save among them, so it was possible to fill the fields in with no visible way to store them. In the row they get its full width, the keyword and status boxes sit side by side, and `Esc` or **Cancel** closes the panel |
 | **Expected response** | A monitored row can say what a *good* answer looks like, not just that one arrived. Open the availability popover, choose **Expected response**, and the row expands into a panel where you set **Text the page must contain** — a phrase that only shows when the page works — or tick **Fail if present instead** to catch an error banner. **Status codes that count as healthy** narrows the default rule (anything under 500) to codes you name: `200`, `200-299`, `200,301,401`. A code nextDash cannot parse is dropped rather than obeyed, so a typo cannot take a working bookmark down. Clearing both fields also clears the failure they caused |
+| **A failure records why** | A failed check stores its cause — DNS, timeout, refused, TLS, content, HTTP — alongside the sample. The engine always worked this out and then dropped it, so a network-level outage reached the incident list with a blank reason. Incidents now name the cause, and the history CSV carries a `reason` column |
+| **A single miss does not count** | A failed check is tried once more, five seconds later, and only recorded as a failure if that fails too. One dropped packet used to write a permanent `down`: it dented the 24h/7d/30d uptime for as long as the sample lived, opened a one-check incident and coloured a heartbeat bucket. The alert retries were never the same thing — they held back the message, not the record |
 | **Content tile & filter** | A page that answers 200 while showing *Database connection failed* is not broken in the ordinary sense — the host replied. Those failures get their own **Content** tile and filter, ranked next to Broken, and the row names the phrase or code it expected. A server that is down and a checkout button that vanished need different responses, so they are counted apart |
-| **Certificates** | Every monitored HTTPS check already completes a TLS handshake, so the expiry date is read from it — no extra request and nothing to switch on. A **Certificates** tile appears once something is close, and affected rows carry a badge with the days left. Warnings go out at **30, 7 and 3 days** through the same webhook and push notifications as downtime. Certificates belong to a *host*, so ten bookmarks on one domain all show the badge and one renewal clears them all |
+| **Certificates** | Every HTTPS check already completes a TLS handshake, so the expiry date is read from it — no extra request and nothing to switch on. Recorded from **every** check, not only the monitor sweep: periodic checks, a retest-all and a single on-demand check all contribute, so an install that never switched a bookmark to Monitor still gets warnings. A **Certificates** tile appears once something is close, and affected rows carry a badge with the days left. Warnings go out at **30, 7 and 3 days** through the same webhook and push notifications as downtime. Certificates belong to a *host*, so ten bookmarks on one domain all show the badge and one renewal clears them all |
+| **The trend chart draws more than one line** | The trend file records nine counters a day for ninety days — healthy, score, broken, monitors down, monitored, unchecked, stale, unused, duplicate — and the chart drew one of them. A row of buttons above it switches between **Healthy %**, **Score**, **Broken**, **Monitors down**, **Stale** and **Unchecked**. Percentages keep the fixed 0–100 axis; counts get an axis scaled to the window |
+| **A recovery says how long it was down** | "X is back online" now ends with *after 3h 12m*, worked out from the same history the failure count is read from. It was the one question a recovery message raised and could not answer |
+| **Bulk mute** | Muting is per-bookmark alert policy and was the one health setting you most want to set on a group — twelve bookmarks behind one outage meant twelve dialogs. **Mute alerts** and **Unmute** sit in the health selection bar, and go through an endpoint that changes only the field it is given: muting does not clear the keyword checks or the drift baselines those bookmarks carry |
+| **Check timeout** | Three seconds was hardcoded for every check in the app, so a self-hosted service that legitimately answers in four — a large Nextcloud, a container that just started — was permanently *Timeout*, which reads as offline. **config → behavior → status & health → Check timeout** offers 5, 10, 15 or 30 seconds; the server clamps to 2–30, and the connect budget stays two thirds of whatever you pick |
+| **A window says what it could not cover** | History is capped per URL, so a five-minute monitor holds about a week rather than the full thirty days. The 30-day figure was still computed over what was there and labelled *30 days*; a window the samples cannot fill now reads **only 7d of history** instead of a check count |
 | **Filters** | broken, **content**, duplicate, shortcut-conflict, stale, unchecked, unused, missing preview, healthy, **monitored**, **drift** — default **broken** on first visit, and your last filter and sort come back on the next one; a `?hv_filter=` deep link still overrides what was stored |
-| **One row of filters** | With every filter as its own pill the row wrapped onto a second line and read as a wall of chips. The common ones stay visible — Broken, Content, Duplicates, Never checked, Monitored, All — and the rest move behind **More**, which lists them with their counts. The active filter is always pulled out into a pill of its own, so what you are looking at is never hidden inside a closed menu. Inside that menu the counts sit right-aligned with their own background and full opacity rather than as a faded suffix: in a closed menu the count is the only thing saying that three stale bookmarks are waiting behind it, so it has to be scannable as a column |
+| **Filters that all fit** | The row wrapped onto a second line once every filter was a pill, so the less common ones lived behind a **More** menu — hidden even on windows wide enough to show them. They are all pills again now, in one row that scrolls sideways; see *One row of filters* above |
 | **Monitored filter** | Offered as soon as there are bookmarks, not only once something is already monitored — it used to be invisible to anyone who had not already found the feature. An empty Monitored list explains what monitoring does and how to switch it on (`c` on a row) rather than reporting "no issues found" |
 | **Export** | Downloads the **current filter and search** as CSV — name, URL, status, score, page, category, last checked, and the same issue wording the score panel shows. When the exported list holds monitored bookmarks it also carries **interval, the three uptime windows, last response time and total checks** — but only then, since otherwise they would be six empty columns on every line. Uptime is written as a plain number so a spreadsheet can average the column, and a window with no samples stays **blank** rather than becoming a `0` that reads as total downtime. For working through findings beside a spreadsheet, or handing someone the list. Values starting `=` `+` `-` `@` are prefixed so a spreadsheet treats them as text instead of formulas; a UTF-8 BOM keeps accented titles intact in Excel |
 | **Export history** | Appears on the **Monitored** filter. Downloads the individual up/down checks behind an uptime percentage — one row per check, with its timestamp, whether the site was up, ping time and HTTP status. The ordinary Export gives you the current state of each bookmark; this gives you the record over time, for charting an outage or seeing when a site started getting slow. Same formula guard and BOM |
-| **Bulk actions** | Tick the box on any row — or press **`x`** to tick the one under the cursor and move on, **`X`** or **`Ctrl/Cmd+A`** for everything the current filter shows; **`Ctrl`**+click and **`Shift`**+click work with the mouse. A bar appears above the list with **Set checking**, **Re-check**, **Open**, **Copy links**, **Delete** and **Clear selection** — deliberately the same bar, in the same place, that **Config → Bookmarks** has. Deletes go to the [trash](#trash-data--backups--trash) like any other, and a row that changed since the report was built is skipped and reported rather than deleted, so a list a few minutes old cannot remove the wrong bookmark. Ticks survive a filter change, so the bar names how many the current filter is hiding and offers **Select only these**. **`Esc`** clears the selection without leaving the view (**v2026.09.05.1**) |
+| **Bulk actions** | Tick the box on any row — or press **`x`** to tick the one under the cursor and move on, **`X`** or **`Ctrl/Cmd+A`** for everything the current filter shows; **`Alt`**+click and **`Shift`**+click work with the mouse. A bar appears above the list with **Set checking**, **Re-check**, **Open**, **Copy links**, **Delete** and **Clear selection** — deliberately the same bar, in the same place, that **Config → Bookmarks** has. Deletes go to the [trash](#trash-data--backups--trash) like any other, and a row that changed since the report was built is skipped and reported rather than deleted, so a list a few minutes old cannot remove the wrong bookmark. Ticks survive a filter change, so the bar names how many the current filter is hiding and offers **Select only these**. **`Esc`** clears the selection without leaving the view (**v2026.09.05.1**) |
 | **Work through the list** | Filtering to **Broken** tells you what is wrong and then leaves every fix costing the same three moves: find the row again after the list re-renders, aim at its action, decide. **Work through** in the toolbar — or **`f`** — puts one row on screen at a time with its actions large and the rest of the page out of the way: **Re-check** (`p`), **Open** (`Enter`), **Delete** (`d`), **Skip** (`j`), and `k` to go back. It starts on the row your cursor is on rather than the top of the list, because the way in is usually *I am looking at this one*. `Esc` leaves and puts the cursor on the row you had reached, so dipping in for three fixes and back out is not a mode switch. It is the same list and the same actions throughout — nothing is available only here — and stepping past either end says so rather than quietly wrapping round to the start. A row deleted from the card drops out of the queue and the next one takes its place |
+| **Ten links, two minutes** (**v1.3.0**) | Work through is the mechanic; this is the invitation. When enough links want attention, a card appears in the bottom-left corner of the dashboard naming what is waiting — *"10 links to review: 4 broken, 3 never opened, 3 not opened in a year"* — and **Start** opens Health and runs a session over the worst ten. A session **ends**: it says how many you dealt with, offers **Another ten** when more are waiting, and **Done for today** puts the offer away until tomorrow. Bounded and finishable is the point — a number that never ends is one people learn to ignore. Skipping is not handling, so the count at the end is honest. Below five waiting links the card stays quiet |
 | **Accept drift** | A drift finding is a prompt, not a verdict: a rebrand, a docs reorganisation or a deliberate move to a new domain trips drift on **every** bookmark pointing at that site at once, and all of them are fine. Tick those rows and use **Accept drift** in the bulk bar — it appears only when the selection actually holds findings, and counts just those. Accepting does two things in one write: it clears the finding **and** drops the baseline the finding was measured against, so the next check records the page as it is today. Clearing only the finding would not work, because the stored baseline still describes the page as it was *before* the change and the identical drift would be reported again on the very next check. Note what accepting asserts: that the new page is the right one — a page that genuinely rotted would be marked healthy, which is why there is no *accept everything* and the rows are always ones you picked |
 | **Silence one bookmark** | Alerting used to be all or nothing: a personal blog and a critical server shouted equally loudly, and the only way to quieten the first was to stop monitoring it — which also stopped recording it. Open the availability popover on a monitored row, choose **Expected response**, and tick **Do not alert me about this bookmark** in the panel that opens. It is still checked, its history still builds, and the row still reads as down when it is down, carrying a **Muted** badge so it can never be mistaken for one that should have raised the alarm and did not. Only the outgoing message is withheld. Un-muting during an outage still alerts — a muted failure does not quietly use up the one alert that outage was going to send |
 | **Controls panel** | Search, status pills, sort, export, and retest action in one compact block |
@@ -1012,7 +1149,7 @@ Summary tiles (click to filter) → Compact controls (filters, search, sort, ret
 
 Filter, sort, and search state persist in the session across refreshes and sync to the URL (`hv_filter`, `hv_sort`, `hv_q`, `hv_id`).
 
-**A guided tour on first use.** The first time you open the Health view, a short six-step walkthrough introduces the monitoring features around one worked example — a self-hosted status page behind a login, backed up nightly — rather than listing settings in the abstract: turning on **Monitor** and picking an interval, saying what *up* means for that page with status codes `200,401` and a keyword check, watching for **drift**, excluding the nightly backup with a maintenance window, and wiring up an alert with **Alert after 3** and a test send. It appears once and then never again; `Esc`, the backdrop and **Skip** all count as having seen it. Replay it, along with the other one-time hints, from **Config → Behavior → General**.
+**A guided tour on first use.** The first time you open the Health view, a short six-step walkthrough introduces the monitoring features around one worked example — a self-hosted status page behind a login, backed up nightly — rather than listing settings in the abstract: turning on **Monitor** and picking an interval, saying what *up* means for that page with status codes `200,401` and a keyword check, watching for **drift**, excluding the nightly backup with a maintenance window, and wiring up an alert with **Alert after 3** and a test send. It appears once and then never again; `Esc`, the backdrop and **Skip** all count as having seen it. **Show quick-start card again**, under **Config → Behavior → General**, brings it back along with the inbox tour and the keyboard tips — the one-time hints attached to individual settings in config are left alone.
 
 **URL deep links** — Open health view with query parameters:
 
@@ -1055,7 +1192,7 @@ Permission is granted **per browser**, so every device you want alerts on is ask
 
 ### Stats (`config#stats`)
 
-Read-only analytics (desktop). Filter toolbar sits above a fused **split surface**: chip navigation and sidebar index share the left column; stats blocks fill the content pane — same split-shell pattern as Help. Sidebar index jumps to sections; on phone, horizontal **chip-nav** replaces the sidebar. Content stays on the Stats tab only — it does not overlay other config tabs.
+Read-only analytics (desktop). Filter toolbar sits above a fused **split surface**: chip navigation and sidebar index share the left column; stats blocks fill the content pane — same split-shell pattern as Help. Sidebar index jumps to sections; on phone, horizontal **chip-nav** replaces the sidebar. Content stays on the Stats tab only — it does not overlay other config tabs. Since **v1.3.1** the Overview opens with **What this says** — the three things that follow from the figures, each with the button that acts on it — the tiles carry a week-over-week direction from the daily points the health report records, the activity chart is summarised in a sentence above the bars, and every tab has a 🔗 that copies a link to it. The CSV export waits for the Inbox and Health figures rather than leaving them out.
 
 - **Insights** — automated highlights (busiest page, top bookmark, never-opened share, status coverage, recent activity) with links to sections.
 - **Overview & activity** — bookmark totals, period filters (7 / 30 / 90 days / all time), sparklines, and **week-over-week** active-bookmark comparison when the **week** period is selected. Open counts describe **lifetime** `openCount` for bookmarks active in the selected period (labels update when a period is active).
@@ -1082,7 +1219,7 @@ Configuration is a **view inside the dashboard**, not a separate page. It opens 
 |---------|----------|
 | **`Shift+S`**, **`<`** (`Shift+,`), the **config** (gear) link in the header, or the `/#config` address | **`Escape`** (unless you are typing in a field, or something is open on top of it), or the back link |
 
-Reopening config (**`Shift+S`**, **`<`**, the gear link, or `/#config`) restores the **last section and sub-tab** unless a `/#config/…` deep link names something else.
+Reopening config (**`Shift+S`**, **`<`**, the gear link, or `/#config`) restores the **last section and sub-tab** for 5 minutes after you left, unless a `/#config/…` deep link names something else.
 
 Pick a section from the rail on the left, or link straight to one with `/#config/<section>`. Sections that have sub-tabs extend that: `/#config/appearance/layout` opens Appearance on Layout, `/#config/bookmarks/<pageId>` scopes Bookmarks to one page, and the address bar keeps up as you click.
 
@@ -1096,7 +1233,7 @@ Below **Help**, separated by a gap, **Find settings** opens the settings-jump ov
 |---------|------------------|
 | **Overview** | Six headline tiles (including **Monitored**), anything needing attention, a **New features** carousel, **Latest update**, optional **GitHub update check** (since **v2026.08.04**), tips, and about-the-developer panels |
 | **Pages & tags** | Categories, tags, pages, finders, and custom collections — five sub-tabs (**Categories** opens first since **v2026.08.06**) |
-| **Bookmarks** | The bookmark list and its editor, with bulk actions and a page filter (`/#config/bookmarks/<pageId>`) |
+| **Bookmarks** | The bookmark list and its editor, with bulk actions and a page filter (`/#config/bookmarks/<pageId>`) — two sub-tabs since **v1.1.0** |
 | **Appearance** | Theme, layout, display, and custom themes — four sub-tabs |
 | **Behavior** | General, date & weather, search, status, and privacy — five sub-tabs |
 | **Data & backups** | Backup, restore, import, export — plus **Reset** on its own tab |
@@ -1113,20 +1250,40 @@ Config only writes what actually changed — editing one setting does not re-upl
 
 ### Sub-tabs
 
-Five sections divide their content further. Every strip is a proper tab widget: **`←`/`→`** move between tabs and wrap around at the ends, **`Home`**/**`End`** jump to first and last, and the strip is a single stop in the page's tab order rather than one stop per tab.
+Six sections divide their content further. Every strip is a proper tab widget: **`←`/`→`** move between tabs and wrap around at the ends, **`Home`**/**`End`** jump to first and last, and the strip is a single stop in the page's tab order rather than one stop per tab.
 
 | Section | Sub-tabs |
 |---------|----------|
 | **Pages & tags** | Categories · Tags · Pages · Finders · Collections |
-| **Appearance** | Theme · Layout · Display · Toolbar & tabs · Branding · Custom themes |
-| **Behavior** | General · Date & weather · Search & inbox · Status & health · Privacy |
+| **Bookmarks** | List · Settings (**v1.1.0**) |
+| **Appearance** | Theme · Layout · Display · Toolbar & tabs · Custom themes |
+
+**Branding** — page title and favicon — is the tail of **Display** rather than a tab of its own; `/#config/appearance/branding` still lands on it. Each tab has a **filter** beside *Only changed*, and `Escape` clears it. The theme list answers to **typing**: open it and type the first letters of a name to jump to it among a hundred and fifty. Pointing at a **type size** shows it on the dashboard behind config and moving away puts it back — the same idea as browsing the theme list, which previews its colours. A custom theme has **⤓ Export** on its row and **Import theme…** beside *Add custom theme*, so one palette can move between installs without a whole backup.
+| **Behavior** | General · Date & weather · Search · Inbox · Status & health · Privacy |
+
+Every Behavior tab has a **filter field** beside *Only changed*: it narrows the tab to the settings whose label, hint or options match what you type, and `Escape` clears it. That is the other half of `Ctrl/Cmd+Shift+K`, which finds one setting anywhere; this one narrows the eighty-odd in front of you. **Keep settings on this device only** lives here, in *Sync & feedback*, and only here — it used to be offered on Data & backups as well, where it was the copy that worked.
 | **Data & backups** | Backups & data · Icons & previews · Server log · Trash · Reset |
 | **Statistics** | Overview · Activity · Content · Inbox · Health |
-| **Help** | Getting started · Configuring · Pages & bookmarks · Search & keyboard · Health & inbox · Data & hosting · About |
+| **Help** | Getting started · Tips · Configuring · Pages & bookmarks · Search & keyboard · Health · Monitoring · Inbox · Statistics · Data & hosting |
+| **About** | No sub-tabs — the wordmark, what nextDash is, the release notes, and where it comes from |
+
+**Statistics** can be narrowed to **one page**: a *Showing* selector beside the sub-tabs, offered as soon as there is more than one page. Everything worked out on this side narrows with it — counts, coverage, activity, the cleanup score. Two things cannot: the **inbox**, which belongs to no page, and the **health report**, which the server builds for the whole collection. Both say so on screen rather than quietly ignoring the choice, and the export records which scope produced it. The filter is deliberately not remembered between visits — it hides most of the library, and a filter still in force from last week reads as a shrunken collection rather than as a choice.
+
+**Health** opens with the **healthy share over time**, drawn from the day-per-day series the server already records for the health view — on a fixed 0–100 axis, with a gap where a day was never recorded, and the change in words beside it (*up 12 points over 30 recorded days*). Below a couple of recorded days it says what it is waiting for instead.
+
+**Statistics** ends with the time the figures were worked out and two controls beside it, on every sub-tab: **Refresh** — the numbers come from what is in memory, so a tab left open goes stale while the stamp above it keeps its old time — and **Export as CSV**, which carries every sub-tab's figures including the two that come from the server, so visit **Inbox** and **Health** before exporting if you want theirs in the file. Duplicate URLs are counted the way the health view counts them: a trailing slash, a `#fragment` and a differently-cased host are the same link, not three.
+
+**Help** carries the guide, and three things worth knowing about it. **Tips** is the whole catalogue of keyboard tips, grouped by what you are doing — the same list the dashboard draws its rotating tip from. Every panel has a **🔗** beside its heading that copies a link straight to that topic (`/#config/help/monitoring/health-cert`), which opens the right tab and lights the panel up on arrival. And where a panel describes something that can be switched off — the inbox, availability checking, alerts, analytics — a line under the heading says whether it is on **for you**, with a button to the setting.
+
+The search box above the tabs covers every tab **and** the About section, so a word that appears only there is still found; each result says where it came from and takes you there.
+
+**About** — a section of its own at the foot of the rail, `/#config/about`. It was a tab of Help, which is where you look for *how something works*, not for what this thing is or who wrote it. It carries the nextDash wordmark and the three addresses worth having: **[nextdash.cc](https://nextdash.cc)** for the project itself, **[GitHub](https://github.com/jordibrouwer/nextDash)** for issues, requests and release notes, and **[jordibrw.nl](https://jordibrw.nl)** for the person who writes it. The release notes are not repeated here: **Show what's new** sits in **Help → Getting started** and beside the onboarding switches in **Behavior → General**.
 
 ### Working with bookmarks
 
 **Bookmarks** lists every bookmark with a **debounced search** field (matches name, URL, category, note, shortcut, and tags), **filter chips** for page, category, tag, and search text, and a **page filter**. With **All pages**, category labels read `Page · Category` and each row carries a page badge; click a page or category on a row to filter. Pick one page to scope categories and share the view as `/#config/bookmarks/<pageId>`. **Summary tiles** above the list follow active filters when any are set. Rows load **50 at a time** as you scroll. Sort includes last opened, most opened, and pinned first. Rows use the same Health/Inbox action bar; **Edit** opens the prefilled add-bookmark modal with name, URL, page, category, tags, shortcut, note, pinned, icon, and availability checking (Off / Periodic / Monitor, with an interval for Monitor). Press **`o`** or double-click a row to open the URL.
+
+Its **settings** — what a quick-added bookmark starts with, the sort the list opens on, how many rows load at a time, and the rest — are on the **Settings** sub-tab (**v1.1.0**). They used to sit under the list, fifty rows down and further as the infinite scroll loaded more, which also ruled out jumping to the bottom: the bottom moved as you approached it.
 
 **+ Bookmark** opens the same add form the dashboard uses. Tick several rows for the bulk toolbar — move to another page or category, pin, **refresh favicons**, **export CSV**, edit tags across the selection, or delete. **Select all** applies to the rows your filters are currently showing, not the whole library.
 
@@ -1136,9 +1293,13 @@ Five sections divide their content further. Every strip is a proper tab widget: 
 
 **Layout** holds layout version (Classic / Modern), launcher icon size, column count, layout preset, and density.
 
-**Display** holds bookmark-row toggles — icons, status colour, animations, shortcut letters, ping times, link preview cards.
+**Display** holds bookmark-row toggles — icons, status colour, animations, shortcut letters, ping times — and the **Link preview cards** panel.
 
-**Toolbar & tabs** holds the visibility of everything in the dashboard chrome. Since **v2026.09.07** it is three groups matching how the dashboard is built — **Header** (page tabs, page names, title, and the health and config icons), **Button bar — main buttons** (add, search, commands, finders) and **Button bar — extras** (recent, cheat sheet, fold-all, tag cloud) — so the group a setting sits in tells you where on screen to look. Each group has **Show all** / **Hide all** with a count of what is currently showing. Hiding a button leaves its keyboard shortcut working.
+The card's facts strip is free: status and ping come from the check cache, the Fresh count from the feed poller, and uptime, certificate expiry and "failing since" from the health report the health icon already fetches on every load — hovering a bookmark never asks the server for anything. If you hide the health icon, a card you pin with `Shift + V` fetches that report once instead.
+
+**Link preview cards** (**v1.3.2**) is three settings and a live example. *How it is reached*: **Off** (the row keeps its ordinary tooltip), **On hover** (the default) or **Keyboard only**, for people who want what the card says without a panel appearing under the pointer — until this release their only answer was off, which threw away the feature to avoid one behaviour of it. *Hover delay*: Fast 100 ms, Balanced 150 ms, Calm 250 ms — the three the code has always accepted, starting on **Calm**, since a card that opens as the pointer crosses a row opens on rows you were only passing over. The older list offered five values, four of which were silently rewritten to 150 ms. *What the card shows*: eight checkboxes, one per row — image, description, your note, tags, status & uptime, opens & last opened, Fresh count, shortcut & location. Beside them the card itself, drawn from one of your own bookmarks and redrawn as you tick. The fetched text and images are managed in **Config → Bookmarks → Link preview**, and **Health** lists the bookmarks that have none.
+
+**Button bar** is one tab for one object (**v1.3.0**): where the bar sits — the five positions, each drawn — and what it carries, as **Button bar — main buttons** (add, search, commands, finders) and **Button bar — extras** (recent, cheat sheet, fold-all, tag cloud). The position used to live on Layout and the toggles on Toolbar & tabs, so moving the bar and hiding a button on it were two errands two tabs apart. **Toolbar & tabs** keeps the **Header** group (page tabs, page names, title, and the health and config icons), which is a different strip. Each group has **Show all** / **Hide all** with a count of what is currently showing (v2026.09.07). Hiding a button leaves its keyboard shortcut working.
 
 **Branding** holds the custom page title and favicon.
 
@@ -1163,7 +1324,7 @@ What the server has been doing, without shell access to the container. Every lin
 - **Limit the log** — by **age** or by **number of entries**, never both. Whichever you pick, the other control is greyed out, because a log capped two ways drops lines for a reason neither setting explains on its own.
   - **By age** → **Keep entries for** 1, 2, 4, 12 or 24 hours, 7 or 30 days, or **Until cleared**. Older lines drop away on their own; how many there are does not matter.
   - **By number of entries** → **Keep at most** 100, 500, 1000, 2500 or 5000. Only the newest that many are kept and older ones fall off as new lines arrive; how old they are does not matter.
-- **Show** — everything, warnings and errors, or errors only. **Search** filters on the message and on the subsystem name. Both are applied by the server, so they search the whole buffer rather than what is on screen.
+- **Show** — everything, warnings and errors, errors only, or **Activity only** (**v1.1.1**). The last one is not a severity but a source: activity lines are what *was done* — a bookmark saved, a page added, a check run — and they have always been written into this same log, findable only by knowing to search for the word. **Search** filters on the message and on the subsystem name. All of it is applied by the server, so it covers the whole buffer rather than what is on screen.
 - **Scroll to newest lines** — follows the tail, and stops following while you are scrolled up reading something.
 - **Copy**, **Download** — the current lines to the clipboard, or the whole buffer as a `.log` file.
 - **Clear log** — empties the buffer **and** deletes `server.log` and its rotated copies from the data directory. It asks first, and cannot be undone.
@@ -1174,9 +1335,12 @@ Severity is inferred rather than declared: a request line takes its level from t
 
 ### Trash (Data & backups → Trash)
 
-Deleting is not final. Deleted **bookmarks, pages and categories** go to the trash and stay there for **30 days**, then go for good. The toast's undo is for the moment right after; the trash is for the next morning.
+Deleting is not final. Deleted **bookmarks, pages and categories** go to the trash and stay there for **30 days**, then go for good. The toast's undo is for the moment right after; the trash is for the next morning — and the next morning you are on the dashboard, so **`:trash`** opens it from there. It was reachable only by mouse before: no command, no shortcut, and `trash` was not in the config-section list either, so even `:config trash` missed.
 
+- **Search** — filters the list by name, URL, tag, category or the page it came from (**v1.0.2**). The count beside it says how many of the total are showing.
 - **Restore** — puts the bookmark back on its own page, at the position it had. If the page has shrunk since, it lands at the end rather than failing.
+- **Restore selected** — tick several rows and bring them all back at once (**v1.0.2**), which is the answer to a bulk delete of twenty. Each is restored on its own, so one that cannot come back (its page is gone) does not stop the rest; the toast says how many did and how many stayed.
+- **Select all** — ticks what the search is showing, not the whole trash, so a search narrows what "all" means.
 - **Delete forever** — removes one entry ahead of the 30 days.
 - **Empty trash** — clears everything at once. Both ask first.
 
@@ -1195,6 +1359,12 @@ A restore that cannot go ahead is **refused rather than forced**, and the item s
 
 The destructive actions sit on their own sub-tab so they are not something you scroll past while changing backup settings.
 
+**Automatic backups** run **weekly** by default, and **How often** on the same panel offers daily, weekly, fortnightly or monthly. Only the **newest three** are kept: a fourth pushes the oldest out, and so does the copy taken before a restore, which the panel says beside the list. `NEXTDASH_AUTO_BACKUP_KEEP` raises that count (1–50), and `NEXTDASH_AUTO_BACKUP_DIR` (absolute path) moves the archives off the data directory altogether — backups kept inside the thing they back up are lost with it.
+
+Each stored backup lists **what is in it** — *1.7 MB · 412 bookmarks on 5 pages* — and the exact moment it was made is in the tooltip on its relative time, for when three of them are from the same day. **Download all** saves the lot one file at a time.
+
+**Restoring or importing writes a backup of the current data first**, on the server, before anything is replaced. It is taken after the archive has been read and found valid, so a corrupt file does not spend a rotation slot; if the copy cannot be written the restore still goes ahead and says so in the server log, because being unable to move forward *or* back is worse.
+
 - **Delete all bookmarks only** — removes every bookmark, keeps pages, categories, and settings. Asks once.
 - **Reset all data** — removes everything. Asks twice: a confirmation, then you type **RESET** (or the word in your language) before the button becomes clickable.
 
@@ -1206,7 +1376,7 @@ Config has its own keyboard layer — dashboard grid shortcuts do not run while 
 
 | Keys | Action |
 |------|--------|
-| `Shift+S` or `<` | Toggle config; reopening restores the last section and sub-tab only after leaving via `Shift+H` or `Shift+I` |
+| `Shift+S` or `<` | Toggle config; reopening within 5 minutes restores the last section and sub-tab, however you left |
 | `0`–`9` | Leave config for Inbox (`0`) or a bookmark page (`1`–`9`); clears stored config location |
 | `j` / `k` | Previous / next section in the left rail |
 | `g` / `G` | First / last section |
@@ -1273,6 +1443,7 @@ Bookmarks with **invalid URLs** (wrong scheme, or private/loopback hosts when lo
 - **Back Up Now** — creates an automatic backup on demand at any time, without waiting for the weekly run. It works even when the weekly toggle is off, and refreshes the **Last backup** date shown in the ZIP section.
 - **Totals** — a small summary line shows how many automatic backups you have and their combined size.
 - **Countdown** — the section shows how long until the next scheduled backup.
+- **A failed run says so** — the outcome of the last scheduled attempt is recorded and shown on the **Last backup** tile, which turns red and names the error. Until now a failing run only wrote a log line and, if Web Push happened to be configured, sent a push: a full disk or a wrong `NEXTDASH_AUTO_BACKUP_DIR` could stop backups for months while the panel looked normal, because the newest file's date does not move when a run fails.
 - **Enable / disable** — a toggle (on by default) controls the **weekly** run. Turning it off stops new automatic backups but never touches **Back Up Now** or your existing files.
 
 Filenames carry a UTC timestamp; if you create several backups within the same second, later ones get a `-2`, `-3`, … suffix so none overwrite each other. Like a manual **Import ZIP**, a restore is atomic and replaces everything — bookmark URL validation and skipped-URL handling work the same way.
@@ -1304,9 +1475,11 @@ Permanently deletes pages, categories, bookmarks, finders, settings, custom them
 - Folders in the HTML become **categories**.  
 - Duplicate URLs (same page + within file) are skipped using the same rules as the server.
 
-### CSV export
+### CSV export and import
 
 All bookmarks: localized column headers — Name, URL, Category (display name), Page, Shortcut, **Tags**, **Notes** — for Excel/Sheets.
+
+**Import bookmarks (CSV)** reads the same file back onto the current page (**v1.0.2**), so you can tidy hundreds of rows in a spreadsheet — bulk-fixing categories, adding tags — and return the result. Quoted commas, doubled quotes and line breaks inside a field are handled, and columns are matched by header name, so reordering them is fine. Rows without a URL are skipped, and existing URLs are skipped as duplicates, exactly as the browser import does. Unlike the browser-HTML import, this route carries **tags and notes**.
 
 ### When to use which
 
@@ -1336,7 +1509,16 @@ Folder: `extension/` (Chrome “Load unpacked”).
 - Optional **shortcut** — leave empty for an auto-suggested key from the bookmark name (first free letter on the chosen page), or type your own single-character shortcut.  
 - **Save to Inbox** — quick capture without choosing a page or category.  
 - Pick page/category, optional tags and note (bookmark save).  
-- Duplicate URL warning; **Save anyway** optional.  
+- Duplicate URL warning; **Save anyway** optional.
+
+### Without opening the popup
+
+Two routes exist to skip the popup entirely, and until now both could only make a bookmark on a page:
+
+- **Right-click** — *Save page / Save link to nextDash* files a bookmark; **Save page / Save link to nextDash Inbox** puts it in the inbox instead. Right-clicking a link is the most common capture gesture there is, and it was the one that could not reach the inbox.
+- **Keyboard** — `Ctrl/Cmd+Shift+Y` saves the tab as a bookmark, `Ctrl/Cmd+Shift+U` saves it to the inbox. Both use the badge on the icon to report: **+** saved, **D** already there, **?** no server configured, **!** failed.
+
+Tags sent with an inbox capture are now stored too — the server has accepted them for a while and the extension dropped them silently.  
 - **409** when the shortcut is already used on that page.  
 - After save: **Open in nextDash** or **Open Inbox in nextDash**.
 
@@ -1374,7 +1556,7 @@ nextDash uses **phone layout** (≤768px width) for the reduced dashboard footer
 | **Page tabs in header** | Scrollable tab strip with scroll-snap; active tab auto-scrolls into view; on **Modern** layout many tabs scroll inside the header without widening the page (**v2026.07.26.1**); `← →` swipe hint on multi-page dashboards | Tab strip + keys `1`–`9` |
 | **Health badge** | Hidden — fix links in config on desktop | Header link |
 | **Config** | All eight sections; content stacks to the narrower width | All eight sections side by side |
-| **Link preview on hover** | Off | When enabled in settings |
+| **Link preview on hover** | Off | On, unless set to keyboard only or off |
 | **Quick-start card** | Skipped / hidden | Optional on first visit |
 
 ### Touch gestures
@@ -1468,6 +1650,8 @@ When set, protected API calls require header `X-NextDash-Token: your-long-random
 | Health: cache scan result | `POST /api/health/cache-scan` |
 | Health: update bookmark status | `POST /api/health/update-status` |
 | Bookmark link preview | `GET /api/bookmark-preview` |
+| Health report | `GET /api/bookmark-health` — add `?view=facts` for the counts plus only the bookmarks with something to report, which is what the health badge and the preview cards read |
+| Feeds: poll every known feed now | `POST /api/feeds/poll` |
 | Clear all preview metadata | `POST /api/previews/clear` |
 | Refresh all preview metadata | `POST /api/previews/refresh` |
 | Reset theme colours | `POST /api/colors/reset` |
@@ -1502,6 +1686,8 @@ Only matching `Origin` headers receive CORS headers. Include your extension orig
 ### Activity log
 
 Structured JSON lines for bookmark mutations and status checks (opens optional). See [README.md → Activity log](README.md#activity-log-bookmark-events) for `NEXTDASH_ACTIVITY_LOG`, `NEXTDASH_ACTIVITY_LOG_PERSIST`, and example lines. Treat logs as sensitive — URLs are included.
+
+They are also readable in the app: **Config → Data & backups → Server log**, with **Show → Activity only**. That needs **Collect server log** switched on, since it is the same buffer. Which events are written stays an environment setting; the viewer only decides what you look at.
 
 ### Rate limits
 
@@ -1564,13 +1750,14 @@ These statistics exist to answer exactly those questions — **which features ge
 | Config sections | which of the eight sections you open, which sub-tab you land on and whether you got there by click or arrow key, whether an overview *needs attention* row was followed, and which backup action was run |
 | Settings you change | the **name** of the setting only — never what you typed into it. A toggle also reports `true`/`false`, since on/off is the whole point of measuring one; free-text fields such as the dashboard title or a webhook URL report the name alone |
 | List shape | which filter or sort you picked in health or inbox, and whether you used a summary tile or a filter pill. The search box in either view is never reported |
-| Settings snapshot | once per page load: which features you have switched on, as plain yes/no values and small enums, plus the **release you are running** (`v2026.07.24`) so the numbers can be read per version rather than as one blur across every release |
+| Settings snapshot | once per page load: which features you have switched on, as plain yes/no values and small enums — layout and density, what a bookmark row shows, search behaviour, inbox and paste, availability checking and its interval, and the rest — plus the **release you are running** (`v1.1.1`) so the numbers can be read per version rather than as one blur across every release. A theme you built yourself is reported as `custom`, never by its id |
+| Size of your install | once per page load, and every figure **rounded into a bucket**: how many bookmarks, pages, categories, distinct tags, finders and collections you have, how many bookmarks are monitored or merely checked, and the inbox totals — what is waiting now, and how many links have ever been added, promoted or deleted. `500+` rather than 1274, because an exact count would follow one install from release to release. Nothing is counted at all while analytics is off (**v1.1.1**) |
 
 The settings snapshot is what makes it possible to see, for example, that a given option is used by almost nobody and could be simplified away — or that one is popular and deserves more attention.
 
 #### What is never measured
 
-No bookmark names, no URLs, no search queries, no page or category names, no notes, and no tags. No cookies are set, no personal profile is built, and you are not tracked across other websites. Where an exact number could be revealing it is rounded into a bucket (for example `2-5 items` rather than a precise count). The Umami instance is self-hosted by the project, so nothing is shared with an advertising network. The tracker host is allow-listed in the CSP (`script-src` and `connect-src`).
+No bookmark names, no URLs, no search queries, no page or category names, no notes, and no tags — the counts above say *how many* tags exist, never which. No cookies are set, no personal profile is built, and you are not tracked across other websites. Where an exact number could be revealing it is rounded into a bucket (for example `2-5 items` rather than a precise count). The Umami instance is self-hosted by the project, so nothing is shared with an advertising network. The tracker host is allow-listed in the CSP (`script-src` and `connect-src`).
 
 This is separate from the local **open count / last opened** [usage tracking](#usage-tracking), which stays entirely on your own server and is never sent anywhere.
 
@@ -1661,7 +1848,7 @@ Set manual city or browser location permission; save general settings; check ref
 ```
 > search    : commands    ? finders    & quick-add    + new modal
 1-9 pages   , overview    * recent     ! cheat sheet
-arrows nav  Enter open    ; edit       Shift+M move  Shift+T tag  Shift+D delete
+arrows nav  Enter open    Shift+E edit  Shift+M move  Shift+T tag  Shift+D delete
 ```
 
 ### Config

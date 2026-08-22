@@ -46,7 +46,26 @@ class DashboardContextMenu {
 
         e.preventDefault();
         e.stopPropagation();
-        this.show(row, bookmarkRef, { x: e.clientX, y: e.clientY });
+        this.show(row, bookmarkRef, this.menuPointFor(e, row));
+    }
+
+    /**
+     * Where to put the menu for a contextmenu event.
+     *
+     * The event also arrives from the keyboard — the Menu key, or Shift+F10 —
+     * and then carries no pointer position: browsers report 0/0, or a negative
+     * detail, depending on which one. Taken at face value that pinned the menu
+     * to the top-left corner of the window, nowhere near the row it belongs to.
+     * The category header's Delete key already anchors to its own rectangle;
+     * this does the same for a row.
+     */
+    menuPointFor(e, row) {
+        const fromPointer = e.detail > 0 || e.clientX > 0 || e.clientY > 0;
+        if (fromPointer) {
+            return { x: e.clientX, y: e.clientY };
+        }
+        const box = row.getBoundingClientRect();
+        return { x: box.left + 16, y: box.bottom };
     }
 
     resolveRowBookmark(row) {
@@ -86,12 +105,28 @@ class DashboardContextMenu {
                 };
             }
         }
-        // Smart collections render rows without a page-local index; fall back to the URL.
+        // Smart collections render rows without a page-local index; fall back to
+        // the URL. The same URL legitimately sits on more than one page — Health
+        // reports those as duplicates rather than treating them as an error — and
+        // taking the current page's copy first meant a row belonging to another
+        // page resolved to the wrong bookmark, on the wrong page, before delete
+        // ever saw it. The row displays a name, so the copy whose name matches
+        // what is on screen is the one that was clicked; list order only decides
+        // when nothing distinguishes them. Same idea as multi-select's
+        // bookmarkForRow, which resolves its rows this way already.
         const url = row.getAttribute('data-bookmark-url');
         if (!url) return null;
-        const bookmark = (d.bookmarks || []).find(b => b.url === url)
-            || (d.allBookmarks || []).find(b => b.url === url);
-        return bookmark ? d.resolveBookmarkReference(bookmark) : null;
+        const label = (row.querySelector('.bookmark-text')?.textContent || '').trim();
+        const candidates = [];
+        [d.bookmarks, d.allBookmarks].forEach((list) => {
+            (list || []).forEach((b) => {
+                if (b?.url === url && !candidates.includes(b)) candidates.push(b);
+            });
+        });
+        if (!candidates.length) return null;
+        const bookmark = (label && candidates.find((b) => String(b.name || '').trim() === label))
+            || candidates[0];
+        return d.resolveBookmarkReference(bookmark);
     }
 
     close() {
@@ -137,11 +172,15 @@ class DashboardContextMenu {
             { id: 'copy-url', label: this.t('dashboard.contextMenuCopyUrl', 'Copy URL'), icon: '⧉' },
             { id: 'share', label: this.shareActionLabel(), icon: '↪' },
             { id: 'inbox-promote', label: this.t('dashboard.inboxPromote', 'Promote'), icon: '★' },
-            // Only offered while the row is unread: markReadFromKeyboard is a
-            // no-op on an already-read row, so a "Mark unread" entry here would
-            // do nothing at all.
+            // Whichever way the row can still go: read, or back to unread. The
+            // second was missing entirely — the server accepted it and nothing
+            // ever sent it — so a link marked read by mistake could only be
+            // deleted.
             ...(inboxItem && !inboxItem.readAt
                 ? [{ id: 'inbox-read', label: this.t('dashboard.inboxMarkRead', 'Mark read'), icon: '✓' }]
+                : []),
+            ...(inboxItem && inboxItem.readAt
+                ? [{ id: 'inbox-unread', label: this.t('dashboard.inboxMarkUnread', 'Mark unread'), icon: '○' }]
                 : []),
             { id: 'inbox-snooze', label: this.t('dashboard.inboxSnooze', 'Snooze'), icon: '⏰' },
             { id: 'inbox-note', label: this.t('dashboard.inboxNoteAction', 'Note'), icon: '✎' },
@@ -164,8 +203,8 @@ class DashboardContextMenu {
                 { id: 'multi-move', label: this.t('dashboard.contextMenuMoveSelected', 'Move {count} selected…', { count: multi.count() }), icon: '→' },
                 { id: 'multi-open', label: this.t('dashboard.contextMenuOpenSelected', 'Open {count} selected', { count: multi.count() }), icon: '↗' },
                 { id: 'multi-copy', label: this.t('dashboard.contextMenuCopySelected', 'Copy {count} links', { count: multi.count() }), icon: '⧉' },
-                { id: 'multi-clear', label: this.t('dashboard.contextMenuClearSelection', 'Clear selection'), icon: '✕' },
-                { id: 'multi-delete', label: this.t('dashboard.contextMenuDeleteSelected', 'Delete {count} selected', { count: multi.count() }), icon: '✕', danger: true },
+                { id: 'multi-clear', label: this.t('dashboard.contextMenuClearSelection', 'Clear selection'), icon: '✕', key: 'Esc' },
+                { id: 'multi-delete', label: this.t('dashboard.contextMenuDeleteSelected', 'Delete {count} selected', { count: multi.count() }), icon: '✕', danger: true, key: 'Delete' },
             ]
             : [];
 
@@ -175,24 +214,41 @@ class DashboardContextMenu {
         // toolbar and every action on it.
         const startSelectionActions = (multi && !multi.isActive())
             ? [
-                { id: 'multi-start', label: this.t('dashboard.contextMenuSelect', 'Select'), icon: '☑' },
-                { id: 'multi-start-category', label: this.t('dashboard.contextMenuSelectCategory', 'Select all in category'), icon: '☰' },
+                { id: 'multi-start', label: this.t('dashboard.contextMenuSelect', 'Select'), icon: '☑', key: 'x' },
+                { id: 'multi-start-category', label: this.t('dashboard.contextMenuSelectCategory', 'Select all in category'), icon: '☰', key: 'X' },
             ]
             : [];
 
+        // `key` is the keyboard route to the same entry, shown as a chip. The
+        // category menu has taught its own shortcuts this way for a while; this
+        // menu had eleven entries with a key each and showed none of them, which
+        // is the busiest surface in the app for finding out that a key exists.
+        // Untranslated, like every other key hint.
+        const mod = window.ShortcutFormat?.modifierLabel?.() || 'Ctrl';
         const singleActions = bookmarkRef.scope === 'inbox' ? inboxActions : [
-            { id: 'open-new-tab', label: this.t('dashboard.contextMenuOpenNewTab', 'Open in new tab'), icon: '↗' },
-            { id: 'copy-url', label: this.t('dashboard.contextMenuCopyUrl', 'Copy URL'), icon: '⧉' },
-            { id: 'share', label: this.shareActionLabel(), icon: '↪' },
-            { id: 'edit', label: this.t('dashboard.contextMenuEdit', 'Edit'), icon: '✎' },
-            { id: 'tags', label: this.t('dashboard.contextMenuTags', 'Tags…'), icon: '#' },
-            { id: 'move', label: this.t('dashboard.contextMenuMove', 'Move to…'), icon: '→' },
+            { id: 'open-new-tab', label: this.t('dashboard.contextMenuOpenNewTab', 'Open in new tab'), icon: '↗', key: `${mod}+Enter` },
+            { id: 'copy-url', label: this.t('dashboard.contextMenuCopyUrl', 'Copy URL'), icon: '⧉', key: `${mod}+C` },
+            { id: 'share', label: this.shareActionLabel(), icon: '↪', key: 'Shift+L' },
+            { id: 'edit', label: this.t('dashboard.contextMenuEdit', 'Edit'), icon: '✎', key: 'Shift+E' },
+            // Pin had no pointer route at all from the grid — not a row button,
+            // not an entry here — while every other one-bit row action did.
+            {
+                id: 'pin',
+                label: bookmarkRef.bookmark?.pinned
+                    ? this.t('dashboard.contextMenuUnpin', 'Unpin')
+                    : this.t('dashboard.contextMenuPin', 'Pin'),
+                icon: '📌',
+                key: 'Shift+P',
+            },
+            { id: 'tags', label: this.t('dashboard.contextMenuTags', 'Tags…'), icon: '#', key: 'Shift+T' },
+            { id: 'move', label: this.t('dashboard.contextMenuMove', 'Move to…'), icon: '→', key: 'Shift+M' },
             ...(currentMode
                 ? [{
                     id: 'check-mode',
                     label: this.t('dashboard.contextMenuCheckMode', 'Checking ({mode})…', { mode: currentMode.badge }),
                     icon: '◉',
                     submenu: true,
+                    key: 'Shift+C',
                 }]
                 : []),
             // Offered for every bookmark, not only checked ones. The health
@@ -201,8 +257,8 @@ class DashboardContextMenu {
             // that), and that row is where its checking gets turned on. Hiding
             // the entry made the destination unreachable from the one place
             // someone would look for it.
-            { id: 'health', label: this.t('dashboard.healthOpenInHealth', 'Show in Health'), icon: '♥' },
-            { id: 'delete', label: this.t('dashboard.contextMenuDelete', 'Delete'), icon: '✕', danger: true },
+            { id: 'health', label: this.t('dashboard.healthOpenInHealth', 'Show in Health'), icon: '♥', key: 'Shift+R' },
+            { id: 'delete', label: this.t('dashboard.contextMenuDelete', 'Delete'), icon: '✕', danger: true, key: 'Delete' },
         ];
 
         // A selection replaces the single-row actions entirely rather than being
@@ -244,11 +300,30 @@ class DashboardContextMenu {
 
             if (action.submenu) {
                 item.setAttribute('aria-haspopup', 'menu');
+                // Promised by aria-haspopup and expected by anything reading the
+                // menu: closed until the submenu is actually open. The entry is
+                // rebuilt each time the menu opens, so `false` here is always
+                // the truth at that moment.
+                item.setAttribute('aria-expanded', 'false');
                 const caret = document.createElement('span');
                 caret.className = 'move-popover-submenu-caret';
                 caret.textContent = '▸';
                 caret.setAttribute('aria-hidden', 'true');
                 item.appendChild(caret);
+            }
+
+            if (action.key) {
+                const kbd = document.createElement('kbd');
+                kbd.className = 'move-popover-item-key';
+                kbd.textContent = action.key;
+                // The chip is a label, not a second thing to read out: the item
+                // already says what it does. Screen readers get the key from
+                // aria-keyshortcuts on the item instead, which is what that
+                // attribute is for.
+                kbd.setAttribute('aria-hidden', 'true');
+                item.setAttribute('aria-keyshortcuts',
+                    window.ShortcutFormat?.ariaKeys?.(action.key) || action.key);
+                item.appendChild(kbd);
             }
 
             pop.appendChild(item);
@@ -295,6 +370,20 @@ class DashboardContextMenu {
             if (e.key === 'ArrowDown') { e.preventDefault(); e.stopImmediatePropagation(); setFocus((focusedIdx + 1) % items.length); return; }
             if (e.key === 'ArrowUp') { e.preventDefault(); e.stopImmediatePropagation(); setFocus((focusedIdx - 1 + items.length) % items.length); return; }
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopImmediatePropagation(); if (items[focusedIdx]) confirm(items[focusedIdx]); return; }
+            // ArrowRight opens a submenu — the convention in every native menu,
+            // and the counterpart to the Escape-walks-back path that was already
+            // here. Without it the submenu could only be entered with Enter,
+            // which also happens to be how you activate an ordinary item, so
+            // there was no way to tell the two apart from the keyboard.
+            if (e.key === 'ArrowRight') {
+                const item = items[focusedIdx];
+                if (item?.getAttribute('aria-haspopup') === 'menu') {
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    confirm(item);
+                }
+                return;
+            }
         };
 
         items.forEach((item, idx) => {
@@ -475,6 +564,18 @@ class DashboardContextMenu {
                 }
                 return;
             }
+            // ArrowLeft leaves the submenu the same way Escape does — the pair
+            // ArrowRight/ArrowLeft is how native menus are walked, and only the
+            // way back existed.
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                close();
+                if (parentPoint) {
+                    this.show(row, bookmarkRef, parentPoint);
+                }
+                return;
+            }
             if (e.key === 'ArrowDown') { e.preventDefault(); e.stopImmediatePropagation(); setFocus((focusedIdx + 1) % items.length); return; }
             if (e.key === 'ArrowUp') { e.preventDefault(); e.stopImmediatePropagation(); setFocus((focusedIdx - 1 + items.length) % items.length); return; }
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopImmediatePropagation(); if (items[focusedIdx]) void choose(items[focusedIdx]); return; }
@@ -607,10 +708,9 @@ class DashboardContextMenu {
 
         const done = () => {
             if (row) {
-                row.classList.remove('bookmark-copy-flash');
-                void row.offsetWidth;
-                row.classList.add('bookmark-copy-flash');
-                row.addEventListener('animationend', () => row.classList.remove('bookmark-copy-flash'), { once: true });
+                // Shared helper: the remove/reflow/add dance replays an animation that
+                // may still be running, and was written out by hand in five places.
+                d.bookmarkRows?.restartRowAnimation?.(row, 'bookmark-copy-flash');
             }
             // Name the reason when it is the origin, because that one is fixable:
             // the browser does have a share sheet and is withholding it over
@@ -794,6 +894,7 @@ class DashboardContextMenu {
             // drift from the other two routes.
             case 'inbox-promote':
             case 'inbox-read':
+            case 'inbox-unread':
             case 'inbox-snooze':
             case 'inbox-note':
             case 'inbox-tags':
@@ -806,6 +907,7 @@ class DashboardContextMenu {
                 if (!inbox || !item) break;
                 if (action === 'inbox-promote') inbox.promoteItem(item);
                 else if (action === 'inbox-read') void inbox.markReadFromKeyboard(item);
+                else if (action === 'inbox-unread') void inbox.markUnreadFromRow(item);
                 else if (action === 'inbox-snooze') inbox.openSnoozeMenu(item, row);
                 else if (action === 'inbox-note') void inbox.editNote(item);
                 else if (action === 'inbox-tags') void inbox.editTags(item);
@@ -825,6 +927,18 @@ class DashboardContextMenu {
             case 'check-mode':
                 this.showCheckModeMenu(row, bookmarkRef, { parentPoint: options.parentPoint });
                 break;
+            case 'pin': {
+                // Through the palette's persistence path, so pin has one writer
+                // whether it comes from :pin, Shift+P or this menu.
+                const target = bookmarkRef.bookmark;
+                const commands = d.searchComponent?.commandsComponent;
+                if (target && typeof commands?._persistBookmarkField === 'function') {
+                    // It applies the flip itself and reverts it if the write
+                    // fails, so the badge cannot end up disagreeing with the file.
+                    void commands._persistBookmarkField(target, { pinned: !target.pinned });
+                }
+                break;
+            }
             case 'health':
                 void this.revealInHealth(bookmarkRef);
                 break;

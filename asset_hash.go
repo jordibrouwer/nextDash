@@ -152,6 +152,9 @@ func assetURL(rel string) string {
 var lazyLoadedAssets = []string{
 	"js/whats-new-modal.js",
 	"js/dashboard/dashboard-config.js",
+	"js/dashboard/dashboard-config-context-menu.js",
+	"js/dashboard/dashboard-config-stats.js",
+	"js/dashboard/dashboard-config-bookmarks.js",
 	"js/health-reason-utils.js",
 	"js/shared/last-opened-format.js",
 	"js/health-tutorial.js",
@@ -160,6 +163,7 @@ var lazyLoadedAssets = []string{
 	"js/dashboard/dashboard-health-focus.js",
 	"js/dashboard/dashboard-inbox-triage.js",
 	"js/dashboard/dashboard-inbox.js",
+	"js/inbox-tutorial.js",
 	"js/dashboard/dashboard-inline-edit.js",
 	"js/dashboard/dashboard-context-menu.js",
 }

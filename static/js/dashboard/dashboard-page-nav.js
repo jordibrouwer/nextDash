@@ -76,7 +76,16 @@ class DashboardPageNav {
         }
         d.updateDocumentTitle();
         d.setActivePageNavButton(targetPageId);
+        // Where you were before you opened Health, Inbox or config. The render
+        // has to happen first — there is nothing tall enough to scroll to yet —
+        // and a page that has since grown shorter clamps itself.
+        const restoreTo = d.data?.takeRememberedScroll?.(targetPageId) || 0;
         d.renderDashboard({ animate: false });
+        if (restoreTo > 0) {
+            requestAnimationFrame(() => {
+                window.scrollTo({ top: restoreTo, behavior: 'instant' });
+            });
+        }
         window.ThemeIconStyling?.applyThemeIconStylingToDocument?.(d.settings);
         d.keyboardNavigation?.clearSelection?.();
         d.keyboardNavigation?.scheduleUpdate?.();
@@ -165,7 +174,6 @@ class DashboardPageNav {
      * rather than out in the left-hand column under the view name.
      */
     updatePageBreadcrumb() {
-        const d = this.dash;
         const el = document.querySelector('.title-breadcrumb');
         if (!el) return;
 
@@ -224,7 +232,6 @@ class DashboardPageNav {
     /** Inline page-tab rename (name/icon/color) — desktop/tablet landscape only. */
 
     allowsPageTabInlineEdit() {
-        const d = this.dash;
         return window.MobileExperience?.isMobileLayout?.() !== true;
     }
 
@@ -373,6 +380,12 @@ class DashboardPageNav {
             pageBtn.setAttribute('role', 'tab');
             const isActive = d.isBookmarksView() && d.samePageId(page.id, d.currentPageId);
             pageBtn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            // 1–9 switch pages, and the tab itself never said so. Sighted users
+            // get the hint from the tooltip; this is how it reaches a screen
+            // reader. Only the first nine: there is no key for the tenth tab.
+            if (index < 9) {
+                pageBtn.setAttribute('aria-keyshortcuts', String(index + 1));
+            }
             pageBtn.tabIndex = isActive ? 0 : -1;
             if (isActive) {
                 pageBtn.classList.add('active');
@@ -423,6 +436,7 @@ class DashboardPageNav {
             const inboxLabel = d.language?.t?.('dashboard.inboxPageTitle');
             const inboxName = inboxLabel && inboxLabel !== 'dashboard.inboxPageTitle' ? inboxLabel : 'Inbox';
             inboxBtn.setAttribute('aria-label', inboxName);
+            inboxBtn.setAttribute('aria-keyshortcuts', 'Shift+I');
             inboxBtn.title = inboxName;
             inboxBtn.innerHTML = `
                 <svg class="page-tab-icon page-tab-icon--svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
@@ -541,7 +555,6 @@ class DashboardPageNav {
      */
 
     _positionPageTabPopover(popover, anchorEl, { initial = false } = {}) {
-        const d = this.dash;
         const pad = 8;
         const gap = 6;
         if (initial) {
@@ -815,7 +828,6 @@ class DashboardPageNav {
 
 
     findBookmarkRowForDeepLink(link) {
-        const d = this.dash;
         if (!link) return null;
         if (link.bookmarkIndex != null && link.bookmarkIndex >= 0) {
             const byIndex = document.querySelector(

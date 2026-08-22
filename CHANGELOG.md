@@ -8,8 +8,19 @@ For install and security, see the [README](README.md). For how to use features, 
 
 ## Table of contents
 
-- [v1.0.1 — August 2026](#v101--august-2026)
-- [v1.0.0 — August 2026](#v100--august-2026)
+- [v1.3.2 — 21 August 2026](#v132--21-august-2026)
+- [v1.3.1 — 20 August 2026](#v131--20-august-2026)
+- [v1.3.0 — 19 August 2026](#v130--19-august-2026)
+- [v1.2.1 — 17 August 2026](#v121--17-august-2026)
+- [v1.2.0 — 16 August 2026](#v120--16-august-2026)
+- [v1.1.2 — 15 August 2026](#v112--15-august-2026)
+- [v1.1.1 — 15 August 2026](#v111--15-august-2026)
+- [v1.1.0 — 15 August 2026](#v110--15-august-2026)
+- [v1.0.4 — 15 August 2026](#v104--15-august-2026)
+- [v1.0.3 — 14 August 2026](#v103--14-august-2026)
+- [v1.0.2 — 14 August 2026](#v102--14-august-2026)
+- [v1.0.1 — 13 August 2026](#v101--13-august-2026)
+- [v1.0.0 — 13 August 2026](#v100--13-august-2026)
 - [v2026.09.09.3 — August 2026](#v202609093--august-2026)
 - [v2026.09.09.2 — August 2026](#v202609092--august-2026)
 - [v2026.09.09.1 — August 2026](#v202609091--august-2026)
@@ -162,7 +173,528 @@ For install and security, see the [README](README.md). For how to use features, 
 
 ---
 
-## v1.0.1 — August 2026
+## v1.3.2 — 21 August 2026
+
+The hover card, rebuilt. It was seven stacked divs that printed the address twice, hid the one state worth acting on, cut itself off at 360 pixels without saying so, and chased the cursor while claiming to be reachable — on a dashboard where the row underneath already showed more than the card explaining it. It is three bands now, in a fixed order, each absent rather than blank; it knows what the rest of the app knows about the link; and how it is reached is a choice rather than a switch.
+
+### Link preview cards
+
+- **new** — **the card is rebuilt around three questions**: what this is, what it says, and what you know about it — a header with the favicon, the title, one address and a status pill; then the picture, the fetched description, your note and the tags; then a facts strip. Every band is absent rather than blank when it has nothing to carry, so a bare link is a short card instead of eighty percent empty space. The address is stated once: the old card printed the full URL in mono and then its hostname on the next line, two of seven rows saying the same thing, neither clickable.
+- **new** — **the card knows about nextDash.** Last check and ping, uptime over thirty days, a certificate about to expire, the Fresh count, opens and last opened, the shortcut and the page it lives on. All of it read from what the app already holds in memory — hovering a row still makes no request; only a card you asked for may fetch the health figures, once.
+- **new** — **peek and pinned are separate.** Hovering gives you something to read: the card takes no pointer events and carries no buttons, so there is nothing to aim at and no reason for it to move. `Shift + V` pins it — focusable, with Copy, Refresh and Edit in a footer, closing on `Escape` and handing focus back to the row.
+- **new** — **three ways to reach it, not a switch.** *Off*, *On hover* (the new default) and *Keyboard only*, for people who want what the card says without a panel appearing under the pointer — their only answer used to be off, which throws away the whole feature to avoid one behaviour of it. Beside it a checklist of the eight rows the card may draw, and the card itself, drawn from one of your own bookmarks and redrawn as you tick.
+- **new** — **uptime and an expiring certificate show on hover**, not only on a card you pinned. The dashboard already fetches the whole health report on every load to put a number on the health icon — a row per bookmark, carrying monitor stats and certificate expiries — and read twelve counts out of it before dropping the rest. The badge keeps the four facts worth carrying now (uptime over thirty days, certificate expiry, how long something has been failing, and the error), keyed by canonical URL, and the card reads them. No new request: a hover still costs nothing, and the pinned-mode fetch is left as the fallback for a dashboard with the health icon switched off. The health view's own report wins when it is open, since it is the fresher of the two, and a refresh there updates what the cards quote.
+- **fix** — **the card no longer chases the cursor.** It was repositioned on every pixel of `mousemove` while claiming to be reachable, so moving toward the refresh button moved the card away, and on a dense grid it slid across the rows underneath. It is anchored to the row it describes, which is what the keyboard path always did.
+- **fix** — **"never opened" is a row.** `if (openCount > 0)` hid the usage line, so the most interesting state a bookmark can be in — you saved it and never went back — rendered as nothing at all.
+- **fix** — **a dead thumbnail leaves no gap.** The image was hot-linked with no `onerror` and its wrapper shown before it loaded, so a rotted og:image drew the broken-image glyph in a 150-pixel band — in the one app that exists to notice rot.
+- **fix** — **nothing is cut off silently.** The card was `max-height: min(360px, …)` with `overflow: hidden`: a picture, a title, a description, a note, tags and three more rows passed that easily and the last rows simply were not there. The blocks clamp themselves now, so the card is only ever shorter for a reason you can see.
+- **fix** — **the note is your note.** It was rendered in the same tertiary grey as the site's marketing copy and truncated twice — cut at 140 characters in JavaScript, mid-word, then clamped to three lines in CSS. It is labelled, marked with a rule in the accent colour, and clamped once.
+- **new** — **the hover delay starts calm**, at 250 ms rather than 150. A card that opens the moment the pointer crosses a row opens on every row you were only passing over on the way somewhere else — and with the card now carrying six kinds of information, the cost of opening one you did not ask for is higher than it was. Fast and Balanced are still there. An install that has already chosen a delay keeps it.
+- **fix** — **the hover delay offered delays it would not accept.** The list read *Instant, 200 ms, 400 ms, 700 ms, 1 s* while the code took 100, 150 or 250 and quietly rewrote everything else to 150: four of the five options did nothing. It offers the three that work.
+- **fix** — **turning cards on no longer takes the description away from screen readers.** The card removes the row's `title` so the browser tooltip does not sit on top of it, and hovering is mouse-only — so assistive tech was left with nothing. The text moves to a hidden element the row points at with `aria-describedby`, and a pinned card is a real dialog.
+- **fix** — the payload the card draws was assembled by hand in three places — hover, the keyboard toggle and the refresh button — so every new field meant three edits, which is why there were none. One `buildPreviewPayload()` now, and the sample in the setting is drawn by the card's own code rather than a mock-up free to drift from it.
+
+### Fixes
+
+- **fix** — **an edit no longer resets a bookmark's statistics.** The dashboard saves a page by POSTing the whole list back, built from what the browser had in memory — so anything the server had written since the page loaded was silently absent from it, and the save wrote its absence. Open a bookmark, then edit any bookmark on that page, and the open count went to zero; the last check, its error, the fetched preview text and the certificate host went the same way. `carryServerOwnedBookmarkFields()` puts back every field the payload does not carry, matched on the canonical URL. A value the payload *does* carry still wins, so an import keeps its own counts and a check still clears an error it has just re-tested.
+- **fix** — **"Show in Health" lands on the row you asked for.** The health list selects the row under the pointer, and a row arriving *under a cursor that never moved* is not a hover — but the browser reports it as one. Opening a bookmark in Health left the pointer wherever the menu item had been, the list drew beneath it, and the row you asked for lost its selection to whichever row landed there. Hovering now has to be earned by an actual `pointermove` after a row is focused by name; the same applies to a `?hv_id=` deep link.
+- **fix** — **the inline editor takes the clicks aimed at it in Safari.** Every non-editing row's children carried `filter: blur()`, which gives each column its own compositing layer — and WebKit hit-tests those in paint order rather than by z-index, so a blurred neighbouring column was painted over the tall inline form and ate every click on its fields. `pointer-events: none` does not help; WebKit hit-tests the layer regardless. At 18% opacity the blur was doing almost nothing visible, so it is gone — the same fix that settled this bug class in the check-mode popover. The rows stay dimmed.
+- **fix** — the health badge fetched the **entire** health report on every dashboard load — a row per bookmark with names, tags, scores and reasons, plus the duplicate groups, the daily trend and the fleet view — to read twelve counts out of it. It asks `?view=facts` now: the counts plus only the bookmarks that have something to report. Measured against a real library: 8,424 bytes down to 458. The health view still loads the full report, which is the one screen that draws it.
+- **fix** — `bookmarksLoading` and `bookmarksKeysHint` were each written twice in the same locale object, in all four languages. A JSON parser keeps the last one and says nothing, so the earlier line was a string that looked live and could never render. `npm run validate:locale-duplicates` now fails on any key written twice, reported by path and line — the check that would have caught the three delay labels added and withdrawn during this release.
+- **fix** — `:preview off` followed by `:preview on` no longer moves someone who chose **keyboard only** onto hover. The command is a switch, so it puts back the mode it took away.
+- **fix** — the twinkle that marked this release's new setting still pointed at **Appearance → Layout**, two releases after the setting it introduced. A mark that outlives its release teaches people to ignore the mark, so the trail is cleared until the next one earns it.
+
+### Config
+
+- **new** — **Appearance → Display → Link preview cards** is a panel of its own: the mode as three labelled choices, the hover delay, the eight-row checklist, and a live card drawn from one of your own bookmarks — the setting you otherwise had to leave the screen and hover something to understand. It names **Bookmarks → Link preview** and **Health**, where the fetched text and the bookmarks without one are managed, so a reader landing on any of the three finds the other two.
+- **new** — **Config → Overview** carries the card as this release's spotlight, with what it is, how to reach it and the way through to the setting.
+
+### Docs
+
+- **new** — the Appearance help article gains a **Link preview cards** section: the three bands, the three modes, `Shift + V`, and the checklist — in English, Dutch, German and French. The README's line about a card that "shows full URL, open count, and last-opened date" described a card that no longer exists, and the MANUAL's compatibility table said link previews were off by default.
+- **fix** — `linkPreviewDelayInstant` and `showLinkPreviewCardsLabel` were locale strings for controls that no longer exist; both are gone from all four languages. Three delay labels were added and then dropped again when it turned out the file already carried them a few lines further down — a duplicate key in the same object, where the later one silently wins.
+
+## v1.3.1 — 20 August 2026
+
+Fresh, made to work. It shipped in 1.3.0 depending on a setting most installs have switched off — link previews — so it could never find a feed, and a reader who turned it on watched a dashboard that never changed. This release makes it look for its own feeds, say what it found, and answer which bookmarks take part at all. Plus the modifier click every browser honours, given back.
+
+### What's new
+
+**Fresh**
+
+- **new** — **which bookmarks take part in Fresh, three ways.** A row with a feed and nothing new was identical to a row with no feed, and the count on the tab said how many there were without saying which. The **bookmark editor** now shows a *Feed* line with the address when there is one — the place to look when a bookmark never says anything. **`status:feed`** (and `-status:feed`) narrows a search to the ones taking part. And **Behavior → Fresh → mark rows that publish** puts a quiet dot on those rows even when nothing is new; **off by default**, because a mark on twenty rows that are silent most of the time is the noise Fresh exists to avoid. A real count still wins over the dot.
+- **new** — **Fresh is a tab of its own** under Behavior, between Inbox and Status & health. It was the fourth panel down a tab about link checking, which answers a different question — *is this still there* against *has this moved on* — and is where a reader stops looking. Behavior is seven sub-tabs now.
+- **fix** — **Fresh looks for its own feeds.** It learned where a feed lived only as a side effect of fetching a link preview, so an install with link previews switched off never fetched a page, never discovered anything, and answered “nothing new” forever — which is exactly what the reader who reported this saw, with the feature on and `feeds.json` empty. Switching it on now reads the head of each saved page itself, records the pages that have no feed so they are not asked again for a month, and polls what it found. The panel says what came of it — *7 of 7 bookmarks asked · 0 publish a feed*, and in that case a sentence saying so is not a fault — with **Find feeds now** beside it to repeat the round.
+- **fix** — Fresh polls on an hour of its own instead of borrowing the health recheck interval, which can be switched off entirely while Fresh is on — and was, on that same install — and runs as slowly as once a day. Every request is conditional, so an hour is unremarkable for the site on the other end.
+- **new** — **Fresh is offered rather than hidden.** It is off by default and its switch sits four panels down a tab called Status & health, so the people it was built for never met it. A corner card now offers it once — skipped only on an all-but-empty page, and never shown to someone who already has it on — and hands over to a four-step walkthrough rather than switching anything on: what the count means, the collection it gathers into, why polling costs almost nothing (the feed was already found while a preview was fetched, and every request is conditional), and what it deliberately is not. The last step is the switch itself, because a walkthrough that ends in “now go and find the setting” wastes the one moment the reader is convinced. It is offered before those two, since it is the one thing here nobody has had the chance to meet. Same shape as the side-rail and spread-across-columns cards, and the same walkthrough is one button away in **Config → Help → Monitoring**, where Fresh now has a panel of its own with a state line saying whether it is on for you. No article list, no titles, no OPML — deliberately not a feed reader.
+
+**The dashboard**
+
+- **fix** — **`Ctrl/Cmd`+click on a bookmark opens it in a new tab**, as it does on every other link on the web. It used to tick the row for a bulk action, with `preventDefault` — so the one modifier every browser honours did the opposite of what it does everywhere else, and on a Mac it came with the row menu on top of that, `Ctrl`+click being the platform's secondary click. The mouse route into a selection is **`Alt`+click** now, on the grid and in the health view alike; `Shift`+click still extends a range, `x` still ticks the row under the cursor, and *Select* is still in the right-click menu. The open is recorded by the row itself, since letting the browser have the click means the anchor's own handler never runs — without that, opening this way would not have counted, and Fresh reads the same timestamp.
+
+**Statistics**
+
+- **new** — the section says what its numbers mean. **What this says** opens Overview with the three things that follow from the figures — where your opening lands, what is going unread, what is not answering — each with the button that acts on it, and nothing at all when there is nothing to report. A count you cannot act on is trivia.
+- **new** — **the tiles carry a direction.** The daily points the health report has been recording all along now also hold how many bookmarks were untagged and how many opens there were, and Statistics reads them through a new `/api/health/trend` — a file read of a few dozen points rather than the full report they used to ride with. A tile says `+7 this week` when it moved, and nothing when it did not: `+0` is noise dressed as information. Narrowed to one page, the comparison is dropped rather than invented.
+- **new** — **the activity chart in a sentence**, above the bars: how long the window is, where the busiest point sits, and how many bookmarks it accounts for. A screen reader had thirty numbers in a table and no shape; everyone else had to hover for the peak.
+- **new** — **most-opened and category rows hand off** to the bookmark list the way the tag rows already did, and each tab carries a 🔗 that copies a link to it. Statistics has been deep-linkable all along and nothing on the page said so.
+- **fix** — `computeStats()` walked every bookmark five times over on **every** paint — a tab switch, a scope change, the Overview cards, the export — for figures that cannot change between two paints of the same data. It is computed once per paint now and shared by the six callers, and dropped at the start of the next one, since a bookmark's own fields are edited in place all over the app.
+- **fix** — the **CSV carries every tab**. Health and Inbox come from the server and load when their tab is opened, so an export from Overview silently left two of the five tabs out of a complete-looking file. It waits for them now, and writes `inbox_included,0` if a fetch failed rather than dropping the rows without saying so.
+- **fix** — the note explaining that Inbox and Health cannot be narrowed to one page no longer appears on a single-page install, where there is no narrowing to explain.
+
+**Health**
+
+- **fix** — the row menu is **as tall as its contents**. It capped at `min(70vh, 24rem)` — 384px on any window — so a row whose repair options ran long put a scrollbar inside a context menu, and a menu you have to scroll is a menu whose last item nobody finds. Sprawl was the reason for the cap, and placement answers that better: the menu flips above its trigger when there is no room below, and the cursor path clamps it inside the viewport. The window is the only cap left.
+
+**Bookmarks**
+
+- **new** — **the filters are in the address bar.** The list could be narrowed five ways and the hash knew only the page, so "the 41 untagged on Work" was something you could see and not hand to anyone, and a reload threw it away. Query, category, tag, cleanup filter and sort now ride in the hash, and a link opens the list it describes. An unfiltered list keeps the short hash it always had.
+- **new** — **an empty list says which filter emptied it.** It blamed your search whatever was actually narrowing — a cleanup filter with nothing in it, a page with no rows, a tag nobody uses — which sent people looking in the search box for a query that was not there. Each filter that can empty a list now says so in its own words.
+- **new** — **a selection survives a filter change**, so "tick the untagged, then also the duplicates" is possible at last. The bulk bar is honest about the consequence: *12 selected (3 not shown by this filter)*, because acting on rows you cannot see is exactly the surprise the old clearing was there to prevent.
+- **new** — **undo for bulk tags, pins and availability**, on the eight-second toast the bulk delete already had. Forty rows retagged could not be picked apart by hand, and `replace` cannot be reversed by reasoning about what it did — so the undo restores the pages as they were rather than inverting the edit.
+- **new** — **the three orders people use are chips**, not options five and seven of a menu: page order, recently added, most opened, with the rest still in the select. Beside them, **Changed in the last week** — the question after an import or an afternoon of tidying, which every bookmark has carried the timestamp for and nothing could ask.
+- **new** — the keys the list answers to are written under the toolbar: `j`/`k`, `x`, Enter, Esc. They worked; nothing said so.
+- **new** — **the list draws a screenful, not the whole library.** Infinite scroll answered how much is fetched and nothing about how much is painted: a row is thirty-four elements, so a thousand rows is thirty-three thousand nodes and four megabytes of markup, and five thousand is a third of a second of layout on every repaint — a tag added, a row ticked. The rows near the viewport are drawn and the rest are two spacers of the right height, so the scrollbar still describes the whole list and nothing jumps: two thousand rows go from sixty-seven thousand nodes to about a thousand, and the build from 88 ms to 3 ms. Off below a hundred and twenty rows, where the arithmetic would buy nothing, and off while a row is expanded into its editor, whose height the spacers cannot know. `j`/`k` walk the loaded rows rather than the drawn ones and drag the window with them, and focus is put back on the row it was on — otherwise closing a menu would drop the list's keyboard navigation.
+- **new** — **the bookmark list is its own file**, `dashboard-config-bookmarks.js`, fetched when config opens rather than carried by every visit to any other section: twelve methods and four hundred lines that draw rows, the bulk bar, the tag cloud, the chips and the crumbs. Same prototype, same methods, moved verbatim — only the moment they arrive has changed. Opening the section waits for them rather than flashing a placeholder and repainting over it, which would tear down whatever the reader had already reached for; the placeholder is what a failed fetch leaves, and it says the list is on its way. Split one section at a time on purpose: lifting the whole of config out at once failed on forty-one tests, and the failures did not name the method that had moved.
+- **fix** — **typing in the search box no longer throws away how far you had scrolled.** Refining a query is a narrowing of what you are already looking at, and being thrown back to row fifty after four hundred rows — for one letter, sometimes a letter you then delete — is what makes a long list feel hostile.
+- **new** — **one answer to “which bookmarks”.** `status:untagged` in the search bar and the cleanup filter *Without tags* here are the same question, and they were written twice, so they were free to disagree: a tag that is nothing but spaces counted as a tag in one place and not the other, and the statistics panel had a third opinion about a note of whitespace. Fourteen of those questions — untagged, noted, never opened, opened once, insecure, no icon, changed, stale and their negatives — now come from one registry, `bookmark-predicates.js`, loaded before the search bar, the config list and the statistics. Only *Duplicates* stays local: it is the one that has to know about every other bookmark's address. The search bar also learned `status:feed` and `status:unfed` on the way in.
+- **fix** — the visible-rows memo is dropped at the start of each paint of the list. Bookmarks are edited in place all over the app, and none of that moves the array identity it keyed on, so the list could show a filter that no longer held.
+
+### Docs
+
+- **new** — the Fresh walkthrough and its help article answer the question every reader actually arrives with. The last step is *If nothing shows up* — an empty dashboard is the usual answer and not a fault, because most saved pages publish nothing — and both now name the count on the tab (*12 of 40 bookmarks asked · 2 publish a feed*) as the way to tell that apart from a broken feature. The article also says plainly that a row carries no mark for *publishes, but nothing new*: a badge on twenty silent rows would be the noise Fresh exists to avoid.
+- **Help describes the config that exists.** Behavior said five sub-tabs and has six — Search and Inbox are separate now, and its Status & health section had grown from three panels to seven without the prose noticing Fresh, downtime alerts, browser notifications or maintenance windows. Appearance sent readers to *Behavior → Layout* for the grid, a tab that no longer exists, and to *Date & time*, which is *Date & weather*. Data & backups described a single *Maintenance* panel where there are now Icons & previews, Server log and Reset. The section rail listed eight sections in the wrong order and omitted About; Bookmarks never mentioned its Settings tab. Four languages, plus the drawing caption that still counted five sub-tabs.
+
+## v1.3.0 — 19 August 2026
+
+Twenty-four changes across 148 files, +14,585 / −3,343 lines, and one subject running through all of it — **the life of a link**. How it gets in when you are not at the desktop that has the extension; how you find out it has rotted; how the tidying becomes something you can finish rather than a number you learn to ignore; and how a page you saved tells you it has published something. The fourth strand is speed: the dashboard's first load is about five times lighter than it was.
+
+### What's new
+
+**Capture — from wherever you are**
+
+- **new** — **PWA share target**. Installed as an app, nextDash appears in the phone's share sheet; a shared link lands in the Inbox and the app opens on it. Android often puts the address inside the shared *text* rather than in the URL field, so the first `http(s)` address in either is used, with trailing sentence punctuation left to the sentence.
+- **new** — **`GET /add?url=…&title=…`**, and a bookmarklet built for you in **Config → Help → Inbox** carrying this install's origin. Both routes are plain GETs because neither a share sheet nor a bookmarklet can set a header; on an install with a write token, `NEXTDASH_CAPTURE_TOKEN` opens these two routes and nothing else.
+- **new** — **[`integrations/`](integrations/)**: a shell script, two Raycast commands (one for a URL, one for the frontmost tab in five browsers), a Dropzone action, a Ulauncher extension, and Alfred and Apple Shortcuts recipes. No binary bundles — steps you can read instead.
+- **new** — **manifest shortcuts** for Inbox, Health and Config, so a long-press on the installed app opens the view rather than the dashboard.
+- **fix** — duplicate detection looks **everywhere**, not only at the page being saved to, and answers with the conflicting bookmark's name, page and category rather than a bare 409. Same page is refused; another page asks, with the existing bookmark as a link and **Save anyway** to file a second copy. Moves send `allowDuplicate`, since a move is an add followed by a delete.
+
+**Link rot**
+
+- **new** — **broken since**: the first failure of a run is recorded, so a row can say *failing for three weeks* rather than only *broken*. Carried into the filters, the row, the export and the report.
+- **new** — **soft 404 detection**: a monitored check can spot a page that answers 200 while saying *not found*. One bounded body read per check, which is why it is a switch beside the check timeout rather than always on.
+- **new** — **group by site**: one host down reads as one problem instead of forty.
+- **new** — **archive fallback**: point a dead link at its last Web Archive capture, keeping the original address in the note.
+- **new** — **history days**: the trend can be read over a longer window, and a window the samples cannot fill says so rather than pretending.
+- **new** — **Rot report** in the toolbar: what has gone, moved or been rewritten, has been failing for over a month, is broken and never opened, and what broke this week. Everything in it was already in the report; what was missing was somewhere it added up.
+- **fix** — the Rot report button was never styled, and rendered as a bare user-agent button between four styled ones.
+
+**Cleaning as a ritual**
+
+- **new** — a **card in the corner of the dashboard** names what is waiting — *“10 links to review: 4 broken, 3 never opened, 3 not opened in a year”* — and starts a bounded session over the worst ten in the health view's Work through. Below five waiting links it stays quiet.
+- **new** — the session **ends**: a count of what was dealt with, **Another ten** while more are waiting, and **Done for today** which puts the offer away until the next local day. Skipping is not handling, so the count is honest.
+
+**Fresh**
+
+- **new** — a page's `<link rel="alternate">` feed is noted while previews are fetched, polled on the background re-check interval with a conditional request, and a bookmark carries a count of what has been published since you last opened it. A **Fresh** smart collection lists them newest publication first.
+- **new** — opening the bookmark clears the count; `lastOpened` is the whole of the read state. No article list, no titles, no OPML — deliberately not a feed reader.
+- **new** — off by default, under **Behavior → Status & health → Fresh**; switching it on polls once immediately rather than waiting for the scheduler.
+
+**The dashboard, in place**
+
+- **new** — **`Shift + F`** filters the page you are on: a slim bar narrows the rows, hides the categories left empty, and keeps the layout, the cursor and any selection.
+- **new** — **the scroll offset is remembered per page**, across a view change and a reload, for as long as the tab is open. Switch it off under **Behavior → General**.
+- **new** — a selection can be **pinned** and **switched to Periodic or Monitor** in one action, and a bulk tag change can be **undone** for eight seconds.
+- **new** — **`Shift + Alt + ← / →`** moves the focused bookmark into the category beside it; smart collections are skipped, being a query rather than a place.
+- **new** — **what typing a bookmark shortcut does is a setting**: open the moment it matches (default), open after a short pause, or press Enter. Inbox settings moved to a tab of their own, and Search gained the three-card control with an interactive **ℹ**.
+- **fix** — **the default is *open the moment it matches* again, and v1.2.0's change to *press Enter* is recorded here as a mistake.** The reasoning in v1.2.0 was that an instant shortcut can swallow an ordinary word, and which words survive depends on the shortcuts you own. That is true, and it is the rare case: what the change actually did was charge every shortcut, on every use, a second keystroke to prevent it — which takes away the reason to have a shortcut at all. The collision has two answers that cost nothing when it is not happening: the two other modes, and renaming the shortcut that clashes.
+- **fix** — the new default reaches existing installs. `shortcutOpenMode` is written into every settings file v1.2.0 touched, so a default change alone would have reached nobody. `migrateShortcutOpenModeDefaultInstant` moves installs still carrying `enter` — the value nobody chose — to `instant` once, behind `shortcutOpenModeInstantMigrated`; `delay` is left alone, because it can only be there because someone picked it, and the marker means anyone who sets Enter back keeps it through the next restart.
+- **fix** — the category header's glyph follows the favicon harmonisation setting, instead of staying at full saturation beside recoloured icons.
+- **fix** — the filter bar is placed above the grid rather than inside it. As the layout's first child it was fine while the layout was a CSS grid and wrong in every other shape: packed columns lay it out as a flex row that does not wrap, so the bar became a column of its own — squeezed to a fraction of its width and pushed off the left edge of the window (x = −21 on a three-column page). It also kept a search field inside `role="grid"` and gave masonry a child that is not a category.
+
+**Config**
+
+- **new** — **Config → Help → Tips filters itself.** Fifty-three tips in nine groups, and the search in the header returns whole panels — the wrong grain when you are after the one key that does the thing. The field narrows to the line, counts what is left, says so when nothing matches, and hides a group whose rows have all gone. Rows are hidden rather than re-rendered, so the cursor stays where you are typing.
+- **new** — **a topic that continues on another tab says so.** Health and Monitoring answer different questions on purpose, but the split left no thread: seven panels now carry a *Continues in* line — availability to uptime and alerts, working through the list to drift, the walkthrough to expected responses and maintenance windows, and back. The button writes the same `#config/help/<tab>/<panel>` hash the panel's own link copies, so clicking it and following a shared link land in the same place.
+- **new** — the **Server log** panel says whether it is on for you, like the four panels that already did. It is off by default, which is exactly when a reader follows the prose and finds nothing where it says. Fresh deliberately has no such line: it is a paragraph inside the monitoring prose rather than a panel, and hanging the line on a panel about something else would say something untrue.
+- **new** — the **version panel reads the release index** instead of carrying the number in four translated strings. It read *nextDash 1.1.0* for two releases after 1.1.0, because the fourth file was the one nobody remembered. The ★ modal, Overview → Latest update and this heading now agree by construction.
+- **fix** — on a narrow screen, **a config section reached by hash or by a restored visit is scrolled into view properly**. The strip carries `scroll-snap-type: x proximity`, which re-snapped the nearest-fit scroll to the closest button boundary and left Help hanging 36px over the right edge with 112px of scroll still available. It scrolls the strip itself now, aligned to the start as the snap expects.
+- **fix** — **Help opened with empty panels** when its prose did not arrive. That text is a locale scope of its own — a third of the translation file, fetched beside the config module — and every panel falls back to nothing, so a page of headings with no text under them was the failure mode. A core locale load replaces the whole bundle, so one landing after the help scope had merged (a reload onto a `#config/help` link, a settings sync while config is open) wiped it, and switching help tabs repainted from the same empty bundle. The core load now keeps the help keys when the language has not changed, and every help repaint asks the bundle whether the prose is really there rather than trusting a flag.
+- **new** — **Appearance → Button bar** is one tab for one object: where the bar sits (the five positions, each drawn) and what it carries (*main buttons* and *extras*, with Show all / Hide all and a count). The position was a panel on **Layout** and the twelve toggles were two panels on **Toolbar & tabs**, two tabs further along, so moving the bar and hiding a button on it were separate errands. Toolbar & tabs keeps the **Header** group, which is a different strip. Everything that pointed at the old homes now points here: the settings search, the side-rail card's *Open button bar settings*, both Overview → New features entries, Help → Appearance, the manual and the README.
+- **new** — the settings search matches a setting's **current value** as well as its name, and shows it after the location, with switches read as On/Off.
+- **new** — settings that stay server-wide while *Keep settings on this device only* is on carry an **all devices** mark; the switch itself is marked **this device**.
+- **new** — **Duplicate** a page (with its categories, and optionally its bookmarks) or a category (with its width, icon and sort). Copies start with empty check and open history, and without the original's shortcut.
+- **new** — **edit a name or shortcut in the row**: double-click the title or click the shortcut pill — including the faint **+** on a bookmark that has none. A shortcut already in use is named as you type it and refused on Enter, checked across every page.
+- **new** — a tag in **Most used tags** opens Config → Bookmarks filtered to it.
+
+**Speed**
+
+- **new** — 99 scripts and 42 stylesheets are served as two bundles, the generated theme is inlined, Help's translations load with Help, and each view's stylesheet arrives when the view is opened. First load: **169 requests and 915 KB → 30 requests and 685 KB**. `NEXTDASH_BUNDLE=off` restores the individual tags.
+- **new** — config's cold open is **74 ms → 55 ms**, the bookmark list draws **2757 → 1762** nodes, and the module is 1000 KB → 884 KB with the statistics renderers loading beside their own section.
+
+### Docs
+
+- `static/data/whats-new/v1.3.0.json` and the index entry ahead of v1.2.1. `DASHBOARD_RELEASE` and `NEXTDASH_WHATS_NEW_DATA_VERSION` are bumped, which is what reopens the modal for everyone — right for a feature release, where v1.2.1 deliberately left both alone.
+- `tests/whats-new-hidden-release.spec.js`: the shipped-index case now asserts v1.3.0 leads the index and the modal, that v1.2.1 is still recorded and still hidden behind it, and that the two constants name v1.3.0. The four fixture-driven cases that prove the mechanism are untouched.
+- **Config → Help** gained the release's subjects in every tab that owns one — the shortcut modes, the cross-page duplicate question, coming back where you were, Fresh, the review session and the Rot report, finding a setting by value, and the capture routes — plus eleven new **Tips**, in four languages.
+- The **cheat sheet** gained `Shift + F` and `Shift + Alt + ← / →`, and the **printable sheet now carries every key the modal does** — 12 sections, 164 rows, three A4 pages in two columns, with 32 one-off palette commands left off and counted. It was a curated subset policed by a 70-row one-page budget, which made the paper a smaller product than the app: a key added to the modal was not on the sheet, and which keys made the cut was decided by whoever ran out of page first. The short `printFallback` wording stays, because a printed row that reads in one line is still the point; the registry check is coverage now rather than a ceiling, and it compares row by row within a section — the same chord means different things in different views, and a key-only index answered for the wrong row.
+- Every **Help** article now opens with a drawing of its own subject rather than only the panels whose topic was a shape: the three search prefixes in the field they are typed into, the health tiles in the colours the rows wear, a certificate meter with the day the warning starts marked on it, a maintenance window shaded into a day, the boundary the statistics never cross. Thirteen new shapes joined the `SettingArt` vocabulary — steps, keycaps, state legends, a typed query, bars, a trend line, a meter, a day strip, switches, swatches, colour plates, a bookmark row and config's own rail — so config, help and the tours keep drawing the same things the same way. Labels inside a drawing go through `t()`; `200 OK`, `Shift + H` and `data/*.json` do not. Seventy-one caption strings, in four languages.
+- `tests/config-setting-art.spec.js` checks coverage rather than a hand-counted number: every prose panel on every Help tab must open with a drawing. Its paste-route case was stale — the setting moved to Behavior → Quick add & inbox — and had been failing since.
+- **Config → Overview → New features** carries the six headline items of this release, newest first — Capture, the cross-page duplicate question, the Rot report, the review session, Fresh, and the Button bar tab.
+- `MANUAL.md` and `README.md` cover every feature above; the Help version panel names 1.3.0.
+- **240 dead help strings are gone** — 60 per language, 408 KB, describing the config that was replaced: tab groups called System/Dashboard/Extras, archiving pages, an Essentials/Advanced toggle. Nothing in the app had read them since that config went; the only things that named them were `scripts/apply-help-prose.js` and `scripts/help-prose-content.js`, generators for a help system that no longer exists, which go with them. `en.json` is 591 KB → 494 KB, and the 23 of those strings that were never translated into German or French stop being a translation debt.
+- `npm run validate:help-i18n` checks Help the way the cheat sheet has been checked for a while: a key English has and another language does not is fatal, since the fallback is the English wording and renders as a translation nobody got round to. Strings identical to English and strings the other locales still carry are reported, not failed — failing on those would make an accurate translation impossible to ship. It found `helpIntro` untranslated in German and French on its first run; **272 help strings, complete in four languages**, plus `inlineEditHintMac`, which existed only in English.
+- The server **re-narrows a locale file when it changes on disk**. The `core`/`help` split is cached per language and scope, and it was cached for the life of the process — so an edit to a translation was invisible until someone restarted the server, which is the one feedback loop that matters while writing them. The cached entry now carries the file's modification time and size. Served off disk it also revalidates (`no-cache` plus an ETag and a 304) rather than being held for a day; a binary serving its embedded copy keeps the day, because there nothing can change under a running process.
+- `tests/config-help-navigation.spec.js` pins the tips filter, the cross-tab jump and the version heading; `locale_scope_cache_test.go` pins the cache following the file and the revalidation.
+- `tests/config-help-prose-loads.spec.js` covers the empty-help failure from both ends: prose that goes missing while the view is open comes back on the next repaint, and a core locale load no longer drops the help scope out from under it.
+- `tests/help-current-features.spec.js` pins the help prose, the tips and the two cheat-sheet keys against the rendered UI, so the next release cannot quietly leave them behind.
+- `tests/config-help-health.spec.js` was stale from the Health/Monitoring tab split — nine of its fifteen cases failed before this release. Expectations follow the tabs now, and its translation case waits for Help's own scoped strings rather than racing them.
+
+## v1.2.1 — 17 August 2026
+
+One fix, in the Health view. Flagged `hideFromModal` in the index: it counts toward the version number and shows in **Config → Overview → Latest update**, but does not reopen the What's new modal, which still leads with v1.2.0. `DASHBOARD_RELEASE` and `NEXTDASH_WHATS_NEW_DATA_VERSION` are deliberately unchanged — those two tokens are what re-show the modal, and a one-fix release should not push a feature release off the front of it for everyone who has already read it.
+
+### What's new
+
+- **fix** — usage no longer decides where a row sits. `never_opened` and `not_opened_30_days` cost 10 points each, so opening a bookmark — the action the Broken filter's own note asks for — raised its score, and under the default worst-first sort carried the row away: measured on a 200-bookmark install, position 10 of 200 became position 188 while the reader was still working through the list. Both penalties are 0 now; the flags, the **Unused** and **Stale** tiles and filters, and the reason text on the row are unchanged.
+- **fix** — the score sort's tiebreak reads the flags with the two usage ones removed (`stableStatusRank`) rather than the status. Status alone was not enough: opening a never-opened row that also has no preview turns `unused` into `missing-preview`, a different rank, and the row travels on that instead.
+- **fix** — a row you have acted on keeps its position. Opening one under **Unused**, or re-checking one under **Broken**, takes it out of what the filter selects, and the list used to close the gap under the cursor. It stays at the position it held, dimmed and marked **handled**, until the list is asked a different question (filter, sort, search) or reloaded on purpose with `R` or **Retest all** — and when the view is left.
+- **new** — the score breakdown separates deductions from context: reasons that cost nothing are listed under *worth knowing, at no cost to the score*, because a full score with a deduction printed beneath it reads as broken arithmetic.
+
+### Docs
+
+- `static/data/whats-new/v1.2.1.json`, and the index entry ahead of v1.2.0 carrying `hideFromModal: true`.
+- `tests/health-list-stability.spec.js` pins both halves against the real UI path — the row's own Open — and compares positions against the rows whose own score did not move, so a startup check landing mid-test cannot pass for a re-ranking. Both halves were falsified: restoring the penalties fails the score assertion, removing the anchoring fails the position one.
+- `tests/whats-new-hidden-release.spec.js`: the real-index case flips to asserting v1.2.1 is hidden and that v1.2.0 still leads the modal; the constants case now asserts the two tokens are *unchanged*, and says why that is right here where bumping was right for v1.2.0. The four fixture-driven cases are untouched.
+- `MANUAL.md` and `README.md`: the score breakdown no longer lists the two usage penalties, and both describe the handled row and the sort key nothing can move.
+
+## v1.2.0 — 16 August 2026
+
+The keyboard release, and the one where three views stop lying about what they know. Typing on the dashboard used to open bookmarks mid-word; the inbox counted links it was not showing; a failed health check worked out its cause and threw it away. All three are now what they appear to be.
+
+### What's new
+
+**Typing and keys**
+
+- **fix** — typing on the grid no longer opens anything by itself. A bookmark shortcut fired the instant the typed query matched it exactly, so which of your words survived depended on which *other* bookmarks you owned: on a 200-shortcut install, eight of thirteen ordinary words were swallowed mid-word. Typing now narrows the list and **Enter** opens the top result, with the exact shortcut match leading it — one keystroke more, and stable against every bookmark you add later.
+- **fix** — `g`, `j` and `k` no longer eat the first letter of a word. Letters reach the grid only while a row is selected (`_letterMayActOnGrid`); the arrows always pass, `j`/`k` stop propagation once they act, and the `g`/`G` chord paints `data-grid-keys` on the body instead of swallowing the keystroke. `c` is the documented exception: it still creates a category unconditionally, because four specs pin that behaviour deliberately.
+- **new** — the mode prefix is drawn in front of the query line (`>` search, `:` commands, `?` finders) with an **×** to clear it, and `closeSearch()` now clears `#search-query` instead of leaving the old text behind.
+- **new** — an optional key legend under the bookmark grid, shown after the first keystroke and hidden again on Enter. **Behavior → General → Show grid key legend**, on for fresh installs (`Settings.ShowGridKeyLegend`).
+- **new** — **Show shortcut hints on toolbar icons** is off for everyone, via a one-time migration (`migrateShortcutTooltipsDefaultOff`, marker `ShortcutTooltipsOffMigrated`). A default change alone would not have reached existing installs, which all carry the field in their stored settings.
+- **new** — the shortcut field warns about the letter you are assigning: `ShortcutKeys.gridKeyNote()` says what the grid does with it and when, and `usedShortcutsNote()` lists the shortcuts the page has already spoken for.
+
+**Inbox**
+
+- **fix** — every count follows the active filter. `filterBaseItems()`/`narrowItems()` feed the tiles, the pills and the badge, **Mark all read** becomes **Mark shown read** while `isNarrowed()`, and the first tile is **Active** — asleep is deliberately excluded.
+- **fix** — snoozed links have a footer saying how many are asleep and when the first wakes, and `domainOptions()` no longer offers a host whose only link is asleep.
+- **new** — **Import** beside the CSV and JSON exports (`openImportPicker`, `parseImportPayload`, `importFromFile`), skipping links already present and reporting added / already there / rejected.
+- **new** — `markUnread(id)` and a row-menu entry for it, and the fetched summary (`previewDesc`) is rendered on the row, searched, and carried into both exports.
+
+**Health**
+
+- **fix** — a failure records its class (`failureClass`, `HealthSample.Fail`) so DNS, timeout, refused, TLS, redirect and content failures reach the incident list, the timeline and the CSV with a reason. Anything that was not an HTTP error stored `Up:false, Code:0` and showed nothing.
+- **fix** — a failed check is re-probed after `monitorConfirmDelay` and only recorded if it fails again, so one dropped check no longer dents a month of uptime.
+- **fix** — `buildMonitorStats` reports `CoveredMs`, and `renderUptimeTiles` prints how much history is behind a window rather than labelling a week "30 days".
+- **new** — certificate expiry comes from every check: `liveHosts` now includes `CheckStatus` bookmarks, not only monitored ones.
+- **new** — a recovery names its duration, `TREND_SERIES` gives the trend chart six series with a per-mode axis, `/api/health/expectations-bulk` mutes or unmutes a whole selection, and `Settings.HealthCheckTimeoutSeconds` replaces the fixed three-second dial timeout.
+
+**Search**
+
+- **new** — negation. `parseSearchFilters` produces `filters.not`, and `matchesAdvancedFilters` runs the positive keys then the negative ones, so `tag:dev -status:pinned` is expressible in the bar the way it always was in a collection rule.
+- **new** — `status:untagged`, `status:tagged`, `status:noted` and `status:unnoted`; `:trash` as a command onto `#config/data-backups/trash`; and `Ctrl/Cmd+Enter` on a result opens in a new tab regardless of the standing preference.
+
+**Dashboard and config**
+
+- **new** — undo for moves: single (`undoBookmarkCategoryMove`) and cross-page bulk (`undoBulkMoveToPage`), each restoring from a snapshot so every bookmark returns to its own category. `showGroupedNotification` translated `undoCallback` into nothing — the bulk-delete undo it also gates has been dead since it shipped.
+- **new** — category icons (`openIconEditor`, live preview into `.category-title-icon`) and `Alt+←/→` to move a category, announced to screen readers.
+- **new** — `setting-art.js` draws the settings whose subject is a shape (grid, spacing, margins, density, dots, type size, layout version, bar position, flow), in config and in help.
+- **fix** — a settings change made elsewhere now reaches an open dashboard: `fetchDataRevision` tracks the settings revision (`GetSettingsRevision`) and routes a change through `refreshAfterConfigSettingsUpdate`.
+- **fix** — a failed automatic backup is visible: `autoBackupRunState` records `LastRunAt`/`LastRunError` and the tile reports it.
+- **new** — a bookmark row in config carries a page › category breadcrumb pill, each half filtering the list.
+- **new** — fresh installs start on **Retro CRT** (`defaultThemeID`), with fold-all and shortcut hints off. Existing installs are untouched.
+- **new** — the extension can send a link straight to the inbox: two context-menu entries, a `quick-save-inbox` command on `Ctrl/Cmd+Shift+U`, and tags carried through `postInboxLink`.
+
+### Docs
+
+- `static/data/whats-new/v1.2.0.json` and the index entry ahead of v1.1.2. `DASHBOARD_RELEASE` (`2026.08-dashboard-release-v1.2.0`) and `NEXTDASH_WHATS_NEW_DATA_VERSION` (`whats-new-v245`) are both bumped: a feature release that left them alone would be announced to nobody who had already dismissed v1.1.2.
+- `tests/whats-new-hidden-release.spec.js`: the real-index and constants cases move to v1.2.0. The four fixture-driven `hideFromModal` cases are untouched.
+- **Config → Overview** gains three feature spotlights — typing filters/Enter opens, the health failure reason, and the inbox counts — with their five locale keys each in en/nl/de/fr.
+- `MANUAL.md` and `README.md` carry the keyboard model, the inbox round, the health engine and the new settings; **Config → Help** and the printable cheat sheet were updated alongside them.
+
+## v1.1.2 — 15 August 2026
+
+A release that exists to announce the one before it. v1.1.1 shipped `hideFromModal` so it would not displace v1.1.0 on the day both landed; that call is reversed here.
+
+### What's new
+
+- **fix** — the `hideFromModal` flag is dropped from the v1.1.1 index entry, so the modal lists it again. The flag only ever gated the modal: the release tag and **Config → Overview → Latest update** read `index[0]` and have shown v1.1.1 since it shipped.
+- **new** — `DASHBOARD_RELEASE` (`2026.08-dashboard-release-v1.1.2`) and `NEXTDASH_WHATS_NEW_DATA_VERSION` (`whats-new-v244`) are bumped, so the modal reopens once for every user. Unbumped they would have left the un-hiding invisible to anyone who had already dismissed it — the two tokens are the whole re-show mechanism, which is why v1.1.1 deliberately left them alone.
+
+### Docs
+
+- `static/data/whats-new/v1.1.2.json`, and the index entry ahead of v1.1.1.
+- `tests/whats-new-hidden-release.spec.js`: the real-index case flips from asserting v1.1.1 is hidden to asserting nothing in the top three is, and that the modal lists both v1.1.2 and v1.1.1; the constants case moves to the v1.1.2 literals and says why bumping is right here where it was wrong there. The four fixture-driven cases are untouched — the flag still works, it is simply no longer in use.
+- `MANUAL.md`: the What's new section now says a release can be recorded without being announced, and names v1.1.1 as the one that was.
+
+## v1.1.1 — 15 August 2026
+
+Keyboard consistency, and the parts of the app that teach it. Flagged `hideFromModal` in the index: it counts toward the version number and shows in **Config → Overview → Latest update**, but does not reopen the What's new modal, which still leads with v1.1.0. `DASHBOARD_RELEASE` and `NEXTDASH_WHATS_NEW_DATA_VERSION` are deliberately unchanged — those tokens are what re-show the modal.
+
+### Keyboard
+
+- **new** — the Shift+letter family is closed: `Shift+E` inline edit and `Shift+V` preview join move, tag, delete, checking, pin, share and reveal. `;` and `[` still work, undocumented, the way `0` still opens the inbox. Brackets mean *previous / next sub-tab* in config, and one pair of keys meaning two things was the reason to move preview off `[`.
+- **new** — share moves to `Shift+L`, so `Shift+S` always opens config. It was the only key whose meaning depended on whether a row was selected, which took two cheat-sheet rows and a parenthesis to explain. The capture-phase handler still *declines* rather than swallows a key it has no row for — that is what keeps `Shift+S` reaching `setupPageShortcuts` over a selected row, and `tests/shift-key-row-actions.spec.js` (renamed from `shift-s-two-meanings.spec.js`) pins it.
+- **new** — bare letters act on keydown. `C_HOLD_MS` and the g-chord hold are gone, and with them the whole `keyup` handler in `keyboard-navigation.js` and `SearchComponent.addShortcutLetter`, which had no other caller. `_activateGChordMode` now runs on the first `g`; `G_CHORD_MS` (3s) is the only timer left.
+- **new** — `j`/`k` alias `ArrowDown`/`ArrowUp` in the grid, matching config's section rail and bookmark list.
+- **new** — `Shift+Home` focuses the category header via `focusCategoryHeader()`, which reuses `resolveFocusedCategoryEl`. `Delete` on a focused header calls `categoryMenu.runAction('delete', …)` instead of opening the menu; `Shift+F10` opens it.
+- **fix** — `handleContextMenu` took `clientX`/`clientY` at face value, which a keyboard-raised `contextmenu` reports as 0/0. `menuPointFor()` falls back to the row's rectangle; the category menu's own handler does the same.
+- **fix** — `resolveFocusedCategoryEl` took an options argument: `:width` keeps the first-category fallback because the palette names what it acts on, `Shift+W` passes `fallbackToFirst: false` and falls through.
+- **fix** — `search.js` kept a code-name list (`KeyM`/`KeyD`/`KeyT`/`KeyB`) that had fallen behind the keys added since; it tests `/^Key[A-Z]$/` now.
+- **fix** — `setupPageShortcuts` was the only typing guard in the app without an `isContentEditable` check.
+
+### Discoverability
+
+- **new** — `DashboardContextMenu` renders a `kbd.move-popover-item-key` per entry with a matching `aria-keyshortcuts`, for all eleven actions that have a key. `ShortcutFormat.ariaKeys()` and `.modifierLabel()` are shared with the category menu, which had the chips but no aria.
+- **new** — `syncShortcutAriaHints()` stamps `aria-keyshortcuts` on the toolbar, the header buttons and the first nine page tabs. It runs independently of `showShortcutTooltips`: the tooltips are a desktop hover affordance that can be switched off, this is the only route the keys have to assistive technology. `shortcutButtonDefs()` replaces the three parallel lists that let the header row end up with tooltips and no aria.
+- **fix** — the side-rail legend printed the what's-new button's `★` glyph in the same chip as real keys.
+
+### Cheat sheet
+
+- **fix** — `buildPrintSections` passed each row's `printFallback` to the caller's label resolver as a *fallback*, and `generate-cheatsheet.cjs` resolves from `locales/en.json`, where the i18n check guarantees every `cheatKey` exists. The short wording therefore never reached paper for any of the 23 rows that carry one. `printLabel()` uses it directly. `validate-cheatsheet-registry.cjs` gains a check built with the generator's resolver — with the identity resolver the other checks use, a `printFallback` wins either way and the check would pass against the bug.
+- **new** — printed rows for `k`/`j`, `Shift+E` and `Shift+Home`; `nextDash-cheatsheet.html`, `nextDash-cheatsheet.pdf` and the `static/` copy regenerated.
+
+### Config
+
+- **new** — `logFilterActivity` is a fourth value for the log viewer's *Show* control, matched on `Source == "activity"` by `logEntryMatchesFilter()` rather than on severity. Activity lines already flowed into `serverLogSink` through `log.Printf("activity: …")` and `parseServerLogLine` already split the subsystem out; nothing about capture or `NEXTDASH_ACTIVITY_LOG` changes.
+- **new** — **Help → About** carries the wordmark and three addresses: `nextdash.cc`, GitHub, and `jordibrw.nl`. The `help-signature` sign-off is dropped, so each address appears once.
+
+### Dashboard
+
+- **fix** — `.category-title` centres its flex items instead of aligning them on the baseline. The `+` button hangs padding and a border below its own baseline, which made every header carrying it 1.44px taller; centring costs nothing, where a `line-height` tall enough to swallow the button added 3px to every header. `.category-title--multiline` keeps `flex-start`.
+- **fix** — `*` carries the same guards as `!` and `.`, with an exception for its own modal so it still closes the recent list.
+
+### Analytics
+
+- **new** — `settings-snapshot` widens from 21 to 45 fields and a new `content-snapshot` reports install size (bookmarks, pages, categories, tags, finders, collections, monitored, inbox totals). Every value is bucketed client-side; `MAX_EVENT_PROPS = 50` is Umami's per-event limit, which is why it is two events. `analytics_content.go` counts server-side and returns `""` when telemetry is off — `analytics_content_test.go` proves it with a nil store, where any counting would panic.
+- **fix** — a custom theme reported its own id, which is `theme-<base36>-<4 chars>` and random per install: not a name leak, but distinctive enough to follow one install across releases. It reports `custom`.
+
+### Docs
+
+- `MANUAL.md` and `README.md` follow the moved keys, the G chord, the category-header keys, the right-click menu chips, the log viewer's *Activity only* and the About tab.
+- `locales/{en,nl,de,fr}.json`: the cheat-sheet rows for the moved keys, two new rows (`navCategoryHeader`, `bmCategoryDeleteKey`), a rewritten `config.helpKeyboardBody`, `keyboardFixedNoteGridNav` without the hold, `logLevelActivity`, `logActivityHint`, `helpAboutBody`, `helpSiteProject`, `helpSiteAuthor`.
+- `static/nextdash-wordmark.png` is keyed out of `logo-ascii-on-black-large.png` by greenness rather than brightness; the existing `logo-ascii-transparent.png` clears only pixels darker than 40, which leaves the glow behind the middle of the word as a dark ellipse.
+- New: `tests/dashboard-keyboard-uniformity.spec.js`, `tests/config-help-about.spec.js`, `TestServerLogSinkActivityFilter`. Updated: the c-hold and G-chord cases in `tests/create-page-category-from-dashboard.spec.js` and `tests/dashboard-grid-shortcuts.spec.js`, the category-menu chip case in `tests/dashboard-nice-to-haves.spec.js`.
+- `go generate ./...` for the changed CSS/JS.
+
+## v1.1.0 — 15 August 2026
+
+The first minor since 1.0: a category can be wider than one column. `DASHBOARD_RELEASE` and `NEXTDASH_WHATS_NEW_DATA_VERSION` are bumped, so the modal reopens once.
+
+### Categories across columns
+
+- **new** — `Category.Spread` (`spread` in `bookmarks-{page}.json`) marks a category as allowed to run across grid columns; uncategorized and the smart collections keep theirs in `settings.categorySpreads[pageId][categoryId]`, the shape `categorySortModes` already uses. `dashboard-category-span.js` owns both, so no caller has to know which applies.
+- **new** — the width itself is derived, never stored: `spanForCount` is `min(ceil(count / categoryItemLimit), effectiveColumns, 12)`. It was a number the user picked in the first draft; it became a switch because the number is implied by two settings that already exist, and a stored number goes stale the moment a bookmark is added.
+- **new** — `applyCategoryItemLimit` multiplies the limit by the span, so a spread category shows its limit once per column and stays the height of its neighbours. `refreshAllCategorySpans` runs from `finishIncrementalRefresh`, which is what makes an added bookmark bring the next column with it rather than waiting for a reload; `settleSpanChange` follows that through to the "+ N more" cut and, in packed mode, to a full re-render.
+- **new** — the two settings rule out each other's extreme: `spreadUnavailableReason` returns `unlimited-items` when `categoryItemLimit` is 0, and the config select disables *Unlimited* while `anySpreadCategory` holds. Both say why where they are asked for.
+- **new** — routes: `DashboardCategoryMenu` (entry flips to *Back to one column*, no `aria-checked` beside a label that already flips), `Shift+W` in `keyboard-navigation.js`, `:width on|off|all`, a `data-cat-spread` button per row in the categories editor, and `Appearance → Layout → Categories across columns` for the defaults and the reset.
+- **new** — `.category--wide` spans with `grid-column: span var(--category-span)` and repeats the row's track pattern once per column, so `subgrid` alignment survives. The inner column gap is the grid gap plus `2 × --category-inline-pad`: a run of categories pads every column on both sides, a single wide box only its outer edges, and without that the inner columns sat 16px left of the grid. `syncWideColumnTracks` pins the shortcut and lead tracks, which are intrinsic and were sized per repeat by whichever rows happened to land in them.
+- **new** — a rule under the header spanning the block, and a `↔N` badge in the header, both dropped while the category is collapsed or one column wide.
+
+### Packed columns
+
+- **new** — packed keeps its round-robin flex columns while nothing spreads, and switches to a grid (`packed-masonry`) the moment something does: `--masonry-span` rows per category from `dashboard-packed-masonry.js`, `grid-auto-flow: row dense`, a `ResizeObserver` per category. Bands were tried first and left a hole the height of the tallest column beside the wide block.
+- **fix** — `syncCategoriesFromDom` read the columns in document order while the render filled them round-robin. Those are not each other's inverse, so every category drag rewrote the order into one that redistributed differently and scrambled the page. `readCategoryElementsInOrder` is the single inverse now, keyed on what is in the DOM, and `getExistingCategories` delegates to it.
+- **fix** — `syncDashboardGridLayout` rebuilds `className` wholesale and dropped `packed-masonry`, so any settings refresh — including the one behind a window resize — left the categories as bare flex children of a row with no columns in it.
+
+### Config
+
+- **fix** — the location memory was written only on the exits config knows about; the header's health, inbox and page buttons switch view around it. `restoreConfigHash` now saves on every move inside config and `setActiveView` stamps it on the way out. The TTL is 5 minutes (`DashboardConfig` and `DashboardConfigLoader` both), counted from leaving rather than from the last click inside.
+- **new** — `type: 'action'` panel controls with `bindPanelActions`, used for *Turn spreading off everywhere*; `NEW_THIS_RELEASE` is the one place naming where the twinkle points, drawn on the section, the sub-tab and the panel.
+- **new** — `#category-context-menu` sizes to its content (`width: max-content`, capped at 24rem). The shared `.move-popover` cap is for the move/tag/delete pickers; at 16rem the widest row here needed 274px and got 237, so the `Shift+W` chip was trimmed away — and the French label is half again as long.
+
+### Config → Bookmarks
+
+- **new** — the section gets the sub-tab strip five others already have: **List** and **Settings**. The nine settings sat after the list — fifty rows down by default and up to five hundred as the infinite scroll loads more, which also rules out jumping to the bottom of a list whose bottom moves as you approach it. Registered in `SUB_TABS`, `SUB_TAB_STATE`, `SUB_TAB_ATTR` and `SUB_TAB_SECTION`, so the deep link, the remembered location and the arrow-key walk come for free; `handleOverviewGo` accepts `bmTab`.
+
+### Views
+
+- **new** — Health, Inbox and Config → Bookmarks draw one card from `feed-row.css` instead of three copies. The rule was written out in `health-view.css`, `dashboard-inbox.css` and `config-view.css` and the copies had drifted into being byte-identical — one design, three places to change it, and no way to tell whether a difference was meant. What genuinely differs is a modifier: `feed-row--with-select` for Health's checkbox column, and the coloured left edge each view uses for its own state, including modern layout's inset redraw of it. Classic layout also gains the row focus ring only modern had.
+- **new** — the shape the three views disagreed on is settled: Inbox rounded its filter pills and buttons where Health squared them off; rounded won. Config → Bookmarks reads as a view rather than a settings panel — a header with a count, the search box sized like Health's, and tiles matching Health's without the stripe.
+
+### Discoverability
+
+- **new** — `spread-notice.js` (a `NoticeCard`) and `spread-tutorial.js`, a four-step `AppModal` walkthrough in the shape of the inbox and health tours, reachable afterwards from `Help → Pages & categories`.
+- **fix** — `NoticeCard` bound an action with `querySelector`, and a card naming its × through `dismissName` puts that attribute on the × as well. The × comes first, so it took the handler and the button sharing its name got none: the side rail's *No thanks* had been dead since the cards were unified.
+
+### Docs
+
+- `MANUAL.md` — the spreading section with the columns-per-bookmark-count table, and the config-memory paragraphs at five minutes. Config → Bookmarks is described with its two sub-tabs.
+- `README.md` — the feature bullet, `Shift+W`, `:width on|off`, and the five-minute memory.
+- `CHANGELOG.md`, `static/data/whats-new/v1.1.0.json`, `index.json`, `whats-new-stub.js`, `tests/whats-new-hidden-release.spec.js`, the four locale files, and `go generate ./...` for `asset_hashes_gen.go`.
+
+---
+
+## v1.0.4 — 15 August 2026
+
+A review pass over the bookmark grid and the menus around it, in five rounds: correctness first, then consistency between routes that do the same thing, then accessibility, then performance, then cleanup. `DASHBOARD_RELEASE` and `NEXTDASH_WHATS_NEW_DATA_VERSION` are bumped, so the modal reopens once.
+
+### The grid
+
+- **fix** — `repaintBookmarkMutationSurfaces` passed `incremental: false`, the one flag `canAttemptDataPatch` refuses outright, so every add, edit, delete, move and tag change tore down the whole grid — every `DragReorder` instance, the scroll offset and the focused row — for what is usually one changed row. The incremental path's own guards decide now: `canAttemptDataPatch` still bails on a layout-settings change and `categoryStructureMatches` on a category added, removed or reordered.
+- **new** — the scroll offset is stored per page in `_pageScrollPositions` and consumed on return. Consumed, not kept: `takeRememberedScroll` deletes the entry, so a later deliberate visit still starts at the top.
+- **fix** — the incremental renderer built a category's empty state without the `+ bookmark` button `createCategoryElement` includes.
+- **fix** — rows are built at `tabIndex = -1` for the roving tab stop and `KeyboardNavigation` hands one of them a `0` only after walking the grid, which a render does not do — so Tab skipped the grid entirely from first paint. `syncBookmarkGridA11y` guarantees exactly one stop now, on the row `currentIndex` points at rather than on row 0, which would walk the tab position away from the user on every repaint.
+
+### Selecting several bookmarks
+
+- **new** — `deleteSelected` offers an undo toast for 8s, restoring in ascending index order (each splice shifts what follows) and dropping the redundant trash entries afterwards via `dropRestoredTrashEntries`.
+- **fix** — a failed save left the rows spliced out of the model and the selection cleared, then returned silently. Both are restored and `showErrorNotification` is called.
+- **fix** — the toolbar was `prepend`ed into `#dashboard-layout`, which carries `role="grid"`; a `role="toolbar"` among rows and rowgroups is invalid. It also rendered as a 90×278 vertical strip, because the grid is a flex row and `width: 100%` had nothing to fill. Inserted before the grid instead: full width, 44px tall, still sticky.
+- **fix** — the tags popover bound no scroll or resize handler and drifted away from its anchor. It reuses the shared reposition and outside-close helpers now.
+
+### Search
+
+- **new** — `SearchComponent.FILTER_KEYS` replaces three hardcoded four-item lists. `opened:` and `added:` parsed and filtered correctly but were absent from `getFilterHintItems`, unoffered as a prefix, and unrecognised by `_isCompleteFilterQuery`, so the completion list kept firing over real results. Their values are offered the way status values are, with `never` only under `opened:`.
+
+### Tag filters
+
+- **fix** — `updateTagFilterIndicator` had been reduced to a teardown that emptied `#tag-filter-indicator` on every call, leaving the header element and its CSS doing nothing. It carries the active tags and the match count now, and hides itself while the in-grid banner is on screen so the chips are not shown twice. `renderTagFilterBanner` gained `withToolbar` for that.
+
+### Menus and popovers
+
+- **fix** — `resolveRowBookmark` fell back to the URL for rows with no page-local index and searched the current page first. The same URL legitimately sits on more than one page, so a row belonging to another page resolved to the wrong bookmark before delete ever saw it. It matches on the row's visible label now; list order only decides when nothing distinguishes the candidates. Fixed in both copies — `dashboard-bookmark-interactions-loader.js` keeps its own, and that is the one that runs on the first right-click of a session.
+- **fix** — `_persistBookmarkField` swallowed every error and returned nothing while all three pin routes flipped `pinned` themselves. It applies the change (synchronously, before its first await, so the palette label still updates), reverts on failure, surfaces an error and returns a boolean; the callers no longer flip anything.
+- **fix** — the `Delete` key went through `AppModal` while `Shift+D` and the context menu used the anchored popover. All three use the popover now. The modal stays for the inline editor, whose row is a form at that moment, and for a multi-row selection.
+- **fix** — one shared `_bindActionPopoverOutsideClose` for Move, Delete, Tag and the multi-select tags popover: it also closes on an outside `contextmenu`, and matches the anchor by containment rather than identity.
+- **fix** — `_focusActionPopoverItem` picks its pattern from the container's role: `aria-activedescendant` with focus on the box for `role="listbox"`, roving tabindex for menus. The tag popover's second capture-phase keydown listener is removed — document capture runs first and every branch calls `stopImmediatePropagation`, so it never ran.
+- **new** — the check-mode submenu entry sets `aria-expanded`, opens with `ArrowRight` and closes with `ArrowLeft`, matching the Escape path that already existed.
+- **new** — the category menu shows `F2` and `Delete` as `aria-hidden` chips. "Add category" gets none: it is a held `c`, and a chip would promise a tap that goes to the shortcut search.
+- **new** — the category sort button opens on `ArrowDown`, which `aria-haspopup="menu"` already promised.
+- **fix** — `_restoreActionPopoverFocus` fell back to focusing a detached anchor, a no-op that left focus on `<body>`. It falls through to the first row still on the grid.
+
+### Reduced motion
+
+- **fix** — `dashboard.css` overrode four selectors with `animation: none !important`, contradicting `reduced-motion.css`, which uses `0.01ms` precisely so `animationend` still fires. `bookmark-copy-flash` and `bookmark-pulse` stayed on the row for the rest of the session. The 320ms wait before a cross-page move is skipped under reduced motion (`ANIM.BOOKMARK_MOVE_OUT`, `prefersReducedMotion()`).
+
+### Performance
+
+- `aria-colindex`/`aria-colcount` are constant and are stamped in `populateBookmarkRowView`; `syncBookmarkGridA11y` no longer does a `querySelector` per row on every render to rewrite them.
+- Click and auxclick are delegated to `#dashboard-layout` — two listeners for the grid instead of two per row. `contextmenu` stays per row: `bindRow` serves inbox cards too.
+- `restartRowAnimation` replaces five hand-written copies of remove/reflow/add plus `animationend`.
+- The action popovers reposition once per frame instead of once per scroll event, and the toolbar tooltip's `pointermove` sweep is frame-throttled with its header buttons cached.
+
+### Docs
+
+- `MANUAL.md` — the `Delete` row in the shortcut table, and the `Shift+S` entries in the cheat sheet registry and all four locales.
+- `nextDash-cheatsheet.html` and both PDFs — unchanged this release; the affected rows are not in the printed sheet.
+- `static/data/whats-new/v1.0.4.json`, `index.json`, `whats-new-stub.js`, `tests/whats-new-hidden-release.spec.js`, `README.md`.
+- 64 unused `const d = this.dash;` bindings across 12 files; two JSDoc blocks moved to the functions they describe; `CLICK_OUTSIDE_DELAY_MS`, `syncAllBookmarksMetadata` and the public delegate for `updateBookmarkRowsCategoryInDom` removed.
+- `go generate ./...` for the changed CSS, JS and locales.
+
+## v1.0.3 — 14 August 2026
+
+One theme across most of it: `openCount`, `lastOpened`, `createdAt`, `updatedAt` and `tags` were written on every path, fed the built-in features, and reached almost none of the ones the user drives. Plus settings for `Config → Bookmarks`, which had none.
+
+Unlike v1.0.1 and v1.0.2 this is **not** flagged `hideFromModal`, and both of those had the flag removed in this release — every version is visible in the What's new modal again. `DASHBOARD_RELEASE` and `NEXTDASH_WHATS_NEW_DATA_VERSION` are bumped, so the modal reopens once for everyone.
+
+### Config
+
+- **new** — the remembered config location applies on every exit and every way back in, expiring after 15 minutes (`CONFIG_LAST_TTL_MS`, stamped on the way out). It was saved only when leaving via `Shift+H` or `Shift+I` and cleared on every other exit, and `resolveConfigOpenTarget` additionally required `activeView` to be health or inbox — so the common route, Escape out and `Shift+S` back in, always landed on Overview. `clearLastConfigLocation` has no callers left and is removed. The expiry is duplicated in `dashboard-config-loader.js`, which reads the same entry on a cold load before the module exists; an entry with no `savedAt` predates the expiry and is treated as stale.
+
+### Config → Bookmarks settings
+
+- **new** — ten settings, all previously constants: stored sort (`configBookmarksSort`), rows per load step, and the availability, pin and category a quick-added bookmark starts with; the interval a bookmark gets when switched to Monitor, including in bulk; thresholds for confirming a delete and a bulk icon refresh; the "not opened in N days" figure, which also drives the cleanup score; and the archive service template.
+- **new** — `clampBookmarkSettings` enforces every range server-side rather than leaving it to the controls, since the API is reachable without the browser. The archive template must contain `{url}` and start with `http`, so it can never become a `javascript:` URL handed to `window.open`.
+- **fix** — opening a bookmark from Config now respects `openInNewTab`. The setting existed and the grid honoured it; this path forced a new tab regardless.
+
+### Reaching the data
+
+- **new** — `opened:` and `added:` in the search parser, matched by `matchesAgeFilter` against `today`/`week`/`month`/`year`, plus `never` for `opened:`. An unrecognised word filters nothing rather than everything, which is the safer way round for a typo.
+- **new** — custom collection rules gain `pinned`, `untagged`, `notOpenedDays` and `changedDays`. `valuelessRuleFields` keeps `pinned` and `untagged` without a value, so the server no longer drops them as half-filled. `changedDays` is the first reader `updatedAt` has ever had on the dashboard.
+- **new** — a **Recently added** smart collection on `createdAt`, off by default, with its own limit and page scope. The other four all key on `lastOpened` or `openCount`, so "what did I just add" was unanswerable.
+- **new** — `previewDesc` joins the search haystack, scored below the note: the site's words rather than the user's.
+- **new** — drift reaches the dashboard header badge in the warning tier. A drifted link still returns 200, which is exactly why it needed a human.
+
+### Grid
+
+- **new** — tag chips on rows, off by default, capped at a configurable two with the rest collapsing into `+N`. Rendered inside `.bookmark-link` rather than as a column: it is a subgrid whose columns align across every category, so an extra column would shift every row. Verified by measuring the shortcut column before and after — identical to the pixel, and pinned as a test.
+- **new** — `createSortControls` rebuilt as one active button plus a `⋯` menu. Four buttons per header, repeated per category, took more width than the bookmark names; the strip goes from ~90px to 19px, or 58px once something is sorted.
+- **new** — two sort modes, `added` and `opens`.
+- **fix** — the grid's `recent` mode sorted by `lastOpened` while Config used the same words for `createdAt`. Renamed to `opened`; `normalizeSortMode` still accepts the old value so stored categories keep working.
+
+### Keyboard and pointer
+
+- **new** — `Shift+P` pin, `Shift+S` share, `Shift+R` reveal in Health, `t` filter to the row's tag. Each delegates to the existing implementation — `_persistBookmarkField`, `shareBookmark`, `revealInHealth`, `toggleTagFilter` — rather than adding a second path that could drift.
+- **new** — pin gains a right-click entry. It had `Shift+P` and `:pin` but no pointer route at all from the grid, while every other one-bit row action had one.
+- **fix** — `Ctrl/Cmd+Enter` opens in a new tab for that press alone. `selectCurrentElement` fired a bare `.click()`, which constructs no `MouseEvent` and carries no modifier, so the keyboard had only the standing `openInNewTab` preference.
+
+### Inbox
+
+- **fix** — triage swallowed every key but Escape. Its guard asked `dash.isModalOpen()`, which counts the triage overlay itself, so the overlay blocked its own keyboard. Now asks `isLayeredModalOpen()` — whether something sits *over* triage. `advance()` was correct all along; nothing called it. Reported earlier and not reproducible then; the repro is a seeded queue of three and two presses of `j`.
+- **new** — a seven-step one-time tour (`inbox-tutorial.js`, `inboxTutorialV1`), fetched on demand rather than with the module: the inbox loads during bootstrap for the unread badge, so riding along would cost every session that never opens the view. Guards and structure mirror `health-tutorial.js`.
+- **fix** — `resetOnboarding` now calls `clearSeenTips()`. It only cleared `onboardingCompleted` while its own dialog promised to replay "the welcome tour and tips" — those ids live in `discoverabilityState.seenTips`, which it never touched, so no tour or tip had ever come back. `tipsNotBefore` is cleared with them; `seenSettingPromos` is deliberately left alone.
+
+### Config → Help
+
+- **new** — a fifth panel under Help → Inbox describing the one-time tour, and a matching entry in the help search index.
+
+### Docs
+
+- `README.md` and `MANUAL.md` (§4.5, the config chapter and the shortcut table) corrected for the config location memory: three of the four places describing it stated the old rule.
+- Four tests in `config-dashboard-view.spec.js` asserted the restored section without resetting `config.section` first, which `closeConfigView` leaves in memory — so they could not have failed. They reset it now.
+- `MANUAL.md` §4.4 and §7.9 cover the tour; the Health tour's replay line was corrected — it claimed a button that did not do what it said, which is what turned up the `resetOnboarding` defect.
+- `README.md`, `CHANGELOG.md`, the What's new modal and Config → Overview updated for this release.
+- 45 locale keys per language for the tour, 2 for the help panel, in `en`, `nl`, `de` and `fr`; the German and French reset hints were corrected against the real control labels.
+- `resetDashboardData()` added to the e2e helpers, and used by four spec files that depend on what they find. `/api/reset` re-seeds the defaults in ~39ms, so this is far cheaper than the per-spec fixtures estimated earlier. The suite as a whole is still not hermetic: ~166 files share one data directory.
+- Known and not addressed: `monitor-visibility-reveal` shows two flaky tests in group runs that pass on retry.
+
+## v1.0.2 — 14 August 2026
+
+A repair release for the config view, from a full audit of it. Flagged `hideFromModal` in `index.json` like v1.0.1, so it does not reopen the What's new modal.
+
+The recurring fault: a read that failed degraded to an empty list, and the next write posted that emptiness back as the complete state. Failure and emptiness were the same value, so a server blip during an edit destroyed real data behind a "Saved" badge.
+
+### Data integrity
+
+- **fix** — `ensureCategoryOnPage` (`dashboard-config.js`) turned a failed GET into a one-item POST that replaced every category on the page. Proven end to end: five categories in, one out, no error shown. `SaveCategoriesByPage`'s guard cannot catch it, since it only rejects a zero-length list. Now throws rather than degrading.
+- **fix** — `loadFinders` and `loadCategoriesEditor` set a `_xLoadFailed` flag instead of `[]`; `saveFinders` and `saveCategories` refuse to write while it is set.
+- **fix** — `saveCategories` returns whether it saved and takes the page id as an argument, captured by each caller at edit time. It swallowed the error and returned `undefined` either way, so the delete flow acted on a 409 as if it had worked — trash entry, undo toast and all. The page picker reassigns `_catPageId` synchronously, so a save in flight could also land on the wrong page.
+- **fix** — `SaveSettings` (`handlers.go`) reports dropped collections in the response instead of discarding them behind `{"status":"success"}`. Surfaced when leaving the Collections tab, not per save: a half-filled row is the normal state while typing.
+- **fix** — `publishConfigSync` added to `dashboard-config-sync.js`. The listener, the pending-marker drain and four specs all existed; nothing ever published, so a second tab stayed stale until reloaded by hand. The specs write the markers themselves, so they passed either way.
+
+### Config
+
+- **fix** — `refreshAllFavicons` posted a body-less request to `/api/bookmarks/prefetch-icons`, which is per-page and decodes the body first, so it answered 400 every time. Routed through `ConfigFaviconPrefetch`, as `search-commands.js` and `dashboard-quickstart.js` already did.
+- **fix** — the prefetch overlay drops `pointer-events` on completion. It covers the viewport at `z-index: 12000` and stayed up through the 900ms completion pause and the reloads after it, so the page read "Icons updated" while every click landed on the overlay. Found via a spec that timed out clicking Save; `elementFromPoint` over the button returned the overlay.
+- **fix** — `guardUniqueName` rejects empty and over-long names. It only ever checked duplicates and delegated emptiness to callers that never picked it up, so a cleared name saved as `""` and two emptied names stopped colliding, since `""` is never taken. Server clamps to the same 60 characters via `clampEntityName` (rune-wise, through `truncateRunes`), because the API is reachable without the browser.
+- **new** — `checkedAt`, `nextBackupAt` and `totalKept` are rendered. All three were shipped by the server and read by nothing; `totalKept` was silently excluded from the inbox conversion sum while the panel above showed it as its own tile.
+- **fix** — four `config.*` keys were missing from every locale (`addBookmarkBtn`, `bookmarkNotFound`, `clearBookmarkFilters`, `saved`).
+
+### Accessibility
+
+- **fix** — `labelSettingsControls()` names every schema-rendered control after the panel is drawn. Labels render as `<span class="config-field-label">`, not `<label for>`, so selects and number inputs across Behavior and much of Appearance had no accessible name. Done in one pass rather than at ~30 render sites that would drift. Ranges also get `aria-valuetext`, since `0.85` is not what the UI shows.
+- **fix** — `captureControlPanelFocus()` restores focus and caret across `repaintActiveControlPanels`. Controls bind on `change`, which fires while the control still has focus, and the repaint replaces the whole body — so the next Tab started from the top of the page. `repaintTagsBody` already did this, with a comment explaining the hazard.
+- **fix** — `bindSubTabStrip` re-focuses on the next frame rather than testing `target.isConnected` immediately. Appearance activates through `render()`, which had not run yet, so the branch was skipped and focus landed on `<body>` — one ArrowRight killed every press after it.
+- **fix** — both hand-rolled confirm dialogs handle Tab through `FocusTrapUtils.trapTabKey`. They declared `aria-modal="true"` and only handled Escape, so focus wandered into the page behind, including on Reset all data.
+
+### Import and export
+
+- **new** — theme import (`importThemeFromFile`, `normalizeImportedTheme`), reusing Duplicate's id and naming logic so it lands as a new theme and cannot overwrite the palette on screen. A JSON file with no colour values is refused.
+- **new** — CSV import (`importBookmarksCSV`, `parseBookmarksCSV`). Hand-written parser rather than `split(',')`: the export quotes every field so a note can hold a comma, a doubled quote or a newline. Columns are matched by header, so reordering them in a spreadsheet still imports. Rows go through `/api/bookmarks/import-browser`, keeping URL de-duplication server-side.
+- **new** — trash search across name, URL, tag, category and origin page, plus tick boxes and a bulk restore that runs per item so one failure cannot take the batch with it. Select-all covers what the search shows.
+- **new** — `SavedSearch` added to `Settings`, normalized by `normalizeSavedSearches` (trimmed, incomplete entries dropped, capped at ten). Saved searches lived only in `localStorage`, so they were in no ZIP backup; anything left there is migrated on first read.
+
+### Removed
+
+- Page archiving. `Settings.ArchivedPageIds` had defaults and a migration, and MANUAL and README described it as working and said where to find it, but no line of JS ever read it.
+
+### Docs
+
+- Release dates now name the day in both the changelog and the modal, per the new convention; v1.0.0 and v1.0.1 backfilled.
+- Twelve spec files fixed. None were product regressions: seeded inbox items read before the view had loaded them; `showRecentButton` asserted on the Display tab after it moved to Toolbar (eight failures from one line); `appearanceTab` set before `openConfigView`, which resets it; `.first()` matching a bookmark's smart-collection copy, whose row carries no page-local index; `role="feed"` asserted on `#dashboard-layout` for health, which renders it on `.health-view-feed`; cheat-sheet rows asserted visible inside collapsed `<details>`; `last-opened-format.js` still counted as lazy after `8115b0e7` made it eager; a hardcoded help-tab list now read from `HELP_TABS`; analytics regexes demanding the retired `vYYYY.` scheme; and `config-info-reset` demanding an `ℹ` for five fields whose own comment in `FIELD_META` explains they carry none.
+- Known and not addressed: the suite is not hermetic. All 170 spec files share one data directory with no reset between tests, so parallel and sequential runs drop different handfuls. Every file that failed the last full run passes on its own.
+
+## v1.0.1 — 13 August 2026
 
 A patch release on top of v1.0.0. Recorded here and versioned normally, but flagged `hideFromModal` in `index.json` so it does not reopen the What's new modal in front of users who have just read the 1.0 entry — see v2026.09.09.1 for the same treatment.
 
@@ -186,7 +718,7 @@ A patch release on top of v1.0.0. Recorded here and versioned normally, but flag
 - New `tests/health-trend-placement.spec.js` (6 specs). Locale keys for the trend title, axis, hover and explainer added to en/nl/de/fr.
 - `go generate ./...` regenerated `asset_hashes_gen.go` for the changed JS and CSS.
 
-## v1.0.0 — August 2026
+## v1.0.0 — 13 August 2026
 
 The first release under semantic versioning, and  deliberate milestone: after a long run of bug fixing and consolidation has left the app feeling finished and stable rather than in flux. From here `1.x.0` carries features and `1.0.x` carries fixes; see v2026.09.09.3 for the scheme change itself, which shipped the comparison logic ahead of this tag.
 

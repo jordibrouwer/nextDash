@@ -241,6 +241,19 @@ body[data-side-margin="airy"] {
     animation: datePopoverIn 0.13s ease forwards;
 }
 
+/* The category menu sizes to what it holds.
+ *
+ * .move-popover is capped at 16rem for the move, tag and delete pickers, which
+ * list every category, page or tag you have and want to stay narrow. This menu
+ * is four fixed rows, and each carries the key that does the same thing — at
+ * the shared cap the widest row needed 274px and got 237, so the chip was
+ * quietly cut off by the ellipsis. Longer translations make that worse: the
+ * French label for spreading is half again as long as the English one. */
+#category-context-menu {
+    width: max-content;
+    max-width: min(24rem, calc(100vw - 1rem));
+}
+
 /* The bookmark context menu is a fixed, short action list — unlike the move,
    tag and delete popovers, which share .move-popover and list every category,
    page or tag you have and genuinely need to scroll.
@@ -356,6 +369,31 @@ body[data-side-margin="airy"] {
     color: var(--text-tertiary);
 }
 
+/* The current value of an entry that opens a submenu — "3 columns" beside
+   "Width", so the menu answers as well as asks. It takes over the trailing
+   alignment from whatever follows it, or the row would grow three separate
+   right-aligned blocks. */
+.move-popover-item-detail {
+    margin-left: auto;
+    padding-left: 0.5rem;
+    font-size: 0.7rem;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+}
+
+.move-popover-item-detail ~ .move-popover-submenu-caret,
+.move-popover-item-detail ~ .move-popover-item-key {
+    margin-left: 0;
+}
+
+/* An entry that is present but cannot act — it still says what it is and, in
+   its detail, why it cannot. Removing it would leave the user looking for a
+   feature they read about. */
+.move-popover-item.is-disabled {
+    opacity: 0.55;
+    cursor: default;
+}
+
 /* ─── Check-mode submenu ─────────────────────────────────────
    Three named modes, each with the sentence that distinguishes it — the same
    copy the health view shows, so the choice reads identically wherever it is
@@ -390,6 +428,21 @@ body[data-side-margin="airy"] {
 
 /* The accelerator is printed on the option rather than taught elsewhere, so the
    keyboard route is discoverable from the menu itself. */
+/* Keyboard hint on a menu row: pushed to the trailing edge so the labels stay
+   left-aligned and the keys line up as a column of their own. Same chip as
+   .check-mode-option-key, which sits inside a label rather than beside one. */
+.move-popover-item-key {
+    margin-left: auto;
+    padding: 0 0.25rem;
+    border: 1px solid var(--border-secondary);
+    border-radius: 0.2rem;
+    font-family: inherit;
+    font-size: 0.65rem;
+    line-height: 1.4;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+}
+
 .check-mode-option-key {
     padding: 0 0.25rem;
     border: 1px solid var(--border-secondary);
@@ -642,7 +695,17 @@ body[data-side-margin="airy"] {
     opacity: 0.55;
 }
 
+/* Shown only while a tag filter is on — updateTagFilterIndicator sets `hidden`
+   the rest of the time, and [hidden] would otherwise lose to this rule. */
 .tag-filter-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.tag-filter-indicator[hidden] {
     display: none;
 }
 
@@ -1387,9 +1450,13 @@ body.no-animations .health-link.is-health-alert .health-link-anchor {
        whitespace. Below this width the per-column calc() takes over and the
        columns shrink gracefully toward --dashboard-column-min. */
     --dashboard-column-max: 360px;
+    /* The horizontal space between two categories. Named because a wide
+       category has to reproduce it between its own inner columns, and packed
+       mode sets a different one. */
+    --dashboard-column-gap: 1.5rem;
     display: grid;
     row-gap: var(--category-row-gap, 2rem);
-    column-gap: 1.5rem;
+    column-gap: var(--dashboard-column-gap);
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
     width: 100%;
     max-width: 100%;
@@ -1442,13 +1509,166 @@ body.no-animations .health-link.is-health-alert .health-link-anchor {
     max-width: 100%;
 }
 
-/* Packed columns: vertical stacks per column (round-robin), less vertical gap than CSS grid rows */
+/* A category set wider than one column.
+ *
+ * `width: fit-content` above shrinks a category to its content, which is right
+ * for a one-column block and wrong for this one: the whole point is to occupy
+ * the columns it was given. Same specificity as the rule above and deliberately
+ * placed after it, so this wins for the categories that carry the class.
+ *
+ * Grid only: this is the rule that reaches across grid columns. In packed mode
+ * the same width is carried by a band of its own — see the packed block below —
+ * and everything from the inner columns down is shared by both.
+ */
+.dashboard-grid:not(.packed-columns) .category.category--wide {
+    grid-column: span var(--category-span, 1);
+    width: 100%;
+    max-width: 100%;
+}
+
+/* Every width, inner columns included, is driven by this one property, so
+   putting it back to 1 is enough to undo the whole thing.
+ *
+ * `!important` because the effective width is written as an inline style at
+ * render time and the window can be resized without a re-render — the grid
+ * would otherwise still be told to span three columns it no longer has, and
+ * spanning past the last column creates implicit ones and scrolls the page
+ * sideways. */
+@media (max-width: 767px) {
+    .dashboard-grid .category.category--wide {
+        --category-span: 1 !important;
+    }
+}
+
+.dashboard-grid.columns-1 .category.category--wide {
+    --category-span: 1 !important;
+}
+
+/* One category, several columns — and a way to see that at a glance.
+ *
+ * Two blocks of bookmarks side by side look like two categories. The rule below
+ * runs from the left edge of the first column to the right edge of the last,
+ * directly under the header, and says that everything beneath it belongs to the
+ * name above it — the way a table header rule does.
+ *
+ * Dropped while the category is collapsed: the body is still in the document
+ * with its rows squeezed to nothing, so the rule would be left hanging under a
+ * header with visibly nothing under it.
+ */
+.dashboard-grid .category.category--wide:not([data-collapsed="true"]) .category-body {
+    border-top: 1px solid color-mix(in srgb, var(--border-primary) 85%, transparent);
+    padding-top: 0.6rem;
+}
+
+/* The presets that already draw the category as a card say it themselves — a
+   second line inside the box is one line too many. */
+.dashboard-grid.layout-cards .category.category--wide:not([data-collapsed="true"]) .category-body,
+.dashboard-grid.layout-widgets .category.category--wide:not([data-collapsed="true"]) .category-body {
+    border-top: none;
+    padding-top: 0;
+}
+
+/* The marker in the header: how many columns this category is currently taking.
+   Small and quiet — it names what the rule already shows, for the times the
+   width alone is ambiguous (a narrow window, two columns of similar length). */
+.category-spread-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15em;
+    padding: 0 0.3em;
+    border: 1px solid var(--border-secondary);
+    border-radius: 0.25rem;
+    font-size: 0.7em;
+    line-height: 1.5;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+}
+
+/* Wider means more bookmarks side by side, not longer rows.
+ *
+ * The list is a three-track grid (four with ping times) whose rows span every
+ * track, and each row is a subgrid of it — that is what keeps names and status
+ * aligned down a column. Repeating the whole track pattern once per column and
+ * letting a row span one pattern keeps all of that intact and fills row by row.
+ *
+ * The launcher and list presets replace the list's display entirely, so these
+ * declarations are inert there — their own wrapping already handles the width.
+ *
+ * Not scoped to either layout: how a wide category arranges its own bookmarks
+ * is the same question whether the width came from spanning grid columns or
+ * from a packed band.
+ */
+.dashboard-grid .category.category--wide .bookmarks-list {
+    grid-template-columns:
+        repeat(var(--category-span, 1),
+            var(--bookmark-lead-col, minmax(1.25rem, max-content))
+            minmax(0, 1fr)
+            var(--bookmark-shortcut-col, max-content));
+    /* The grid gap plus the padding two neighbouring categories would each
+       have contributed.
+     *
+     * A run of ordinary categories pads every column on both sides; a wide one
+     * is a single box and pads only its outer edges, so its inner columns drift
+     * left of the columns above and below by exactly that missing padding. Add
+     * it to the gap and the tracks land where a category's content lands.
+     *
+     * Only the column gap: the row gap belongs to the density setting, whose
+     * rule sits further down this file and would otherwise win both. */
+    column-gap: calc(var(--dashboard-column-gap, 1.5rem) + 2 * var(--category-inline-pad, 0.5rem));
+}
+
+/* The shortcut track is the one intrinsic column in the pattern, and repeating
+   the pattern sizes each copy to its own rows: odd rows land in the first
+   column, even rows in the second, so the two ended up different widths and
+   every column after the first drifted. It is measured across the whole list
+   and pinned — see syncWideColumnTracks — which makes the repeats identical
+   and the columns line up with the categories above and below. */
+.dashboard-grid .category--wide .bookmarks-list[data-show-ping="true"] {
+    grid-template-columns:
+        repeat(var(--category-span, 1),
+            var(--bookmark-lead-col, minmax(1.25rem, max-content))
+            minmax(0, 1fr)
+            var(--bookmark-status-col, 3.35em)
+            var(--bookmark-shortcut-col, max-content));
+}
+
+.dashboard-grid .category--wide .bookmarks-list > * {
+    grid-column: span 3;
+}
+
+.dashboard-grid .category--wide .bookmarks-list[data-show-ping="true"] > * {
+    grid-column: span 4;
+}
+
+/* The "+ N more" toggle and the empty-category placeholders are not bookmarks:
+   they belong under the whole list, not in the first column of it. */
+.dashboard-grid .category--wide .bookmarks-list > .category-show-more,
+.dashboard-grid .category--wide .bookmarks-list > .empty-state--category,
+.dashboard-grid .category--wide .bookmarks-list > .smart-collection-empty {
+    grid-column: 1 / -1;
+}
+
+/* Packed columns: vertical stacks per column (round-robin), less vertical gap than CSS grid rows.
+ *
+ * This is the layout packed mode has always had, and it is what runs while no
+ * category is wider than one column. A category set wider switches the page to
+ * the masonry grid further down — a block cannot reach across flex columns it
+ * is sitting inside of.
+ */
 .dashboard-grid.packed-columns {
+    /* The width of a single packed column, written once — the masonry tracks
+       below are the same width, so the two shapes line up. */
+    --dashboard-column-gap: var(--gap, 1.5rem);
+    --packed-column-width: min(
+        var(--dashboard-column-max, 300px),
+        calc((100% - (var(--packed-columns, 3) - 1) * var(--dashboard-column-gap)) / var(--packed-columns, 3))
+    );
     display: flex;
     flex-direction: row;
     flex-wrap: nowrap;
     align-items: flex-start;
     justify-content: center;
+    column-gap: var(--dashboard-column-gap);
     grid-template-columns: unset;
     width: 100%;
 }
@@ -1457,20 +1677,43 @@ body.no-animations .health-link.is-health-alert .health-link-anchor {
     display: flex;
     flex-direction: column;
     gap: 3rem;
-    flex: 0 0 min(
-        var(--dashboard-column-max, 300px),
-        calc((100% - (var(--packed-columns, 3) - 1) * var(--gap, 1.5rem)) / var(--packed-columns, 3))
-    );
-    width: min(
-        var(--dashboard-column-max, 300px),
-        calc((100% - (var(--packed-columns, 3) - 1) * var(--gap, 1.5rem)) / var(--packed-columns, 3))
-    );
-    max-width: min(
-        var(--dashboard-column-max, 300px),
-        calc((100% - (var(--packed-columns, 3) - 1) * var(--gap, 1.5rem)) / var(--packed-columns, 3))
-    );
+    flex: 0 0 var(--packed-column-width);
+    width: var(--packed-column-width);
+    max-width: var(--packed-column-width);
     min-width: 0;
     contain: layout style;
+}
+
+/* Packed, with something wider than one column in it.
+ *
+ * Fixed columns cannot carry a block that reaches across them, and breaking the
+ * page into bands left a hole the height of the tallest column beside the wide
+ * one. So the page becomes a grid of very short rows: every category spans as
+ * many of them as it is tall (set from JS, which is the only place a height is
+ * known), and dense flow fills what is left — a wide block takes its columns
+ * wherever it fits and the rest carry on beside and beneath it.
+ *
+ * align-self is what keeps the measuring honest: stretched to its row span, a
+ * category would report the height it was given rather than the height it has,
+ * and every pass would confirm the previous one.
+ */
+.dashboard-grid.packed-columns.packed-masonry {
+    display: grid;
+    grid-template-columns: repeat(var(--packed-columns, 3), var(--packed-column-width));
+    grid-auto-rows: 4px;
+    grid-auto-flow: row dense;
+    column-gap: var(--dashboard-column-gap);
+    row-gap: 0;
+    justify-content: center;
+    align-items: start;
+    width: 100%;
+}
+
+.dashboard-grid.packed-columns.packed-masonry > .category {
+    grid-row: span var(--masonry-span, 1);
+    grid-column: span var(--category-span, 1);
+    align-self: start;
+    min-width: 0;
 }
 
 .dashboard-grid.packed-columns .category {
@@ -1645,11 +1888,33 @@ body.no-animations .health-link.is-health-alert .health-link-anchor {
     color: var(--text-primary);
 }
 
-/* Preview card note snippet */
+/*
+ * Your own note, which is the one line on the card nobody else could have
+ * written — and which used to be the faintest thing on it, in the same grey as
+ * the site's marketing description.
+ */
 .bookmark-preview-card-note {
-    margin-top: 0.35rem;
-    color: var(--text-tertiary);
-    font-size: 0.85rem;
+    margin: 0.6rem 0.8rem 0;
+    padding: 0.38rem 0.55rem;
+    border-left: 2px solid var(--accent-primary, var(--text-secondary));
+    border-radius: 0 5px 5px 0;
+    background: color-mix(in srgb, var(--accent-primary, var(--text-secondary)) 8%, transparent);
+    color: var(--text-primary);
+    font-size: calc(var(--font-size-controls) * 0.88);
+    line-height: 1.4;
+}
+
+.bookmark-preview-card-note-label {
+    display: block;
+    margin-bottom: 3px;
+    font-family: var(--font-family-mono, monospace);
+    font-size: calc(var(--font-size-controls) * 0.66);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent-primary, var(--text-secondary));
+}
+
+.bookmark-preview-card-note-text {
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 3;
@@ -1694,10 +1959,10 @@ body.no-animations .health-link.is-health-alert .health-link-anchor {
 
 /* Preview card tags */
 .bookmark-preview-card-tags {
-    display: none;
+    display: flex;
     flex-wrap: wrap;
-    gap: 0.2rem;
-    margin-top: 0.4rem;
+    gap: 4px;
+    padding: 0.55rem 0.8rem 0;
 }
 
 .dashboard-grid.layout-terminal .category-title-label::before {
@@ -2171,8 +2436,11 @@ body[data-category-spacing="airy"] {
     flex-direction: column;
     gap: 1rem;
     min-width: 0; /* Allow flex items to shrink below content size */
-    padding-left: 0.5rem;
-    padding-right: 0.5rem;
+    /* Named, because a wide category has to add it back between its inner
+       columns — see the column-gap on its bookmarks list. */
+    --category-inline-pad: 0.5rem;
+    padding-left: var(--category-inline-pad);
+    padding-right: var(--category-inline-pad);
 }
 
 .category.animate-enter {
@@ -2193,6 +2461,14 @@ body[data-category-spacing="airy"] {
     }
 }
 
+/* Centred rather than baseline-aligned, which is what keeps the controls in the
+   header from making it taller. On a baseline the "+" sits by its own text
+   baseline, and the padding and border below that baseline hang past the line
+   the title occupies — 1.4px of extra header, per header, for a button that is
+   shorter than the text beside it. Centring aligns boxes instead, so the header
+   is simply as tall as its tallest child and a control that fits costs nothing.
+   Titles that wrap keep flex-start (see .category-title--multiline): chips
+   belong beside the first line there, not centred across both. */
 .category-title {
     font-size: var(--font-size-category);
     font-weight: var(--font-weight-bold);
@@ -2200,7 +2476,7 @@ body[data-category-spacing="airy"] {
     color: var(--text-tertiary);
     display: flex;
     flex-wrap: nowrap;
-    align-items: baseline;
+    align-items: center;
     min-width: 0;
 }
 
@@ -2273,6 +2549,10 @@ body[data-category-spacing="airy"] {
     flex-shrink: 0;
 }
 
+/* One button plus a ⋯, not the full set: four sort buttons on every category
+   header — and the header repeats per category — took more width than the
+   bookmark names beside them. In manual order there is no sort to report, so
+   only the ⋯ is left. */
 .category-sort-controls {
     display: inline-flex;
     align-items: center;
@@ -2281,6 +2561,73 @@ body[data-category-spacing="airy"] {
     flex-shrink: 0;
     opacity: 1;
     pointer-events: auto;
+    position: relative;
+}
+
+.category-sort-menu-btn {
+    font: inherit;
+    font-size: 0.68em;
+    line-height: 1;
+    min-height: 1.45em;
+    padding: 0.15em 0.4em;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    background: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    opacity: 0.7;
+}
+
+.category-sort-menu-btn:hover,
+.category-sort-menu-btn:focus-visible,
+.category-sort-menu-btn[aria-expanded="true"] {
+    opacity: 1;
+    color: var(--text-secondary);
+    border-color: color-mix(in srgb, var(--text-tertiary) 28%, transparent);
+    background: color-mix(in srgb, var(--background-secondary, transparent) 55%, transparent);
+}
+
+.category-sort-menu {
+    position: absolute;
+    top: calc(100% + 0.25em);
+    right: 0;
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    min-width: 7em;
+    padding: 0.2em;
+    border: 1px solid var(--border-primary);
+    border-radius: var(--layout-radius-sm, 6px);
+    background: var(--background-primary);
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--text-primary) 14%, transparent);
+}
+
+.category-sort-menu-item {
+    font: inherit;
+    font-size: 0.68em;
+    text-align: left;
+    padding: 0.3em 0.5em;
+    border: 0;
+    border-radius: 3px;
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.category-sort-menu-item:hover,
+.category-sort-menu-item:focus-visible {
+    background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+    color: var(--text-primary);
+}
+
+.category-sort-menu-item.is-active {
+    color: var(--text-primary);
+    font-weight: var(--font-weight-bold);
+}
+
+.category-sort-menu-item.is-active::before {
+    content: '· ';
 }
 
 .category-sort-btn {
@@ -2762,6 +3109,20 @@ a.bookmark-open:hover {
     display: none;
 }
 
+/* "3 new" — what this page published since the row was last opened. It borrows
+   the superscript badge's shape and adds only a hint of the accent: it is worth
+   noticing on a scan and never worth reading first. */
+.bookmark-fresh-badge {
+    margin-left: 0.3em;
+    color: var(--accent-primary);
+    border-color: color-mix(in srgb, var(--accent-primary) 35%, var(--border-secondary));
+    background: color-mix(in srgb, var(--accent-primary) 8%, var(--background-secondary));
+}
+
+.bookmark-fresh-badge.is-empty {
+    display: none;
+}
+
 .bookmark-tags {
     display: flex;
     flex-wrap: wrap;
@@ -2984,15 +3345,23 @@ a.bookmark-open:hover {
 }
 
 /*
- * Inline edit focus: blur/dim non-editing chrome.
- * Blur the row's children — not the .bookmark-link itself. filter:blur on the row
- * creates a Safari stacking/hit-testing layer that steals clicks from the overlapping
- * inline form even when pointer-events:none is set.
- * Do NOT use a body::before backdrop-filter overlay — it stacks above #dashboard-layout
- * and frosts the form in Safari and Chrome.
+ * Inline edit focus: dim the chrome that is not being edited.
+ *
+ * Dimmed, not blurred. `filter: blur()` on the neighbouring rows gave each
+ * column its own compositing layer, and WebKit paints those in an order that
+ * ignores the z-index of unrelated elements — so a tall inline form opened from
+ * Health had a blurred neighbouring column painted on top of it, eating every
+ * click on its fields. `pointer-events: none` does not help: WebKit hit-tests
+ * the composited layer regardless. The same class of bug was fixed the same way
+ * in the check-mode popover, by taking the blur out.
+ *
+ * At 18% opacity the blur was doing almost nothing visually, which is what
+ * makes this a straight removal rather than a trade.
+ *
+ * Do NOT use a body::before backdrop-filter overlay either — it stacks above
+ * #dashboard-layout and frosts the form in Safari and Chrome.
  */
 body.bookmark-inline-edit-active {
-    --inline-edit-overlay-blur: 7.5px;
     --inline-edit-panel-bg: var(--background-primary);
     --inline-edit-field-bg: var(--background-secondary);
 }
@@ -3008,7 +3377,7 @@ body.bookmark-inline-edit-active #dashboard-layout .bookmark-link:not(.bookmark-
 }
 
 body.bookmark-inline-edit-active #dashboard-layout .bookmark-link:not(.bookmark-inline-editing) > * {
-    filter: blur(var(--inline-edit-overlay-blur)) saturate(0.9);
+    /* No filter here: see above. The row is already at 18% opacity. */
     pointer-events: none;
 }
 
@@ -3689,71 +4058,151 @@ body.no-animations .bookmarks-list.reorder-container::after {
     line-height: 1.2;
 }
 
+/*
+ * The link preview card.
+ *
+ * Three bands in a fixed order — what it is, what it says, what I know about it
+ * — each one absent rather than blank when it has nothing to carry. No card-level
+ * max-height: the blocks clamp themselves, so nothing disappears without the
+ * card being visibly shorter for it.
+ */
 .bookmark-preview-card {
     position: fixed;
     z-index: 2000;
     display: none;
     width: min(360px, calc(100vw - 24px));
-    max-height: min(360px, calc(100vh - 24px));
-    overflow: hidden;
     border-radius: 12px;
     border: 1px solid var(--border-primary);
     background: var(--background-secondary);
     box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+    /* Peek is something to read, not something to reach: it takes no pointer
+       events, so it never has to move out of the way of its own cursor. */
     pointer-events: none;
+    overflow: hidden;
+}
+
+/* `display: flex` and `display: grid` both beat the hidden attribute, and the
+   card's bands are laid out with both — so a band that says it is absent has to
+   be made absent here, or it draws as an empty stripe. */
+.bookmark-preview-card [hidden] {
+    display: none !important;
 }
 
 .bookmark-preview-card.is-visible {
     display: block;
-    pointer-events: auto;
 }
 
-.bookmark-preview-card-refresh {
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    z-index: 3;
+.bookmark-preview-card.is-pinned {
+    pointer-events: auto;
+    border-color: var(--text-secondary);
+}
+
+.bookmark-preview-card:focus-visible {
+    outline: 2px solid var(--accent-primary, var(--text-secondary));
+    outline-offset: 2px;
+}
+
+.bookmark-preview-card-head {
+    display: flex;
+    gap: 0.55rem;
+    align-items: flex-start;
+    padding: 0.7rem 0.8rem 0.5rem;
+}
+
+.bookmark-preview-card-fav {
+    flex: none;
+    width: 17px;
+    height: 17px;
+    margin-top: 2px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--background-primary);
+}
+
+.bookmark-preview-card-fav img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+.bookmark-preview-card-headtext {
+    flex: 1;
+    min-width: 0;
+}
+
+.bookmark-preview-card-title {
+    font-size: var(--font-size-controls);
+    font-weight: var(--font-weight-bold);
+    color: var(--text-primary);
+    line-height: 1.25;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+}
+
+/* One address, not two: the old card printed the full URL in mono and then its
+   hostname on the next line, and neither could be clicked or copied. */
+.bookmark-preview-card-domain {
+    margin-top: 2px;
+    font-family: var(--font-family-mono, monospace);
+    font-size: calc(var(--font-size-controls) * 0.8);
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* "Is this link still alive" is the question the rest of the app exists to
+   answer, so it is the first thing on the card. */
+.bookmark-preview-card-pill {
+    flex: none;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    border: 1px solid color-mix(in srgb, var(--border-primary) 80%, transparent);
-    border-radius: 6px;
-    background: color-mix(in srgb, var(--background-secondary) 88%, transparent);
+    gap: 5px;
+    padding: 4px 7px;
+    border-radius: 999px;
+    border: 1px solid var(--border-secondary);
+    background: rgba(255, 255, 255, 0.03);
     color: var(--text-secondary);
-    cursor: pointer;
-    backdrop-filter: blur(6px);
-    transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+    font-size: calc(var(--font-size-controls) * 0.72);
+    font-weight: var(--font-weight-semibold);
+    white-space: nowrap;
 }
 
-.bookmark-preview-card-refresh:hover,
-.bookmark-preview-card-refresh:focus-visible {
-    color: var(--text-primary);
-    border-color: var(--text-secondary);
-    background: var(--background-primary);
-    outline: none;
+.bookmark-preview-card-pill::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
 }
 
-.bookmark-preview-card-refresh:disabled {
-    opacity: 0.65;
-    cursor: wait;
+.bookmark-preview-card-pill.is-ok {
+    color: var(--accent-success, #10B981);
+    border-color: color-mix(in srgb, var(--accent-success, #10B981) 40%, transparent);
+    background: color-mix(in srgb, var(--accent-success, #10B981) 12%, transparent);
 }
 
-.bookmark-preview-card-refresh.is-loading svg {
-    animation: bookmark-preview-refresh-spin 0.8s linear infinite;
+.bookmark-preview-card-pill.is-warn {
+    color: var(--accent-warning, #F59E0B);
+    border-color: color-mix(in srgb, var(--accent-warning, #F59E0B) 40%, transparent);
+    background: color-mix(in srgb, var(--accent-warning, #F59E0B) 12%, transparent);
 }
 
-@keyframes bookmark-preview-refresh-spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
+.bookmark-preview-card-pill.is-bad {
+    color: var(--accent-error, #EF4444);
+    border-color: color-mix(in srgb, var(--accent-error, #EF4444) 40%, transparent);
+    background: color-mix(in srgb, var(--accent-error, #EF4444) 12%, transparent);
 }
 
 .bookmark-preview-card-image-wrap {
-    display: none;
     width: 100%;
-    height: 150px;
+    aspect-ratio: 16 / 9;
+    max-height: 158px;
+    border-top: 1px solid var(--border-secondary);
+    border-bottom: 1px solid var(--border-secondary);
     background: var(--background-primary);
 }
 
@@ -3764,54 +4213,115 @@ body.no-animations .bookmarks-list.reorder-container::after {
     display: block;
 }
 
-.bookmark-preview-card-content {
-    padding: 0.7rem 0.8rem;
-}
-
-.bookmark-preview-card-title {
-    font-size: var(--font-size-controls);
-    font-weight: var(--font-weight-bold);
-    color: var(--text-primary);
-    line-height: 1.25;
-}
-
 .bookmark-preview-card-description {
-    margin-top: 0.35rem;
-    font-size: calc(var(--font-size-controls) * 0.95);
+    padding: 0.55rem 0.8rem 0;
+    font-size: calc(var(--font-size-controls) * 0.92);
     color: var(--text-secondary);
-    line-height: 1.35;
-    max-height: 5.5em;
+    line-height: 1.42;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
     overflow: hidden;
 }
 
-.bookmark-preview-card-url {
-    margin-top: 0.45rem;
-    font-size: calc(var(--font-size-controls) * 0.82);
+.bookmark-preview-card-empty {
+    margin: 0;
+    padding: 0.55rem 0.8rem 0;
+    font-size: calc(var(--font-size-controls) * 0.88);
+    font-style: italic;
     color: var(--text-tertiary);
-    opacity: 0.75;
+}
+
+.bookmark-preview-card-facts {
+    margin: 0.7rem 0 0;
+    padding: 0.5rem 0.8rem 0.6rem;
+    border-top: 1px solid var(--border-secondary);
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 3px 12px;
+    font-size: calc(var(--font-size-controls) * 0.86);
+}
+
+.bookmark-preview-card-facts dt {
     font-family: var(--font-family-mono, monospace);
-    text-overflow: ellipsis;
-    overflow: hidden;
+    font-size: calc(var(--font-size-controls) * 0.74);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
     white-space: nowrap;
+    line-height: 1.6;
 }
 
-.bookmark-preview-card-domain {
-    margin-top: 0.25rem;
-    font-size: calc(var(--font-size-controls) * 0.9);
-    color: var(--text-tertiary);
-    text-overflow: ellipsis;
+.bookmark-preview-card-facts dd {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    min-width: 0;
     overflow: hidden;
-    white-space: nowrap;
+    text-overflow: ellipsis;
 }
 
-.bookmark-preview-card-usage {
-    margin-top: 0.3rem;
-    font-size: calc(var(--font-size-controls) * 0.85);
+.bookmark-preview-card-facts dd b {
+    color: var(--text-primary);
+    font-weight: var(--font-weight-semibold);
+}
+
+.bookmark-preview-card-facts dd.is-good b { color: var(--accent-success, #10B981); }
+.bookmark-preview-card-facts dd.is-warn b { color: var(--accent-warning, #F59E0B); }
+.bookmark-preview-card-facts dd.is-bad b { color: var(--accent-error, #EF4444); }
+
+.bookmark-preview-card-facts dd kbd {
+    font-family: var(--font-family-mono, monospace);
+    font-size: calc(var(--font-size-controls) * 0.78);
+    border: 1px solid var(--border-primary);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 5px;
+    color: var(--text-primary);
+}
+
+.bookmark-preview-card-muted {
     color: var(--text-tertiary);
-    opacity: 0.75;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+}
+
+/* Only a pinned card has actions, so there is nothing on a peek to aim at. */
+.bookmark-preview-card-foot {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    padding: 0.45rem 0.55rem;
+    border-top: 1px solid var(--border-secondary);
+    background: rgba(0, 0, 0, 0.18);
+}
+
+.bookmark-preview-card-action {
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 5px 8px;
+    background: none;
+    color: var(--text-secondary);
+    font-size: calc(var(--font-size-controls) * 0.8);
+    cursor: pointer;
+}
+
+.bookmark-preview-card-action:hover,
+.bookmark-preview-card-action:focus-visible {
+    color: var(--text-primary);
+    border-color: var(--border-secondary);
+    background: rgba(255, 255, 255, 0.04);
+    outline: none;
+}
+
+.bookmark-preview-card-action:disabled {
+    opacity: 0.65;
+    cursor: wait;
+}
+
+.bookmark-preview-card-esc {
+    margin-left: auto;
+    font-family: var(--font-family-mono, monospace);
+    font-size: calc(var(--font-size-controls) * 0.72);
+    color: var(--text-tertiary);
 }
 
 /* Bookmark open flash animation */
@@ -4518,14 +5028,25 @@ body.no-animations .bookmark-move-out {
     #dashboard-layout.page-transition,
     .category.animate-enter,
     .bookmark-link.animate-enter,
-    .bookmark-inline-form,
-    .bookmark-move-out { animation: none !important; transform: none !important; opacity: 1 !important; }
-    /* Decorative looping */
+    .bookmark-inline-form { animation: none !important; transform: none !important; opacity: 1 !important; }
+
+    /* Near-zero rather than `none`, matching reduced-motion.css: each of these
+       classes is removed again by an `animationend` listener with { once: true }
+       (bookmark-move-out in dashboard-inline-edit, bookmark-copy-flash in four
+       copy paths, bookmark-pulse in dashboard-bookmark-rows, deep-link-focus in
+       dashboard-page-nav). `animation: none` fires no event, so the listener
+       never ran and the class stayed on the row for the rest of the session.
+       There is nothing to see either way — the animation is over in a frame. */
+    .bookmark-move-out { animation-duration: 0.01ms !important; transform: none !important; opacity: 1 !important; }
+    .bookmark-link.bookmark-deep-link-focus,
+    .bookmark-link.bookmark-copy-flash::after,
+    .bookmark-link.bookmark-flash::after,
+    .layout-launcher .bookmark-link.bookmark-pulse {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+    }
+    /* Decorative looping, nothing waits on it */
     .health-link a { animation: none !important; }
-    .bookmark-link.bookmark-deep-link-focus { animation: none !important; }
-    .bookmark-link.bookmark-copy-flash::after { animation: none !important; }
-    .bookmark-link.bookmark-flash::after { animation: none !important; }
-    .layout-launcher .bookmark-link.bookmark-pulse { animation: none !important; }
     /* Promo balloons (entrance + float) */
     .dashboard-feature-promo-balloon,
     .dashboard-g-jump-promo-balloon,
@@ -4538,3 +5059,224 @@ body.no-animations .bookmark-move-out {
 }
 
 
+
+/* ─── Row tag chips ──────────────────────────────────────────────────────── */
+
+/* Inside the link, not a grid column: .bookmark-link is a subgrid whose columns
+   line up across every category on the page, so a new column would move every
+   row. Same chip as the inbox (.inbox-item-tag) and Config (.config-bm-tag-chip)
+   — a tag should look like a tag wherever it is listed. */
+.bookmark-tag-strip {
+    display: inline-flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.25rem;
+    margin-left: 0.4rem;
+    min-width: 0;
+    /* Never at the cost of the name: the strip gives way first. */
+    flex: 0 1 auto;
+    overflow: hidden;
+}
+
+.bookmark-tag-chip {
+    padding: 0.05rem 0.45rem;
+    border-radius: 999px;
+    border: 1px solid var(--border-primary);
+    background: var(--background-secondary);
+    color: var(--text-secondary);
+    font-size: 0.68rem;
+    font-weight: var(--font-weight-normal, 400);
+    line-height: 1.5;
+    white-space: nowrap;
+    max-width: 8rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bookmark-tag-chip--more {
+    font-variant-numeric: tabular-nums;
+    opacity: 0.75;
+}
+
+/* Terminal and list presets are deliberately dense; a chip there costs more
+   than it says, so it drops to text weight instead of a pill. */
+.dashboard-grid.layout-terminal .bookmark-tag-chip,
+.dashboard-grid.layout-list .bookmark-tag-chip {
+    border: 0;
+    background: none;
+    padding: 0 0.15rem;
+    opacity: 0.7;
+}
+
+@media (max-width: 720px) {
+    /* On a phone the name is the only thing with room. */
+    .bookmark-tag-strip { display: none; }
+}
+
+/* g is a chord: for three seconds after it, the next key means "top" (g),
+   "first pinned" (p) or a category number. Nothing said so, so the only way to
+   learn it was to press something and watch. The pill is the key itself, which
+   needs no translation. */
+body[data-g-chord="armed"]::after {
+    content: "g…";
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 60;
+    padding: 0.2rem 0.55rem;
+    border: 1px solid color-mix(in srgb, var(--accent-primary) 40%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent-primary) 14%, var(--background-secondary));
+    color: var(--accent-primary);
+    font-family: var(--font-family-main);
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+    pointer-events: none;
+}
+
+/* The key legend under the grid, matching the one health and inbox carry under
+   their feeds. Decorative: every key it lists is in the cheat sheet, and the
+   rows announce what they do on their own. */
+.dashboard-legend {
+    display: none;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.3rem 0.9rem;
+    margin: 1rem 0 0.25rem;
+    font-size: 0.72rem;
+    color: var(--text-tertiary);
+    opacity: 0.75;
+}
+
+/* Only once the keyboard is in use: KeyboardNavigation stamps this at the first
+   cursor move and clears it on Enter. Without it the line sat under the grid
+   all day — under seven bookmarks, as tall as the thing it explained. No rule
+   above it either, which is what made it read as a section of its own. */
+body[data-grid-keys="shown"] .dashboard-legend {
+    display: flex;
+}
+
+.dashboard-legend kbd {
+    font-size: 0.7rem;
+    padding: 0.05rem 0.32rem;
+    border-radius: 0.25rem;
+    border: 1px solid var(--border-secondary);
+    background: var(--background-secondary);
+    color: var(--text-secondary);
+}
+
+/* The category icon editor: one field beside the header it changes, the same
+   shape the page-tab popover uses. Category.Icon has been stored and rendered
+   for a long time with nowhere to set it — eight categories on a page meant
+   eight identical ⊣ headers. */
+.category-icon-popover {
+    position: absolute;
+    z-index: 70;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.45rem;
+    border: 1px solid var(--border-primary);
+    border-radius: 0.4rem;
+    background: var(--background-secondary);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}
+
+.category-icon-input {
+    width: 3.2rem;
+    padding: 0.15rem 0.35rem;
+    border: 1px solid var(--border-secondary);
+    border-radius: 0.3rem;
+    background: var(--background-primary);
+    color: var(--text-primary);
+    font: inherit;
+    text-align: center;
+}
+
+.category-icon-clear {
+    padding: 0.15rem 0.45rem;
+    border: 1px solid var(--border-secondary);
+    border-radius: 0.3rem;
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 0.78rem;
+    cursor: pointer;
+}
+
+.category-icon-clear:hover,
+.category-icon-clear:focus-visible {
+    color: var(--accent-primary);
+    border-color: color-mix(in srgb, var(--accent-primary) 45%, transparent);
+}
+
+/* ── Filter this page (Shift+F) ─────────────────────────────────────────────
+   A slim bar above the grid, not a panel: it narrows what is already on screen
+   and disappears again with one Escape. Rows and empty categories are hidden
+   with a class rather than re-rendered, so the layout, the keyboard cursor and
+   any selection survive the filter. */
+.grid-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    /* It sits above the grid rather than in it, so it takes the container's
+       width whatever shape the grid itself is in. */
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0 0 0.6rem;
+    padding: 0.3rem 0.5rem;
+    border: 1px solid var(--border-primary);
+    border-radius: var(--layout-radius-sm, 8px);
+    background: var(--background-secondary);
+}
+
+.grid-filter-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.85rem;
+    padding: 0.15rem 0;
+}
+
+.grid-filter-input:focus {
+    outline: none;
+}
+
+.grid-filter-count {
+    color: var(--text-tertiary);
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.grid-filter-clear {
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 0.2rem;
+}
+
+.grid-filter-clear:hover {
+    color: var(--text-primary);
+}
+
+.bookmark-link.grid-filter-hidden,
+.category.grid-filter-empty {
+    display: none !important;
+}
+
+/* "Publishes, but nothing new" — the quiet half of Fresh, off unless asked for.
+   A dot rather than a number, and dimmer than a count: it says this row takes
+   part, which is worth a glance and never worth reading. */
+.bookmark-fresh-badge.is-quiet {
+    color: color-mix(in srgb, var(--accent-primary) 55%, var(--text-tertiary));
+    border-color: var(--border-secondary);
+    background: transparent;
+    letter-spacing: 0;
+}

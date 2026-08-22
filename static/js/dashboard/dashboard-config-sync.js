@@ -212,9 +212,20 @@ class DashboardConfigSync {
     }
 
 
+    /**
+     * A toast when another tab pushes config or settings across.
+     *
+     * Gated on settings.showSyncToasts, which the server has never had: the
+     * client invented the key, defaulted it to false, and the toggle in config
+     * wrote a value the save dropped — so the toast has been off for everyone
+     * since the setting appeared, and could not be switched on. The setting is
+     * gone; this keeps the behaviour people actually have, and the callers stay
+     * as they are so turning it back on is a one-line change here rather than a
+     * hunt through four files.
+     */
     showSyncToast(message) {
         const d = this.dash;
-        if (d.settings?.showSyncToasts === false) {
+        if (!d.settings?.showSyncToasts) {
             return;
         }
         const now = Date.now();
@@ -300,6 +311,33 @@ class DashboardConfigSync {
         }
     }
 
+    /**
+     * Announce a config change to the other tabs.
+     *
+     * The listener above, the pending-marker drain and their tests all existed;
+     * nothing ever published. A second tab therefore kept showing the old pages,
+     * categories and settings until it was reloaded by hand — the exact case
+     * this module was written for. The specs did not catch it because they write
+     * the markers themselves, so they pass with or without a publisher.
+     *
+     * `kind` is 'structure' (pages, categories, bookmarks) or 'settings'.
+     */
+    publishConfigSync(kind = 'structure') {
+        const d = this.dash;
+        const eventKey = kind === 'settings' ? d.settingsSyncEventKey : d.structureSyncEventKey;
+        const pendingKey = kind === 'settings' ? d.pendingSettingsSyncKey : d.pendingStructureSyncKey;
+        if (!eventKey) return;
+
+        const payload = JSON.stringify({ sourceTabId: d.tabId, timestamp: Date.now() });
+        try {
+            // A storage event only fires in *other* tabs, which is what makes
+            // this work without echoing back into the tab that wrote it.
+            localStorage.setItem(eventKey, payload);
+            // Kept so a tab that was hidden during the write still picks the
+            // change up when it comes back, via maybeRefreshAfterConfigReturn.
+            sessionStorage.setItem(pendingKey, payload);
+        } catch { /* private mode or a full quota must not fail the save */ }
+    }
 
 }
 

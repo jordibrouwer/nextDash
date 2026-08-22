@@ -123,6 +123,32 @@ class DashboardBookmarkRows {
         return candidates[0] || null;
     }
 
+    /**
+     * Put moved bookmarks back where they were.
+     *
+     * Works from the snapshot the move took rather than by moving again: a
+     * second move would fire its own toast and its own analytics event, and
+     * would file everything into one category — which is exactly what an undo
+     * of a bulk move must not do, since the rows came from several.
+     */
+    undoBookmarkCategoryMove(previous) {
+        const d = this.dash;
+        const entries = (previous || []).filter((entry) => entry?.ref?.bookmark);
+        if (!entries.length) return;
+
+        d.ensureBookmarkMutationSnapshot();
+        entries.forEach(({ ref, category }) => {
+            ref.bookmark.category = category;
+            if (ref.original) {
+                ref.original.category = category;
+            }
+        });
+        d.scheduleBookmarkOrderSave();
+        if (!d.isInlineEditActive()) {
+            d.renderDashboard({ animate: false });
+        }
+    }
+
     applyBookmarkCategoryMove(bookmarkRefs, categoryId, { notify = true, count } = {}) {
         const d = this.dash;
         const refs = (Array.isArray(bookmarkRefs) ? bookmarkRefs : [bookmarkRefs])
@@ -142,6 +168,11 @@ class DashboardBookmarkRows {
         const affectedCount = Number.isFinite(count) ? count : refs.length;
 
         d.ensureBookmarkMutationSnapshot();
+        // What each bookmark was filed under before this move. Deleting a row has
+        // offered eight seconds of Undo for a long time; moving one — or twenty,
+        // from the tag filter — offered nothing, and a bulk move to the wrong
+        // category lost every original category with no way back.
+        const previous = refs.map((ref) => ({ ref, category: ref.bookmark.category }));
         refs.forEach((ref) => {
             ref.bookmark.category = categoryId;
             if (ref.original) {
@@ -162,7 +193,10 @@ class DashboardBookmarkRows {
 
         if (notify) {
             const groupKey = `move-category:${categoryId}`;
-            const duration = 2500;
+            // Long enough to be caught, matching the delete toast: an undo nobody
+            // can reach is the same as no undo.
+            const duration = 8000;
+            const undoCallback = () => this.undoBookmarkCategoryMove(previous);
             if (affectedCount > 1) {
                 d.showGroupedNotification(
                     groupKey,
@@ -173,7 +207,7 @@ class DashboardBookmarkRows {
                         `Moved ${n} bookmark(s) to "${catName}"`
                     ),
                     'success',
-                    { duration }
+                    { duration, undoCallback }
                 );
             } else {
                 d.showNotification(
@@ -183,7 +217,7 @@ class DashboardBookmarkRows {
                         `Moved to "${catName}"`
                     ),
                     'success',
-                    { duration }
+                    { duration, undoCallback }
                 );
             }
         }
@@ -192,8 +226,13 @@ class DashboardBookmarkRows {
     }
 
 
-    updateBookmarkRowsCategoryInDom(refs, categoryId) {
-        const d = this.dash;
+    /**
+     * Retag rows in place when there is no target list to move them into.
+     *
+     * Private to reparentBookmarkRowsInDom's fallback — it reads as public API
+     * and had a delegate on the dashboard to match, which nothing ever called.
+     */
+    _updateBookmarkRowsCategoryInDom(refs, categoryId) {
         const normalizedCategoryId = String(categoryId ?? '');
         (refs || []).forEach((ref) => {
             const bookmark = ref?.bookmark;
@@ -210,13 +249,12 @@ class DashboardBookmarkRows {
 
 
     reparentBookmarkRowsInDom(refs, categoryId) {
-        const d = this.dash;
         const normalizedCategoryId = String(categoryId ?? '');
         const targetList = document.querySelector(
             `.bookmarks-list[data-category-id="${CSS.escape(normalizedCategoryId)}"]`
         );
         if (!targetList) {
-            this.updateBookmarkRowsCategoryInDom(refs, categoryId);
+            this._updateBookmarkRowsCategoryInDom(refs, categoryId);
             return false;
         }
 
@@ -244,7 +282,6 @@ class DashboardBookmarkRows {
 
 
     collectBookmarkCategoryIds(bookmarks = []) {
-        const d = this.dash;
         const ids = new Set();
         (bookmarks || []).forEach((entry) => {
             const bookmark = entry?.bookmark ?? entry;
@@ -289,7 +326,6 @@ class DashboardBookmarkRows {
 
 
     canonicalBookmarkURLKey(raw) {
-        const d = this.dash;
         if (typeof BookmarkUrlUtils !== 'undefined' && typeof BookmarkUrlUtils.canonicalBookmarkURLKey === 'function') {
             return BookmarkUrlUtils.canonicalBookmarkURLKey(raw);
         }
@@ -308,7 +344,6 @@ class DashboardBookmarkRows {
 
 
     bookmarkMatchesCanonicalUrl(candidate, bookmark) {
-        const d = this.dash;
         const key = this.canonicalBookmarkURLKey(bookmark?.url || '');
         if (!key) {
             return false;
@@ -448,7 +483,12 @@ class DashboardBookmarkRows {
         const reorderHandle = document.createElement('div');
         reorderHandle.className = 'bookmark-reorder-handle';
         const dragLabel = d.formatDashboardLabel('dragToReorderAria', {}, 'Drag to reorder');
-        reorderHandle.setAttribute('aria-label', dragLabel);
+        // Hidden from assistive tech rather than labelled: it is a plain div with
+        // no role, no tab stop and nothing a key can do to it, so the label was
+        // announced by nothing and only promised an affordance that is not there.
+        // The keyboard route to the same result is Alt+↑/↓ on the row, which the
+        // cheat sheet lists. The title stays — that is the mouse user's tooltip.
+        reorderHandle.setAttribute('aria-hidden', 'true');
         reorderHandle.title = dragLabel;
         lead.appendChild(reorderHandle);
 
@@ -504,6 +544,10 @@ class DashboardBookmarkRows {
         openLink.href = safeHref || '#';
         openLink.id = this.bookmarkCellId(bookmark, bookmarkIndex, categoryId);
         openLink.setAttribute('role', 'gridcell');
+        // Constant: the grid is one column wide. Stamped here so syncBookmarkGridA11y
+        // does not have to find this element again on every render to rewrite them.
+        openLink.setAttribute('aria-colindex', '1');
+        openLink.setAttribute('aria-colcount', '1');
         /* Roving tabindex: only the arrow-selected row’s link is in tab order (see KeyboardNavigation). */
         openLink.tabIndex = -1;
         const displayLabel = this.bookmarkDisplayLabel(bookmark);
@@ -513,64 +557,7 @@ class DashboardBookmarkRows {
         textSpan.title = this.bookmarkRowTitle(bookmark);
         openLink.appendChild(textSpan);
 
-        const recordOpen = () => d.recordBookmarkOpened(
-            bookmark,
-            bookmarkIndex >= 0 ? bookmarkIndex : undefined
-        );
-        openLink.addEventListener('click', (e) => {
-            // Ctrl/Cmd+click ticks the row, Shift+click extends from the anchor.
-            // Both must win over opening the link — and over the browser's own
-            // "open in new tab" on Ctrl+click, which is why preventDefault comes
-            // before anything else.
-            const multi = d.multiSelect;
-            if (multi && (e.ctrlKey || e.metaKey || e.shiftKey)) {
-                e.preventDefault();
-                e.stopPropagation();
-                if (e.shiftKey) {
-                    multi.selectRange(row);
-                } else {
-                    multi.toggleRow(row);
-                }
-                return;
-            }
-            // A plain click with a selection open clears it rather than opening,
-            // so a stray click cannot silently act on rows the user forgot were
-            // ticked.
-            if (multi?.isActive()) {
-                e.preventDefault();
-                e.stopPropagation();
-                multi.clear();
-                return;
-            }
-            if (!safeHref) {
-                e.preventDefault();
-                return;
-            }
-            recordOpen();
-            if (document.getElementById('dashboard-layout')?.classList.contains('layout-launcher')) {
-                row.classList.remove('bookmark-pulse');
-                void row.offsetWidth; // force reflow so re-clicking restarts the animation
-                row.classList.add('bookmark-pulse');
-                row.addEventListener('animationend', () => row.classList.remove('bookmark-pulse'), { once: true });
-            }
-            if (window.hyprMode && window.hyprMode.isEnabled()) {
-                e.preventDefault();
-                window.hyprMode.handleBookmarkClick(safeHref);
-            }
-        });
-        openLink.addEventListener('auxclick', (e) => {
-            if (e.button === 1) {
-                if (!safeHref) {
-                    e.preventDefault();
-                    return;
-                }
-                recordOpen();
-                if (window.hyprMode && window.hyprMode.isEnabled()) {
-                    e.preventDefault();
-                    window.hyprMode.handleBookmarkClick(safeHref);
-                }
-            }
-        });
+        this.ensureBookmarkOpenDelegation();
 
         if (d.settings.openInNewTab) {
             openLink.target = '_blank';
@@ -653,6 +640,40 @@ class DashboardBookmarkRows {
         }
         row.appendChild(openCountBadge);
 
+        // What the page has published since this row was last opened. Quiet by
+        // design: a count, no colour of its own, and absent entirely when there
+        // is nothing new or when feed polling is off.
+        const freshBadge = document.createElement('span');
+        freshBadge.className = 'bookmark-fresh-badge bookmark-superscript-badge';
+        const fresh = d.feeds?.freshFor(bookmark) || null;
+        // A row whose page publishes but has nothing new, when the reader has
+        // asked to see those: a dot rather than a number, because there is
+        // nothing to count. Off by default — see feedsMarkQuiet.
+        const quiet = !fresh && d.settings?.feedsMarkQuiet === true
+            && d.feeds?.hasFeed?.(bookmark) === true;
+        if (fresh) {
+            const count = Number(fresh.newCount) || 0;
+            freshBadge.textContent = count > 99 ? '99+' : String(count);
+            const label = count === 1
+                ? d.formatDashboardLabel('feedOneNew', {}, '1 new since you last opened this')
+                : d.formatDashboardLabel('feedManyNew', { count }, `${count} new since you last opened this`);
+            freshBadge.title = label;
+            freshBadge.setAttribute('aria-label', label);
+            freshBadge.setAttribute('role', 'img');
+        } else if (quiet) {
+            freshBadge.classList.add('is-quiet');
+            freshBadge.textContent = '·';
+            const label = d.formatDashboardLabel('feedQuietMark', {},
+                'Publishes a feed — nothing new since you last opened this');
+            freshBadge.title = label;
+            freshBadge.setAttribute('aria-label', label);
+            freshBadge.setAttribute('role', 'img');
+        } else {
+            freshBadge.classList.add('is-empty');
+            freshBadge.setAttribute('aria-hidden', 'true');
+        }
+        openLink.appendChild(freshBadge);
+
         const noteBadge = document.createElement('span');
         noteBadge.className = 'bookmark-note-badge bookmark-superscript-badge';
         const hasNote = bookmark && String(bookmark.note || '').trim();
@@ -669,6 +690,13 @@ class DashboardBookmarkRows {
             noteBadge.setAttribute('aria-hidden', 'true');
         }
         openLink.appendChild(noteBadge);
+
+        // Tag chips, inside the link rather than as a grid column of their own:
+        // the row is a subgrid whose columns line up across every category, so a
+        // new column would shift every row on the page. Off by default — a row
+        // with several tags is noticeably busier, and the whole point of the
+        // grid is that it stays scannable.
+        this.renderRowTags(row, openLink, bookmark);
 
         if (allowInlineEdit && bookmarkRef) {
             const ac = new AbortController();
@@ -707,11 +735,52 @@ class DashboardBookmarkRows {
             String(bookmark.note || '').trim(),
             (bookmark.tags || []).join(','),
             String(bookmark.openCount || 0),
+            // The count on the row is part of what was drawn, so a row whose
+            // feed reported something new — or whose badge was cleared by
+            // opening it — has to be redrawn by the incremental renderer.
+            String(this.dash.feeds?.freshFor(bookmark)?.newCount || 0),
+            this.dash.settings?.feedsMarkQuiet === true && this.dash.feeds?.hasFeed?.(bookmark) ? 'q' : '',
             showIcons,
             iconStylingKey,
         ].join('\u0001');
     }
 
+
+    /**
+     * The focused row's tags, as the same chip the inbox and Config rows use.
+     *
+     * Rendered into the link so the subgrid is untouched, and capped: past two
+     * or three the chips stop being a glance and start being a second line of
+     * text competing with the name.
+     */
+    renderRowTags(row, openLink, bookmark) {
+        const d = this.dash;
+        openLink.querySelector('.bookmark-tag-strip')?.remove();
+        if (d.settings?.showRowTags !== true) return;
+
+        const tags = (bookmark?.tags || [])
+            .map((t) => String(t || '').trim())
+            .filter(Boolean);
+        if (!tags.length) return;
+
+        const max = Number(d.settings?.rowTagsMax) || 2;
+        const strip = document.createElement('span');
+        strip.className = 'bookmark-tag-strip';
+        strip.setAttribute('aria-hidden', 'true');   // the row's aria-label already names them
+        tags.slice(0, max).forEach((tag) => {
+            const chip = document.createElement('span');
+            chip.className = 'bookmark-tag-chip';
+            chip.textContent = tag;
+            strip.appendChild(chip);
+        });
+        if (tags.length > max) {
+            const more = document.createElement('span');
+            more.className = 'bookmark-tag-chip bookmark-tag-chip--more';
+            more.textContent = `+${tags.length - max}`;
+            strip.appendChild(more);
+        }
+        openLink.appendChild(strip);
+    }
 
     restoreBookmarkRowStatus(row, bookmark) {
         const d = this.dash;
@@ -901,7 +970,6 @@ class DashboardBookmarkRows {
 
 
     findBookmarkIndexByReference(list, bookmarkRef) {
-        const d = this.dash;
         const original = bookmarkRef?.original || {};
         const originalUrl = String(original.url || '').trim();
         const originalName = String(original.name || '').trim();
@@ -927,7 +995,6 @@ class DashboardBookmarkRows {
 
 
     createBookmarkElement(bookmark, categoryId, allowInlineEdit = true) {
-        const d = this.dash;
         const row = document.createElement('div');
         this.populateBookmarkRowView(row, bookmark, categoryId, allowInlineEdit);
         return row;
@@ -1030,10 +1097,6 @@ class DashboardBookmarkRows {
     }
 
 
-    syncAllBookmarksMetadata(updatedBookmark) {
-        const d = this.dash;
-        this.syncBookmarkMetadataAcrossViews(updatedBookmark, this.resolveBookmarkPageId(updatedBookmark));
-    }
 
 
     syncBookmarkGridA11y() {
@@ -1043,18 +1106,47 @@ class DashboardBookmarkRows {
             return;
         }
 
+        // Exactly one row has to be reachable by Tab. Every row is built with
+        // tabIndex -1 for the roving tab stop, and KeyboardNavigation only hands
+        // one of them a 0 once it has walked the grid — which it does on the
+        // first arrow key, not on a render. So from the first paint until an
+        // arrow key was pressed, Tab skipped the entire grid: fourteen bookmarks
+        // and no way into them from the keyboard. This runs on every render, so
+        // it is the one place that can promise it.
+        const openLinks = [...grid.querySelectorAll('.bookmark-link a.bookmark-open')];
+        if (openLinks.length && !openLinks.some((link) => link.tabIndex === 0)) {
+            // The row the cursor is on when there is one, not simply the first:
+            // a full render rebuilds every row at -1, and putting the stop back
+            // on row 0 would walk the tab position away from where the user was
+            // every time anything on the page changed. The `keyboard-selected`
+            // class is no use here — KeyboardNavigation re-applies it after this
+            // runs — but its index survives the render, and it re-syncs anyway
+            // on its next update, so an off-by-one against a show-more toggle
+            // corrects itself.
+            const cursor = d.keyboardNavigation?.currentIndex ?? -1;
+            const target = (cursor >= 0 && openLinks[cursor]) || openLinks[0];
+            target.tabIndex = 0;
+        }
+
         const rowgroups = grid.querySelectorAll('.category[role="rowgroup"]');
         let totalRows = 0;
         rowgroups.forEach((group) => {
             const rows = group.querySelectorAll('.bookmark-link[data-bookmark-url]');
-            group.setAttribute('aria-rowcount', String(rows.length));
+            // aria-rowcount belongs to the grid, not to a rowgroup — the role
+            // does not carry it, so a per-category count was written and then
+            // ignored.
+            group.removeAttribute('aria-rowcount');
+            // aria-colindex/colcount are constant — one column, always — so they
+            // are stamped once in populateBookmarkRowView instead. Setting them
+            // here meant a querySelector per row on every render, every
+            // incremental render, every tag-filter change and every keyboard
+            // rebuild, to write the same two values back.
+            //
+            // The index counts through the whole grid rather than restarting per
+            // category: it is read against the grid's aria-rowcount, so starting
+            // over made the first row of every category "row 1 of 14".
             rows.forEach((row, idx) => {
-                row.setAttribute('aria-rowindex', String(idx + 1));
-                const openLink = row.querySelector('a.bookmark-open');
-                if (openLink) {
-                    openLink.setAttribute('aria-colindex', '1');
-                    openLink.setAttribute('aria-colcount', '1');
-                }
+                row.setAttribute('aria-rowindex', String(totalRows + idx + 1));
             });
             totalRows += rows.length;
         });
@@ -1068,6 +1160,61 @@ class DashboardBookmarkRows {
             'aria-label',
             d.language?.t('dashboard.bookmarksGridLabel') || 'Bookmarks'
         );
+
+        // Runs on every render, so it is where the live status line can notice
+        // the grid changed size. It rewrites nothing when the text is the same.
+        d.updateMiniStatusLine?.();
+        this.syncBookmarkGridLegend(grid);
+    }
+
+    /**
+     * The key legend under the grid.
+     *
+     * Health and inbox have carried one under their feed since they were built.
+     * The dashboard had none, so the only way to learn the keys was the cheat
+     * sheet behind `!` — but the dashboard is also the shortest view, and a
+     * ten-entry legend under seven bookmarks reads as clutter rather than help.
+     *
+     * So it is off by default, four entries long, and even when switched on it
+     * stays hidden until the keyboard is actually used: KeyboardNavigation
+     * stamps data-grid-keys on <body> at the first cursor move and clears it
+     * again on Enter, when the reader has arrived where they were going.
+     *
+     * Rebuilt only when the text changes: this runs on every render, and the
+     * legend is constant unless the language does.
+     */
+    syncBookmarkGridLegend(grid) {
+        const d = this.dash ?? this;
+        const host = grid?.parentElement;
+        if (!grid || !host || !window.KeyboardViewLegends) {
+            return;
+        }
+        // Off unless asked for: on a dashboard with seven bookmarks the legend
+        // was as tall as the grid above it, which is a manual, not a hint.
+        if (d.settings?.showGridKeyLegend !== true) {
+            host.querySelector(':scope > .dashboard-legend')?.remove();
+            return;
+        }
+        const pairs = window.KeyboardViewLegends.toLegendPairs(
+            window.KeyboardViewLegends.DASHBOARD_VIEW,
+            (key, fallback) => d.formatDashboardLabel?.(key, {}, fallback) ?? fallback,
+        );
+        const html = pairs
+            .map(([keys, label]) => `<span><kbd>${d.escapeHtml(keys)}</kbd> ${d.escapeHtml(label)}</span>`)
+            .join('');
+        let legend = host.querySelector(':scope > .dashboard-legend');
+        if (!legend) {
+            legend = document.createElement('p');
+            legend.className = 'dashboard-legend';
+            // Decorative twice over: every key is in the cheat sheet, and the
+            // rows themselves announce what they do.
+            legend.setAttribute('aria-hidden', 'true');
+            grid.after(legend);
+        }
+        if (legend.dataset.rendered !== html) {
+            legend.innerHTML = html;
+            legend.dataset.rendered = html;
+        }
     }
 
     /**
@@ -1090,7 +1237,6 @@ class DashboardBookmarkRows {
 
 
     _hashForA11yId(value) {
-        const d = this.dash;
         const str = String(value || '');
         let hash = 0;
         for (let i = 0; i < str.length; i += 1) {
@@ -1101,7 +1247,6 @@ class DashboardBookmarkRows {
 
 
     getBookmarkGridElement() {
-        const d = this.dash;
         const root = document.getElementById('dashboard-layout');
         if (!root) {
             return null;
@@ -1225,7 +1370,7 @@ class DashboardBookmarkRows {
         };
         setFocus(focusedIdx);
 
-        let onOutside = null;
+        let unbindOutside = null;
         let unbindPosition = null;
         const close = () => {
             if (pop.parentNode) {
@@ -1235,10 +1380,8 @@ class DashboardBookmarkRows {
             unbindPosition?.();
             unbindPosition = null;
             document.removeEventListener('keydown', onKey, true);
-            if (onOutside) {
-                document.removeEventListener('click', onOutside);
-                onOutside = null;
-            }
+            unbindOutside?.();
+            unbindOutside = null;
             if (d._movePopoverCleanup === close) {
                 d._movePopoverCleanup = null;
             }
@@ -1275,10 +1418,7 @@ class DashboardBookmarkRows {
         });
 
         document.addEventListener('keydown', onKey, true);
-        setTimeout(() => {
-            onOutside = (e) => { if (!pop.contains(e.target)) close(); };
-            document.addEventListener('click', onOutside);
-        }, 0);
+        unbindOutside = this._bindActionPopoverOutsideClose(pop, close, { anchorEl });
         requestAnimationFrame(() => setFocus(focusedIdx));
     }
 
@@ -1439,7 +1579,7 @@ class DashboardBookmarkRows {
             focusedIdx = firstCurrent >= 0 ? firstCurrent : 0;
         }
 
-        let onOutside = null;
+        let unbindOutside = null;
         let unbindPosition = null;
         let toggleInFlight = false;
 
@@ -1447,15 +1587,12 @@ class DashboardBookmarkRows {
             if (pop.parentNode) {
                 pop.remove();
             }
-            pop.removeEventListener('keydown', onKey, true);
             this._restoreActionPopoverFocus(previousFocus, anchorEl, bookmarkIndex);
             unbindPosition?.();
             unbindPosition = null;
             document.removeEventListener('keydown', onKey, true);
-            if (onOutside) {
-                document.removeEventListener('click', onOutside);
-                onOutside = null;
-            }
+            unbindOutside?.();
+            unbindOutside = null;
             if (d._tagPopoverCleanup === close) {
                 d._tagPopoverCleanup = null;
             }
@@ -1528,13 +1665,12 @@ class DashboardBookmarkRows {
             });
         });
 
-        pop.addEventListener('keydown', onKey, true);
+        // Document capture only. A second capture listener on the popover never
+        // ran: document is the outer node, so it handles the key first and every
+        // branch of onKey calls stopImmediatePropagation.
         document.addEventListener('keydown', onKey, true);
         trapPopoverFocus();
-        setTimeout(() => {
-            onOutside = (e) => { if (!pop.contains(e.target)) close(); };
-            document.addEventListener('click', onOutside);
-        }, 0);
+        unbindOutside = this._bindActionPopoverOutsideClose(pop, close, { anchorEl });
         requestAnimationFrame(() => {
             trapPopoverFocus();
             requestAnimationFrame(() => trapPopoverFocus());
@@ -1623,7 +1759,7 @@ class DashboardBookmarkRows {
         };
         setFocus(focusedIdx);
 
-        let onOutside = null;
+        let unbindOutside = null;
         let unbindPosition = null;
         const close = () => {
             if (pop.parentNode) {
@@ -1633,10 +1769,8 @@ class DashboardBookmarkRows {
             unbindPosition?.();
             unbindPosition = null;
             document.removeEventListener('keydown', onKey, true);
-            if (onOutside) {
-                document.removeEventListener('click', onOutside);
-                onOutside = null;
-            }
+            unbindOutside?.();
+            unbindOutside = null;
             if (d._deletePopoverCleanup === close) {
                 d._deletePopoverCleanup = null;
             }
@@ -1674,16 +1808,12 @@ class DashboardBookmarkRows {
         });
 
         document.addEventListener('keydown', onKey, true);
-        setTimeout(() => {
-            onOutside = (e) => { if (!pop.contains(e.target)) close(); };
-            document.addEventListener('click', onOutside);
-        }, 0);
+        unbindOutside = this._bindActionPopoverOutsideClose(pop, close, { anchorEl });
         requestAnimationFrame(() => setFocus(focusedIdx));
     }
 
 
     _quickMoveToCategory(bookmark, categoryId) {
-        const d = this.dash;
         const ref = this.resolveBookmarkReference(bookmark);
         if (!ref) {
             return;
@@ -1845,7 +1975,6 @@ class DashboardBookmarkRows {
 
 
     _closeActionPopovers() {
-        const d = this.dash;
         this._closeMovePopover();
         this._closeDeletePopover();
         this._closeTagPopover();
@@ -1853,7 +1982,6 @@ class DashboardBookmarkRows {
 
 
     _positionActionPopoverBeside(pop, anchorEl) {
-        const d = this.dash;
         if (!(pop instanceof HTMLElement) || !(anchorEl instanceof HTMLElement)) {
             return;
         }
@@ -1871,30 +1999,246 @@ class DashboardBookmarkRows {
 
 
     _attachActionPopoverPositioning(pop, anchorEl) {
-        const d = this.dash;
         this._positionActionPopoverBeside(pop, anchorEl);
-        const reposition = () => this._positionActionPopoverBeside(pop, anchorEl);
+        // One reposition per frame. Scroll fires far faster than the popover can
+        // move, and each run reads offsetWidth/offsetHeight and then writes two
+        // styles — a forced reflow per event for as long as a popover is open.
+        let rafId = 0;
+        const reposition = () => {
+            if (rafId) return;
+            rafId = requestAnimationFrame(() => {
+                rafId = 0;
+                this._positionActionPopoverBeside(pop, anchorEl);
+            });
+        };
         window.addEventListener('resize', reposition);
         window.addEventListener('scroll', reposition, true);
         return () => {
+            if (rafId) cancelAnimationFrame(rafId);
             window.removeEventListener('resize', reposition);
             window.removeEventListener('scroll', reposition, true);
         };
     }
 
 
+    /**
+     * Close a popover when the next pointer gesture lands outside it.
+     *
+     * Bound on the next tick, or the very click that opened the popover closes
+     * it again. `contextmenu` as well as `click`, because a right-click
+     * elsewhere opens the native menu without ever producing a click — the row
+     * popovers used to stay open behind it, which the bookmark context menu had
+     * already fixed for itself.
+     *
+     * @returns {() => void} unbind
+     */
+    _bindActionPopoverOutsideClose(pop, close, { anchorEl = null } = {}) {
+        let handler = null;
+        const timer = setTimeout(() => {
+            handler = (e) => {
+                if (pop.contains(e.target)) return;
+                // The anchor's own gesture is what toggles the popover; letting
+                // this handler see it too would close and reopen in one click.
+                if (anchorEl && (e.target === anchorEl || anchorEl.contains(e.target))) return;
+                close();
+            };
+            document.addEventListener('click', handler, true);
+            document.addEventListener('contextmenu', handler, true);
+        }, 0);
+
+        return () => {
+            clearTimeout(timer);
+            if (!handler) return;
+            document.removeEventListener('click', handler, true);
+            document.removeEventListener('contextmenu', handler, true);
+            handler = null;
+        };
+    }
+
+
+    /**
+     * Move the highlight to one item of a popover.
+     *
+     * Two patterns, picked by the container's role, because the two ARIA
+     * widgets disagree about where focus belongs:
+     *
+     *  - `role="listbox"`: focus stays on the box and `aria-activedescendant`
+     *    names the active option. Individually focusing options is what a
+     *    listbox is specifically not supposed to do, and the tag popover was
+     *    already doing it the right way while Move, Delete and the tag-filter
+     *    move popover — the same surface, to a user — did not.
+     *  - anything else (the context menus, `role="menu"`): roving tabindex on
+     *    the item itself, which is the convention there.
+     */
     _focusActionPopoverItem(items, idx, { syncAriaSelected = false } = {}) {
-        const d = this.dash;
+        const target = items[idx];
+        const listbox = target?.closest?.('[role="listbox"]') || null;
+
         items.forEach((el, i) => {
             el.classList.toggle('is-focused', i === idx);
-            el.tabIndex = i === idx ? 0 : -1;
+            el.tabIndex = listbox ? -1 : (i === idx ? 0 : -1);
             if (syncAriaSelected) {
                 el.setAttribute('aria-selected', String(i === idx));
             }
         });
-        const target = items[idx];
-        target?.scrollIntoView({ block: 'nearest' });
-        target?.focus({ preventScroll: true });
+
+        if (!target) {
+            listbox?.removeAttribute('aria-activedescendant');
+            return;
+        }
+        target.scrollIntoView({ block: 'nearest' });
+
+        if (!listbox) {
+            target.focus({ preventScroll: true });
+            return;
+        }
+        if (!target.id) {
+            target.id = `action-popover-opt-${idx}-${Math.random().toString(36).slice(2, 8)}`;
+        }
+        listbox.setAttribute('aria-activedescendant', target.id);
+        if (!listbox.hasAttribute('tabindex')) {
+            listbox.tabIndex = -1;
+        }
+        listbox.focus({ preventScroll: true });
+    }
+
+
+    /**
+     * Replay a one-shot row animation.
+     *
+     * The remove/reflow/add dance is needed to restart an animation that may
+     * already be running — clicking the same bookmark twice, copying twice — and
+     * it was written out by hand in five places. The forced reflow is the point,
+     * not an oversight: without it the browser coalesces the class removal and
+     * addition and nothing replays.
+     *
+     * The listener removes the class again, which is why reduced motion collapses
+     * these to 0.01ms rather than `animation: none` (see dashboard.css): an
+     * animation that never starts fires no `animationend`, and the class would
+     * stay on the row for the rest of the session.
+     */
+    /**
+     * One click/auxclick pair for the whole grid instead of two per row.
+     *
+     * Everything the per-row handlers closed over is recoverable from the row
+     * itself — the link's href is already the sanitised one, and the bookmark
+     * resolves the way every other row-driven action resolves it. Bound once on
+     * #dashboard-layout, which outlives every repaint, so rows carry no click
+     * listeners of their own at all.
+     */
+    ensureBookmarkOpenDelegation() {
+        const d = this.dash;
+        const grid = document.getElementById('dashboard-layout');
+        if (!grid || grid.dataset.bookmarkOpenDelegated === '1') {
+            return;
+        }
+        grid.dataset.bookmarkOpenDelegated = '1';
+
+        const resolve = (e) => {
+            const link = e.target instanceof Element
+                ? e.target.closest('a.bookmark-open')
+                : null;
+            if (!link || !grid.contains(link)) return null;
+            const row = link.closest('.bookmark-link');
+            if (!row) return null;
+            // '#' is what populateBookmarkRowView writes when the URL did not
+            // survive sanitising, so it means "nothing safe to open".
+            const rawHref = link.getAttribute('href');
+            return { link, row, safeHref: rawHref && rawHref !== '#' ? link.href : '' };
+        };
+
+        const recordOpen = (row) => {
+            const bookmark = d.multiSelect?.bookmarkForRow?.(row);
+            if (!bookmark) return;
+            const index = parseInt(row.dataset.bookmarkIndex ?? '-1', 10);
+            d.recordBookmarkOpened(bookmark, index >= 0 ? index : undefined);
+        };
+
+        grid.addEventListener('click', (e) => {
+            const hit = resolve(e);
+            if (!hit) return;
+            const { row, safeHref } = hit;
+
+            const multi = d.multiSelect;
+
+            // Cmd+click on a Mac, Ctrl+click everywhere else: the browser's own
+            // "open in a new tab", and a gesture people use without thinking.
+            // This used to tick the row instead, with preventDefault — so the
+            // one modifier every link on the web honours did the opposite of
+            // what it does everywhere else, and on a Mac Ctrl+click opened our
+            // row menu on top of it, since that is the platform's secondary
+            // click. The open is recorded here, because letting the default
+            // through means the anchor's own handler never runs.
+            if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
+                if (!safeHref) {
+                    e.preventDefault();
+                    return;
+                }
+                recordOpen(row);
+                return;
+            }
+
+            // Alt+click ticks a row, Shift+click extends from the anchor. Alt
+            // took over from Cmd/Ctrl: it is the one modifier no browser and
+            // neither platform has already spoken for on a link.
+            if (multi && (e.altKey || e.shiftKey)) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.shiftKey) {
+                    multi.selectRange(row);
+                } else {
+                    multi.toggleRow(row);
+                }
+                return;
+            }
+            // A plain click with a selection open clears it rather than opening,
+            // so a stray click cannot silently act on rows the user forgot were
+            // ticked.
+            if (multi?.isActive()) {
+                e.preventDefault();
+                e.stopPropagation();
+                multi.clear();
+                return;
+            }
+            if (!safeHref) {
+                e.preventDefault();
+                return;
+            }
+            recordOpen(row);
+            if (grid.classList.contains('layout-launcher')) {
+                this.restartRowAnimation(row, 'bookmark-pulse');
+            }
+            if (window.hyprMode && window.hyprMode.isEnabled()) {
+                e.preventDefault();
+                window.hyprMode.handleBookmarkClick(safeHref);
+            }
+        });
+
+        grid.addEventListener('auxclick', (e) => {
+            if (e.button !== 1) return;
+            const hit = resolve(e);
+            if (!hit) return;
+            if (!hit.safeHref) {
+                e.preventDefault();
+                return;
+            }
+            recordOpen(hit.row);
+            if (window.hyprMode && window.hyprMode.isEnabled()) {
+                e.preventDefault();
+                window.hyprMode.handleBookmarkClick(hit.safeHref);
+            }
+        });
+    }
+
+
+    restartRowAnimation(row, className) {
+        if (!(row instanceof HTMLElement) || !className) {
+            return;
+        }
+        row.classList.remove(className);
+        void row.offsetWidth;
+        row.classList.add(className);
+        row.addEventListener('animationend', () => row.classList.remove(className), { once: true });
     }
 
 
@@ -1920,7 +2264,30 @@ class DashboardBookmarkRows {
         const restoreTarget = (previousFocus && previousFocus.isConnected)
             ? previousFocus
             : anchorEl;
-        restoreTarget?.focus?.({ preventScroll: true });
+        if (restoreTarget?.isConnected) {
+            restoreTarget.focus({ preventScroll: true });
+            return;
+        }
+
+        // Everything the popover was anchored to is gone — the usual cause is
+        // the row itself having just been deleted. Focusing a detached element
+        // is a no-op, which would leave focus on <body>: the next Tab starts
+        // from the top of the page and arrow keys reach nothing. Hand it to the
+        // first row still on the grid, or to the grid itself if the page is now
+        // empty.
+        const firstRow = document.querySelector('#dashboard-layout .bookmark-link a.bookmark-open');
+        if (firstRow) {
+            firstRow.tabIndex = 0;
+            firstRow.focus({ preventScroll: true });
+            return;
+        }
+        const grid = document.getElementById('dashboard-layout');
+        if (grid) {
+            if (!grid.hasAttribute('tabindex')) {
+                grid.tabIndex = -1;
+            }
+            grid.focus({ preventScroll: true });
+        }
     }
 
 }

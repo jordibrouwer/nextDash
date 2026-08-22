@@ -35,6 +35,20 @@ const (
 	monitorMaxConcurrentPings = 8
 	// monitorRunTimeout is a ceiling for one full sweep.
 	monitorRunTimeout = 10 * time.Minute
+	// monitorConfirmDelay is how long a failed check waits before it is tried
+	// once more, and monitorConfirmRetries how many times.
+	//
+	// A single dropped check used to write a permanent Up:false: it dented the
+	// 24h/7d/30d uptime for as long as the sample lived, opened a one-check
+	// incident, and coloured a heartbeat bucket. MonitorNotifyRetries only ever
+	// held back the outgoing alert; the record was already written by then.
+	//
+	// One retry after five seconds is deliberately modest. It catches the hiccup
+	// — a dropped packet, a container still coming up, a DNS blip — without
+	// hiding a service that is genuinely down, which fails the retry too and is
+	// recorded as it always was, five seconds later.
+	monitorConfirmDelay   = 5 * time.Second
+	monitorConfirmRetries = 1
 )
 
 // clampMonitorIntervalMinutes normalizes a stored/incoming per-bookmark cadence,
@@ -118,12 +132,25 @@ func (h *Handlers) StartHealthMonitorScheduler(stop <-chan struct{}) {
 // any more, without dropping one still in use just because of a redirect.
 func (h *Handlers) dueMonitorTargets(now time.Time) (targets []monitorTarget, known map[string]bool, liveHosts map[string]struct{}) {
 	history := h.readAllHealthHistory()
+	softNotFound := softNotFoundEnabled(h.store.GetSettings())
 	known = map[string]bool{}
 	liveHosts = map[string]struct{}{}
 	seen := map[string]bool{}
 
 	for _, page := range h.store.GetPages() {
 		for _, bm := range h.store.GetBookmarksByPage(page.ID) {
+			// Every checked bookmark keeps its host alive, not only the monitored
+			// ones: certificates are now recorded from periodic checks and manual
+			// retests too, and a host whose only checker is periodic would
+			// otherwise have its certificate pruned a minute after it was stored.
+			if bm.CheckStatus || bm.Monitor {
+				if host := strings.ToLower(strings.TrimSpace(bm.CertHost)); host != "" {
+					liveHosts[host] = struct{}{}
+				}
+				if parsed, err := url.Parse(strings.TrimSpace(bm.URL)); err == nil && parsed.Hostname() != "" {
+					liveHosts[strings.ToLower(parsed.Hostname())] = struct{}{}
+				}
+			}
 			if !bm.Monitor {
 				continue
 			}
@@ -132,12 +159,6 @@ func (h *Handlers) dueMonitorTargets(now time.Time) (targets []monitorTarget, kn
 				continue
 			}
 			known[key] = true
-			if host := strings.ToLower(strings.TrimSpace(bm.CertHost)); host != "" {
-				liveHosts[host] = struct{}{}
-			}
-			if parsed, err := url.Parse(strings.TrimSpace(bm.URL)); err == nil && parsed.Hostname() != "" {
-				liveHosts[strings.ToLower(parsed.Hostname())] = struct{}{}
-			}
 			// The same URL can be bookmarked on several pages; check it once.
 			if seen[key] {
 				continue
@@ -158,7 +179,7 @@ func (h *Handlers) dueMonitorTargets(now time.Time) (targets []monitorTarget, kn
 				name:     bm.Name,
 				pageID:   page.ID,
 				interval: interval,
-				expect:   expectationFor(bm),
+				expect:   expectationFor(bm).withSoftNotFound(softNotFound),
 				muted:    bm.NotifyMuted,
 			})
 		}
@@ -199,7 +220,30 @@ func (h *Handlers) runDueMonitors() {
 		mu       sync.Mutex
 		outcomes = make([]outcome, 0, len(targets))
 		sem      = make(chan struct{}, monitorMaxConcurrentPings)
+		// One in-flight check per host. Twenty bookmarks on one domain used to
+		// arrive as twenty simultaneous requests from the same address, which is
+		// how a well-behaved dashboard looks like a small flood to the server it
+		// is watching — and a rate limiter answering 429 would be recorded as
+		// twenty outages we caused ourselves. The sweep's own cap still bounds
+		// the total; this only keeps one host from being hit by all of it.
+		hostSem   = map[string]chan struct{}{}
+		hostSemMu sync.Mutex
 	)
+
+	hostGate := func(rawURL string) chan struct{} {
+		host := monitorHostKey(rawURL)
+		if host == "" {
+			return nil
+		}
+		hostSemMu.Lock()
+		defer hostSemMu.Unlock()
+		gate, ok := hostSem[host]
+		if !ok {
+			gate = make(chan struct{}, 1)
+			hostSem[host] = gate
+		}
+		return gate
+	}
 
 	for _, target := range targets {
 		wg.Add(1)
@@ -207,8 +251,22 @@ func (h *Handlers) runDueMonitors() {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
+			if gate := hostGate(t.url); gate != nil {
+				gate <- struct{}{}
+				defer func() { <-gate }()
+			}
 
 			result := h.pingURLExpecting(ctx, t.url, t.expect)
+			// A failure is confirmed before it is believed. Same goroutine, so
+			// the sweep's concurrency cap still holds and a flaky host costs one
+			// extra check rather than a second full pass.
+			for attempt := 0; attempt < monitorConfirmRetries && result.Status != "online"; attempt++ {
+				select {
+				case <-ctx.Done():
+				case <-time.After(monitorConfirmDelay):
+					result = h.pingURLExpecting(ctx, t.url, t.expect)
+				}
+			}
 			mu.Lock()
 			outcomes = append(outcomes, outcome{target: t, result: result, at: time.Now().UnixMilli()})
 			mu.Unlock()
@@ -247,6 +305,7 @@ func (h *Handlers) runDueMonitors() {
 			PingMs: out.result.PingMs,
 			Code:   out.result.HTTPStatus,
 			Maint:  inMaintenance,
+			Fail:   failureClass(out.result.ErrorDetail),
 		}}
 		transitions = append(transitions, monitorTransition{
 			key:    out.target.key,
@@ -329,8 +388,7 @@ func (h *Handlers) mirrorMonitorResultsToBookmarks(updates map[string]HealthScan
 				if !ok {
 					continue
 				}
-				current[i].LastChecked = update.LastScanned
-				current[i].LastError = update.Error
+				setBookmarkCheckResult(&current[i], update.LastScanned, update.Error)
 				result := drift[canonicalBookmarkURLKey(current[i].URL)]
 				if result.CertHost != "" {
 					current[i].CertHost = result.CertHost
@@ -343,4 +401,16 @@ func (h *Handlers) mirrorMonitorResultsToBookmarks(updates map[string]HealthScan
 			log.Printf("health-monitor: failed to update bookmarks on page %d: %v", page.ID, err)
 		}
 	}
+}
+
+// monitorHostKey is the host a check will hit, lowercased. Empty when the URL
+// cannot be parsed, which means "no gate" rather than "one shared gate": an
+// unparseable URL is going to fail immediately anyway, and queueing all of them
+// behind each other would serialise the failures for no gain.
+func monitorHostKey(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Hostname() == "" {
+		return ""
+	}
+	return strings.ToLower(parsed.Hostname())
 }

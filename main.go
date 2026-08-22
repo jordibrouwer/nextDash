@@ -96,6 +96,9 @@ func main() {
 	r.HandleFunc("/api/pages", handlers.GetPages).Methods("GET")
 	r.HandleFunc("/api/pages", handlers.SavePages).Methods("POST")
 	r.HandleFunc("/api/data-revision", handlers.GetDataRevision).Methods("GET")
+	r.HandleFunc("/static/bundle/dashboard.js", handlers.ServeAssetBundle).Methods("GET")
+	r.HandleFunc("/static/bundle/dashboard.css", handlers.ServeAssetBundle).Methods("GET")
+	r.HandleFunc("/static/bundle/views.css", handlers.ServeAssetBundle).Methods("GET")
 	r.HandleFunc("/api/app-version", handlers.AppVersion).Methods("GET")
 	r.HandleFunc("/api/update-status", handlers.GetUpdateStatus).Methods("GET")
 	r.HandleFunc("/api/pages/{id:[0-9]+}", handlers.DeletePage).Methods("DELETE")
@@ -132,12 +135,19 @@ func main() {
 	r.HandleFunc("/api/duplicates", handlers.CheckDuplicates).Methods("GET")
 	r.HandleFunc("/api/health", handlers.Health).Methods("GET")
 	r.HandleFunc("/api/bookmark-health", handlers.GetBookmarkHealth).Methods("GET")
+	// The daily points alone, without building a report for them.
+	r.HandleFunc("/api/health/trend", handlers.GetHealthTrend).Methods("GET")
+	r.HandleFunc("/api/feeds", handlers.GetFeeds).Methods("GET")
+	r.HandleFunc("/api/feeds/poll", handlers.PollFeedsNow).Methods("POST")
 	r.HandleFunc("/api/health/cache-scan", handlers.CacheScanResult).Methods("POST")
 	r.HandleFunc("/api/health/update-status", handlers.UpdateBookmarkHealthStatus).Methods("POST")
 	r.HandleFunc("/api/health/retest-all", handlers.RetestAll).Methods("POST")
 	r.HandleFunc("/api/health/check-mode-all", handlers.SetAllCheckModes).Methods("POST")
 	r.HandleFunc("/api/health/check-mode", handlers.SetBookmarkCheckMode).Methods("POST")
 	r.HandleFunc("/api/health/expectations", handlers.SetBookmarkExpectations).Methods("POST")
+	// The same fields for a list of bookmarks, so muting a dozen during a known
+	// outage is one request rather than a dozen dialogs.
+	r.HandleFunc("/api/health/expectations-bulk", handlers.SetBookmarkExpectationsBulk).Methods("POST")
 	r.HandleFunc("/api/health/accept-drift", handlers.AcceptDrift).Methods("POST")
 	r.HandleFunc("/api/health/check-url", handlers.CheckBookmarkHealthURL).Methods("POST")
 	r.HandleFunc("/api/health/open-broken", handlers.OpenBroken).Methods("POST")
@@ -145,10 +155,16 @@ func main() {
 	r.HandleFunc("/api/health/delete-bookmark", handlers.DeleteHealthBookmark).Methods("POST")
 	r.HandleFunc("/api/health/delete-bookmarks", handlers.DeleteHealthBookmarksBulk).Methods("POST")
 	r.HandleFunc("/api/health/history-export", handlers.ExportHealthHistory).Methods("GET")
+	r.HandleFunc("/api/health/archive-snapshot", handlers.ArchiveSnapshot).Methods("GET")
 	r.HandleFunc("/api/health/auto-heal-suggest", handlers.AutoHealSuggest).Methods("GET")
 	r.HandleFunc("/api/health/auto-heal-apply", handlers.AutoHealApply).Methods("POST")
 	r.HandleFunc("/api/health/test-notification", handlers.TestMonitorNotification).Methods("POST")
 	r.HandleFunc("/api/bookmark-preview", handlers.GetBookmarkPreview).Methods("GET")
+	// Capture from outside the dashboard: the PWA share target and the
+	// bookmarklet. Both are GET because neither can set a header — see
+	// share_capture.go.
+	r.HandleFunc("/share", handlers.ShareTargetCapture).Methods("GET")
+	r.HandleFunc("/add", handlers.AddCapture).Methods("GET")
 	r.HandleFunc("/api/inbox", handlers.GetInbox).Methods("GET")
 	r.HandleFunc("/api/inbox", handlers.AddInboxItem).Methods("POST")
 	r.HandleFunc("/api/inbox", handlers.DeleteInboxItem).Methods("DELETE")
@@ -170,11 +186,11 @@ func main() {
 	// Locales: prefer on-disk files in dev/Docker mounts, fall back to embed.
 	if info, err := os.Stat("locales"); err == nil && info.IsDir() {
 		log.Printf("Serving /locales/ from disk (./locales)")
-		r.PathPrefix("/locales/").Handler(http.StripPrefix("/locales/", http.FileServer(http.Dir("locales"))))
-	} else {
-		localesFS, _ := fs.Sub(embeddedFiles, "locales")
-		r.PathPrefix("/locales/").Handler(http.StripPrefix("/locales/", http.FileServer(http.FS(localesFS))))
 	}
+	// One handler for both sources: it reads from disk when there is a disk copy
+	// and from the embedded set otherwise, and it can narrow the file to a scope
+	// so the dashboard does not fetch the Help tab's prose to draw a label.
+	r.PathPrefix("/locales/").HandlerFunc(handlers.LocaleFile)
 
 	// Static: prefer on-disk files so container/dev picks up JS/CSS without rebuild.
 	var staticHandler http.Handler
@@ -216,6 +232,9 @@ func main() {
 	handlers.StartHealthRecheckScheduler(schedulerStop)
 	// Uptime monitoring for bookmarks opted into the faster monitor tier.
 	handlers.StartHealthMonitorScheduler(schedulerStop)
+	// Feed polling for bookmarks whose page advertises one (opt-in, same cadence
+	// as the background recheck).
+	handlers.StartFeedPollScheduler(schedulerStop)
 	handlers.StartUpdateCheckScheduler(schedulerStop)
 
 	go func() {

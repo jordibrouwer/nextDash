@@ -46,7 +46,7 @@ func (h *Handlers) CheckBookmarkHealthURL(w http.ResponseWriter, r *http.Request
 
 	expect := expectation{}
 	if bm, ok := h.findBookmarkByURL(url); ok {
-		expect = expectationFor(bm)
+		expect = expectationFor(bm).withSoftNotFound(softNotFoundEnabled(h.store.GetSettings()))
 	}
 	result := h.pingURLExpecting(r.Context(), url, expect)
 	errMsg := ""
@@ -92,8 +92,7 @@ func (h *Handlers) CheckBookmarkHealthURL(w http.ResponseWriter, r *http.Request
 				if canonicalBookmarkURLKey(current[i].URL) != key {
 					continue
 				}
-				current[i].LastChecked = lastChecked
-				current[i].LastError = errMsg
+				setBookmarkCheckResult(&current[i], lastChecked, errMsg)
 				if result.CertHost != "" {
 					current[i].CertHost = result.CertHost
 				}
@@ -101,6 +100,13 @@ func (h *Handlers) CheckBookmarkHealthURL(w http.ResponseWriter, r *http.Request
 			}
 			return current, nil
 		})
+	}
+
+	// The handshake this check already made knows when the certificate expires,
+	// so record it here too rather than only in the monitor sweep — otherwise a
+	// bookmark that is only ever checked on demand never contributes one.
+	if result.CertExpiry > 0 && result.CertHost != "" {
+		h.recordMonitorCertificates([]PingResult{result})
 	}
 
 	h.invalidateHealthReportCache()

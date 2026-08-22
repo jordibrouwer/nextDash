@@ -12,8 +12,20 @@ const ANIM = Object.freeze({
     CATEGORY_ENTER_BASE:   150,   // ms base delay before first category enter animation clears
     PAGE_TRANSITION:       250,   // ms page-transition CSS class lifetime
     BOOKMARK_MOVE_IN:      180,   // ms bookmark-move-in animation duration after reorder
+    BOOKMARK_MOVE_OUT:     320,   // ms bookmark-move-out animation, must match dashboard.css
     STALE_FLASH:          2200,   // ms stale-bookmark highlight flash duration
 });
+
+/**
+ * Does the viewer want motion suppressed?
+ *
+ * reduced-motion.css already collapses the animations themselves, but code that
+ * *waits* the animation's length has to ask, or a reduced-motion user pays the
+ * full delay for something they never see.
+ */
+function prefersReducedMotion() {
+    return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+}
 
 
 const _sessionTags = new Set();
@@ -35,8 +47,9 @@ class Dashboard {
         this.pinnedEmptyCategoryId = null;
         this.settings = {
             currentPage: 'default',
-            theme: 'moss-stone-dark',
+            theme: 'retro-crt-dark',
             openInNewTab: true,
+            showGridKeyLegend: true,
             columnsPerRow: 3,
             fontSize: 'm',
             showBackgroundDots: true,
@@ -48,9 +61,8 @@ class Dashboard {
             showHealthDashboard: true,
             showRecentButton: false,
 
-            showSyncToasts: false,
             showCheatSheetButton: false,
-            showCollapseAllButton: true,
+            showCollapseAllButton: false,
             showAddBookmarkButton: true,
             showStatus: true,
             colorizeStatus: true,
@@ -70,8 +82,10 @@ class Dashboard {
             fuzzySuggestionsStartWith: false,
             keepSearchOpenWhenEmpty: false,
             showIcons: true,
-            showLinkPreviewCards: false,
-            linkPreviewHoverDelayMs: 150,
+            showLinkPreviewCards: true,
+            linkPreviewMode: 'hover',
+            linkPreviewParts: null,
+            linkPreviewHoverDelayMs: 250,
             categorySortModesMigrated: true,
             layoutPreset: 'default',
             layoutVersion: 'classic',
@@ -79,6 +93,8 @@ class Dashboard {
             categorySpacing: 'balanced',
             sideMargin: 'balanced',
             packedColumns: true,
+            defaultCategorySpread: false,
+            categorySpreadResetScope: 'page',
             backgroundType: 'none',
             backgroundOpacity: 1,
             fontWeight: 'normal',
@@ -182,6 +198,10 @@ class Dashboard {
         this.pageNav = new DashboardPageNav(this);
         this.tagFilter = new DashboardTagFilter(this);
         this.multiSelect = new DashboardMultiSelect(this);
+        // Narrowing the page you are on, as opposed to searching everything.
+        this.gridFilter = typeof DashboardGridFilter === 'function'
+            ? new DashboardGridFilter(this)
+            : null;
         this.structureCreate = new DashboardStructureCreate(this);
         this.categoryAdd = new DashboardCategoryAdd(this);
         this.categoryMenu = new DashboardCategoryMenu(this);
@@ -190,6 +210,7 @@ class Dashboard {
             : new DashboardInlineEdit(this);
         this.toolbar = new DashboardToolbar(this);
         this.smartCollections = new DashboardSmartCollections(this);
+        this.feeds = typeof DashboardFeeds === 'function' ? new DashboardFeeds(this) : null;
         this.bookmarkRows = new DashboardBookmarkRows(this);
         this.renderCore = new DashboardRenderCore(this);
         this.renderIncremental = new DashboardRenderIncremental(this);
@@ -275,6 +296,15 @@ class Dashboard {
                 this.pageNav?.updateInboxTabBadge?.();
             });
             this.renderDashboard({ animate: true });
+            // Freshness arrives after the first paint on purpose: it is a small
+            // count on a row and a collection that is empty on most installs,
+            // and neither is worth holding the grid for. Rows are repainted only
+            // when something actually came back.
+            void this.feeds?.load().then((ok) => {
+                if (ok && this.feeds.enabled && this.feeds.byKey.size) {
+                    this.renderDashboard();
+                }
+            });
             // After the grid exists, not during loadData(). A deep link resolves
             // against the DOM — a category element, a bookmark row — so running
             // it before the first render could only ever fail, and did: it
@@ -387,6 +417,9 @@ class Dashboard {
             this.updateMiniStatusLine();
             // Feature-adoption snapshot, once settings are resolved.
             window.nextdashTrackSettings?.(this.settings);
+            // The size of the install, as a second event: the two together are
+            // past Umami's 50 properties, and they answer different questions.
+            window.nextdashTrackContent?.();
             this.initializeOnboarding();
             if (window.MobileExperience?.shouldShowDiscoverabilityUi?.() !== false && !this.onboardingStartedInSession) {
                 this.schedulePostOnboardingPrompts({ delay: 900, resetAttempts: true });
@@ -608,8 +641,12 @@ class Dashboard {
         return this.preview.showBookmarkPreviewCard(...arguments);
     }
 
-    positionBookmarkPreviewCard(clientX, clientY) {
+    positionBookmarkPreviewCard(anchor, event = null) {
         return this.preview.positionBookmarkPreviewCard(...arguments);
+    }
+
+    buildPreviewPayload(bookmark, preview = null) {
+        return this.preview.buildPreviewPayload(...arguments);
     }
 
     hideBookmarkPreviewCard() {
@@ -863,6 +900,20 @@ class Dashboard {
             return previous;
         }
         this.activeView = view;
+        // Leaving config stamps where you were, whichever route took you out —
+        // the header buttons and page tabs switch view without config being
+        // asked, and the five-minute expiry is measured from this moment rather
+        // than from your last click inside it.
+        if (previous === 'config') {
+            this.config?.instance?.saveLastConfigLocation?.();
+        }
+        // Leaving the grid for a view: where you were on the page is worth
+        // keeping, and this is the only moment the offset still belongs to the
+        // bookmarks layout. Coming back restores it — see
+        // restoreBookmarksViewForPage.
+        if (previous === 'bookmarks' && view !== 'bookmarks') {
+            this.data?.rememberScrollForPage?.(Number(this.currentPageId));
+        }
         if (!options.silent) {
             this.visual?.onActiveViewChanged?.(previous, view);
         }
@@ -1401,10 +1452,6 @@ class Dashboard {
         return this.bookmarkRows.applyBookmarkCategoryMove(...arguments);
     }
 
-    updateBookmarkRowsCategoryInDom(refs, categoryId) {
-        return this.bookmarkRows.updateBookmarkRowsCategoryInDom(...arguments);
-    }
-
     collectBookmarkCategoryIds(bookmarks = []) {
         return this.bookmarkRows.collectBookmarkCategoryIds(...arguments);
     }
@@ -1479,10 +1526,6 @@ class Dashboard {
 
     syncBookmarkMetadataAcrossViews(updatedBookmark, pageId) {
         return this.bookmarkRows.syncBookmarkMetadataAcrossViews(...arguments);
-    }
-
-    syncAllBookmarksMetadata(updatedBookmark) {
-        return this.bookmarkRows.syncAllBookmarksMetadata(...arguments);
     }
 
     syncBookmarkGridA11y() {
@@ -1574,7 +1617,11 @@ class Dashboard {
     }
 
     renderDashboard(options = {}) {
-        return this.renderCore.renderDashboard(...arguments);
+        const out = this.renderCore.renderDashboard(...arguments);
+        // A render rebuilds every row, so an active page filter has to be laid
+        // over the new ones or the bar would claim to be filtering nothing.
+        this.gridFilter?.reapply?.();
+        return out;
     }
 
     groupBookmarksByCategory() {
